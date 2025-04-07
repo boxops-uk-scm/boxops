@@ -1,0 +1,13 @@
+{
+  "name": "@repo/root",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/@tsconfig/*"
+  ],
+  "resolutions": {
+    "@types/react": "18.3.8",
+    "@types/react-dom": "18.3.0"
+  },
+  "packageManager": "yarn@4.8.1"
+}
