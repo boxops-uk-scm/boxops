@@ -1,0 +1,19 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "node-v22.14.0",
+  "platforms": {
+    "linux-x86_64": {
+      "size": 54108748,
+      "hash": "blake3",
+      "digest": "086653c49db64d9c4a1d8a80d0e4195cac91d9ab2eadfae22c164d7be8030e73",
+      "format": "tar.gz",
+      "path": "node-v22.14.0-linux-x64/bin/node",
+      "providers": [
+        {
+          "url": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.gz"
+        }
+      ]
+    }
+  }
+}
