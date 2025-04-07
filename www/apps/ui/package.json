@@ -1,0 +1,37 @@
+{
+  "name": "@boxops/ui",
+  "main": "src/index.tsx",
+  "type": "module",
+  "version": "0.0.1",
+  "devDependencies": {
+    "@babel/core": "^7.26.10",
+    "@babel/plugin-transform-runtime": "^7.26.10",
+    "@babel/preset-env": "^7.26.9",
+    "@babel/preset-react": "^7.26.3",
+    "@babel/preset-typescript": "^7.27.0",
+    "@svgr/webpack": "^8.1.0",
+    "@tsconfig/boxops": "workspace:*",
+    "@types/babel__core": "^7.20.5",
+    "@types/babel__plugin-transform-runtime": "^7.9.5",
+    "@types/babel__preset-env": "^7.10.0",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "babel-loader": "^10.0.0",
+    "css-loader": "^7.1.2",
+    "file-loader": "^6.2.0",
+    "html-webpack-plugin": "^5.6.3",
+    "url-loader": "^4.1.1",
+    "webpack": "^5.99.0",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.1"
+  },
+  "dependencies": {
+    "@boxops/components": "workspace:*",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "scripts": {
+    "build": "webpack --config webpack.config.js --mode production --env ROOT=\"$(sl root)\"",
+    "start": "webpack serve --config webpack.config.js --mode development --env ROOT=\"$(sl root)\""
+  }
+}
