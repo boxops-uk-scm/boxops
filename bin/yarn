@@ -1,0 +1,19 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "yarn-v1.22.22",
+  "platforms": {
+    "linux-x86_64": {
+      "size": 1247457,
+      "hash": "blake3",
+      "digest": "38db913cec8820a4fda02a35cf3ddf2bc0083070a98e98bcc7e29b6d9fe0d93b",
+      "format": "tar.gz",
+      "path": "yarn-v1.22.22/bin/yarn",
+      "providers": [
+        {
+          "url": "https://github.com/yarnpkg/yarn/releases/download/v1.22.22/yarn-v1.22.22.tar.gz"
+        }
+      ]
+    }
+  }
+}
