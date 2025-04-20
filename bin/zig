@@ -1,0 +1,19 @@
+#!/usr/bin/env dotslash
+
+{
+  "name": "zig-linux-x86_64-0.14.0",
+  "platforms": {
+    "linux-x86_64": {
+      "size": 49091960,
+      "hash": "blake3",
+      "digest": "4b699474ad567ff0b1ca0d200a6901c8a6a2b506ab6b5ba85a5052c372327e97",
+      "format": "tar.xz",
+      "path": "zig-linux-x86_64-0.14.0/zig",
+      "providers": [
+        {
+          "url": "https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz"
+        }
+      ]
+    }
+  }
+}
