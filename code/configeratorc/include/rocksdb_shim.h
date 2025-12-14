@@ -16,6 +16,21 @@ extern "C"
         int create_if_missing,
         char **error);
 
+    rocksdb_handle *rocksdb_open_read_only(
+        const char *path,
+        char **error);
+
+    int rocksdb_backup(
+        rocksdb_handle *handle,
+        const char *backup_dir,
+        int flush_before_backup,
+        char **error);
+
+    int rocksdb_restore_latest_backup(
+        const char *backup_dir,
+        const char *db_path,
+        char **error);
+
     void rocksdb_close(rocksdb_handle *handle);
 
     int rocksdb_put(

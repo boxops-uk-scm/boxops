@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14.5)
-project(configerator LANGUAGES C CXX)
+project(configeratorc LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -36,10 +36,10 @@ set_target_properties(rocksdb_shim PROPERTIES
 )
 
 install(TARGETS rocksdb_shim
-    EXPORT configeratorTargets
-    LIBRARY DESTINATION configerator
-    ARCHIVE DESTINATION configerator
-    RUNTIME DESTINATION configerator
+    EXPORT configeratorcTargets
+    LIBRARY DESTINATION configeratorc
+    ARCHIVE DESTINATION configeratorc
+    RUNTIME DESTINATION configeratorc
 )
 
 install(FILES include/rocksdb_shim.h DESTINATION include)

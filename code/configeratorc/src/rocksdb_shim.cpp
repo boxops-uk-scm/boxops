@@ -5,13 +5,14 @@
 #include <memory>
 #include <new>
 #include <string>
-#include <errno.h>
+#include <cerrno>
 
 #include <rocksdb/db.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
 #include <rocksdb/write_batch.h>
+#include <rocksdb/utilities/backup_engine.h>
 
 struct rocksdb_handle
 {
@@ -86,6 +87,206 @@ extern "C"
         return handle.release();
     }
 
+    rocksdb_handle *rocksdb_open_read_only(
+        const char *path,
+        char **error)
+    {
+        if (error)
+        {
+            *error = nullptr;
+        }
+
+        if (!path)
+        {
+            if (error)
+            {
+                *error = strdup("rocksdb_open_read_only: path is null");
+            }
+            errno = EINVAL;
+            return nullptr;
+        }
+
+        rocksdb::Options options;
+        options.create_if_missing = false;
+        options.compression = rocksdb::kNoCompression;
+        options.bottommost_compression = rocksdb::kNoCompression;
+
+        rocksdb::DB *db = nullptr;
+        rocksdb::Status status = rocksdb::DB::OpenForReadOnly(options, path, &db);
+        if (!status.ok())
+        {
+            if (error)
+            {
+                *error = strdup(status.ToString().c_str());
+            }
+            errno = EIO;
+            return nullptr;
+        }
+
+        auto handle = std::make_unique<rocksdb_handle>();
+        if (!handle)
+        {
+            delete db;
+            if (error)
+            {
+                *error = strdup("rocksdb_open_read_only: out of memory");
+            }
+            errno = ENOMEM;
+            return nullptr;
+        }
+
+        handle->db.reset(db);
+        handle->write_options = rocksdb::WriteOptions();
+        handle->read_options = rocksdb::ReadOptions();
+
+        return handle.release();
+    }
+
+    int rocksdb_backup(
+        rocksdb_handle *handle,
+        const char *backup_dir,
+        int flush_before_backup,
+        char **error)
+    {
+        if (error)
+        {
+            *error = nullptr;
+        }
+
+        if (!handle || !handle->db)
+        {
+            if (error)
+            {
+                *error = strdup("rocksdb_backup: handle is null");
+            }
+            errno = EINVAL;
+            return -1;
+        }
+
+        if (!backup_dir)
+        {
+            if (error)
+            {
+                *error = strdup("rocksdb_backup: backup_dir is null");
+            }
+            errno = EINVAL;
+            return -1;
+        }
+
+        rocksdb::BackupEngineOptions opts(backup_dir);
+        opts.destroy_old_data = true;
+
+        rocksdb::BackupEngine *engine_raw = nullptr;
+
+        rocksdb::Status status =
+            rocksdb::BackupEngine::Open(
+                rocksdb::Env::Default(), opts, &engine_raw);
+
+        if (!status.ok())
+        {
+            if (error)
+            {
+                *error = strdup(status.ToString().c_str());
+            }
+            errno = EIO;
+            return -1;
+        }
+
+        std::unique_ptr<rocksdb::BackupEngine> engine(engine_raw);
+
+        status = engine->CreateNewBackup(
+            handle->db.get(),
+            flush_before_backup != 0);
+
+        if (!status.ok())
+        {
+            if (error)
+            {
+                *error = strdup(status.ToString().c_str());
+            }
+            errno = EIO;
+            return -1;
+        }
+
+        return 0;
+    }
+
+    int rocksdb_restore_latest_backup(
+        const char *backup_dir,
+        const char *db_path,
+        char **error)
+    {
+        if (error)
+        {
+            *error = nullptr;
+        }
+
+        if (!backup_dir || !db_path)
+        {
+            if (error)
+            {
+                *error = strdup("rocksdb_restore_latest_backup: null argument");
+            }
+            errno = EINVAL;
+            return -1;
+        }
+
+        rocksdb::BackupEngineOptions opts(backup_dir);
+        rocksdb::BackupEngineReadOnly *engine_raw = nullptr;
+
+        rocksdb::Status status =
+            rocksdb::BackupEngineReadOnly::Open(
+                rocksdb::Env::Default(), opts, &engine_raw);
+
+        if (!status.ok())
+        {
+            if (error)
+            {
+                *error = strdup(status.ToString().c_str());
+            }
+            errno = EIO;
+            return -1;
+        }
+
+        std::unique_ptr<rocksdb::BackupEngineReadOnly> engine(engine_raw);
+
+        std::vector<rocksdb::BackupInfo> infos;
+        engine->GetBackupInfo(&infos);
+
+        if (infos.empty())
+        {
+            if (error)
+            {
+                *error = strdup("rocksdb_restore_latest_backup: no backups found");
+            }
+            errno = ENOENT;
+            return -1;
+        }
+
+        const auto &latest = infos.back();
+        const uint32_t backup_id = latest.backup_id;
+
+        rocksdb::RestoreOptions restore_opts(/*keep_log_files=*/false);
+
+        status = engine->RestoreDBFromBackup(
+            backup_id,
+            db_path,
+            db_path,
+            restore_opts);
+
+        if (!status.ok())
+        {
+            if (error)
+            {
+                *error = strdup(status.ToString().c_str());
+            }
+            errno = EIO;
+            return -1;
+        }
+
+        return 0;
+    }
+
     void rocksdb_close(rocksdb_handle *handle)
     {
         delete handle;
@@ -104,7 +305,6 @@ extern "C"
             *error = nullptr;
         }
 
-        // Slice-style checks: allow NULL only when length == 0
         if (!handle ||
             (key_len > 0 && !key) ||
             (value_len > 0 && !value))
@@ -150,7 +350,6 @@ extern "C"
             *error = nullptr;
         }
 
-        // key follows slice-style; value/value_len are required outputs
         if (!handle ||
             (key_len > 0 && !key) ||
             !value ||
@@ -224,7 +423,6 @@ extern "C"
             *error = nullptr;
         }
 
-        // key follows slice-style
         if (!handle || (key_len > 0 && !key))
         {
             if (error)
@@ -268,7 +466,6 @@ extern "C"
             *error = nullptr;
         }
 
-        // prefix follows slice-style
         if (!handle || (prefix_len > 0 && !prefix))
         {
             if (error)
@@ -305,7 +502,6 @@ extern "C"
         prefix_iterator->prefix.clear();
         if (prefix_len > 0)
         {
-            // Safe: prefix must be non-null when prefix_len > 0
             prefix_iterator->prefix.assign(prefix, prefix_len);
         }
         prefix_iterator->started = false;
@@ -329,7 +525,6 @@ extern "C"
             *error = nullptr;
         }
 
-        // Outputs are required
         if (!prefix_iterator || !key_data || !key_len)
         {
             if (error)
