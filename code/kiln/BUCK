@@ -1,0 +1,171 @@
+go_binary(
+    name = "kiln",
+    srcs = [
+        "main.go"
+    ],
+    deps = [
+        ":go.starlark.net/starlark",
+        ":github.com/goccy/go-yaml",
+    ]
+)
+
+genrule(
+  name = "kind_config",
+  out = "kind-config.yaml",
+  cmd = "$(location :kiln) > $OUT",
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml",
+    package_name = "github.com/goccy/go-yaml",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/*.go"]),
+    deps = [
+        ":github.com/goccy/go-yaml/ast",
+        ":github.com/goccy/go-yaml/internal/errors",
+        ":github.com/goccy/go-yaml/internal/format",
+        ":github.com/goccy/go-yaml/parser",
+        ":github.com/goccy/go-yaml/token",
+        ":github.com/goccy/go-yaml/printer",
+    ]
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml/ast",
+    package_name = "github.com/goccy/go-yaml/ast",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/ast/*.go"]),
+    deps = [
+        ":github.com/goccy/go-yaml/token"
+    ]
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml/internal/errors",
+    package_name = "github.com/goccy/go-yaml/internal/errors",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/internal/errors/*.go"]),
+    deps = [
+        ":github.com/goccy/go-yaml/token",
+        ":github.com/goccy/go-yaml/printer",
+        ":github.com/goccy/go-yaml/ast"
+    ]
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml/internal/format",
+    package_name = "github.com/goccy/go-yaml/internal/format",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/internal/format/*.go"]),
+    deps = [
+        ":github.com/goccy/go-yaml/token",
+        ":github.com/goccy/go-yaml/ast"
+    ]
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml/parser",
+    package_name = "github.com/goccy/go-yaml/parser",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/parser/*.go"]),
+    deps = [
+        ":github.com/goccy/go-yaml/ast",
+        ":github.com/goccy/go-yaml/token",
+        ":github.com/goccy/go-yaml/internal/errors",
+        ":github.com/goccy/go-yaml/lexer"
+
+    ]
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml/lexer",
+    package_name = "github.com/goccy/go-yaml/lexer",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/lexer/*.go"]),
+    deps = [
+        ":github.com/goccy/go-yaml/token",
+        ":github.com/goccy/go-yaml/scanner",
+    ]
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml/scanner",
+    package_name = "github.com/goccy/go-yaml/scanner",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/scanner/*.go"]),
+    deps = [
+        ":github.com/goccy/go-yaml/token",
+    ]
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml/token",
+    package_name = "github.com/goccy/go-yaml/token",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/token/*.go"])
+)
+
+go_library(
+    name = "github.com/goccy/go-yaml/printer",
+    package_name = "github.com/goccy/go-yaml/printer",
+    srcs = glob(["vendor/github.com/goccy/go-yaml/printer/*.go"]),
+    deps = [
+        ":github.com/goccy/go-yaml/token",
+        ":github.com/goccy/go-yaml/ast"
+    ]
+)
+
+go_library(
+    name = "go.starlark.net/syntax",
+    package_name = "go.starlark.net/syntax",
+    srcs = glob(["vendor/go.starlark.net/syntax/*.go"]),
+    deps = [
+
+    ]
+)
+
+go_library(
+    name = "go.starlark.net/starlark",
+    package_name = "go.starlark.net/starlark",
+    srcs = glob(["vendor/go.starlark.net/starlark/*.go"]),
+    deps = [
+        ":go.starlark.net/syntax",
+        ":go.starlark.net/resolve",
+        ":go.starlark.net/internal/compile",
+        ":go.starlark.net/internal/spell",
+        ":golang.org/x/sys/unix"
+    ]
+)
+
+go_library(
+    name = "go.starlark.net/resolve",
+    package_name = "go.starlark.net/resolve",
+    srcs = glob(["vendor/go.starlark.net/resolve/*.go"]),
+    deps = [
+        ":go.starlark.net/syntax",
+        ":go.starlark.net/internal/spell",
+    ]
+)
+
+go_library(
+    name = "go.starlark.net/internal/compile",
+    package_name = "go.starlark.net/internal/compile",
+    srcs = glob(["vendor/go.starlark.net/internal/compile/*.go"]),
+    deps = [
+        ":go.starlark.net/syntax",
+        ":go.starlark.net/resolve",
+    ]
+)
+
+go_library(
+    name = "go.starlark.net/internal/spell",
+    package_name = "go.starlark.net/internal/spell",
+    srcs = glob(["vendor/go.starlark.net/internal/spell/*.go"]),
+)
+
+go_library(
+    name = "golang.org/x/sys/internal/unsafeheader",
+    package_name = "golang.org/x/sys/internal/unsafeheader",
+    srcs = glob(["vendor/golang.org/x/sys/internal/unsafeheader/*.go"])
+)
+
+go_library(
+    name = "golang.org/x/sys/unix",
+    package_name = "golang.org/x/sys/unix",
+    srcs = glob(["vendor/golang.org/x/sys/unix/*.go", "vendor/golang.org/x/sys/unix/*.s"]),
+    deps = [
+        ":golang.org/x/sys/internal/unsafeheader"
+    ]
+)
