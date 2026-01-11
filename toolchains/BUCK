@@ -1,0 +1,78 @@
+load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
+load("@prelude//toolchains:no_toolchain.bzl", "no_toolchain")
+load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")
+load(
+    "@prelude//toolchains/go:go_bootstrap_toolchain.bzl",
+    "go_bootstrap_distr",
+    "go_bootstrap_toolchain",
+)
+load("@prelude//toolchains/go:go_toolchain.bzl", "go_distr", "go_toolchain")
+
+system_genrule_toolchain(
+    name = "genrule",
+    visibility = ["PUBLIC"],
+)
+
+system_python_bootstrap_toolchain(
+    name = "python_bootstrap",
+    visibility = ["PUBLIC"],
+)
+
+no_toolchain(
+    name = "cxx",
+    visibility = ["PUBLIC"],
+)
+
+
+http_archive(
+    name = "archive_go1.25.5.linux-amd64",
+    sha256 = "9e9b755d63b36acf30c12a9a3fc379243714c1c6d3dd72861da637f336ebb35b",
+    strip_prefix = "go",
+    urls = ["https://go.dev/dl/go1.25.5.linux-amd64.tar.gz"],
+)
+
+go_bootstrap_distr(
+    name = "go_bootstrap_distr",
+    go_os_arch = select({
+        "config//os:linux": select({"config//cpu:x86_64": ("linux", "amd64")}),
+    }),
+    go_root = select({
+        "config//os:linux": select({"config//cpu:x86_64": ":archive_go1.25.5.linux-amd64"}),
+    }),
+)
+
+go_bootstrap_toolchain(
+    name = "go_bootstrap",
+    env_go_arch = select({
+        "config//cpu:arm64": "arm64",
+        "config//cpu:x86_64": "amd64",
+    }),
+    env_go_os = select({
+        "config//os:linux": "linux",
+    }),
+    go_bootstrap_distr = ":go_bootstrap_distr",
+    visibility = ["PUBLIC"],
+)
+
+go_distr(
+    name = "go_distr",
+    go_os_arch = select({
+        "config//os:linux": select({"config//cpu:x86_64": ("linux", "amd64")}),
+    }),
+    go_root = select({
+        "config//os:linux": select({"config//cpu:x86_64": ":archive_go1.25.5.linux-amd64"}),
+    }),
+)
+
+go_toolchain(
+    name = "go",
+    env_go_arch = select({
+        "config//cpu:arm64": "arm64",
+        "config//cpu:x86_64": "amd64",
+    }),
+    env_go_os = select({
+        "config//os:linux": "linux",
+    }),
+    go_distr = ":go_distr",
+    visibility = ["PUBLIC"],
+)
