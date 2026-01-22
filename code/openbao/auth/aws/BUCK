@@ -1,0 +1,922 @@
+go_binary(
+    name = "openbao-auto-auth-aws",
+    srcs = [
+        "main.go"
+    ],
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/config",
+        ":github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds",
+        ":github.com/aws/aws-sdk-go-v2/feature/ec2/imds",
+        ":github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+        ":golang.org/x/sys/unix"
+    ]
+)
+
+go_library(
+    name = "golang.org/x/sys/internal/unsafeheader",
+    package_name = "golang.org/x/sys/internal/unsafeheader",
+    srcs = glob(["vendor/golang.org/x/sys/internal/unsafeheader/*.go"])
+)
+
+go_library(
+    name = "golang.org/x/sys/unix",
+    package_name = "golang.org/x/sys/unix",
+    srcs = glob(["vendor/golang.org/x/sys/unix/*.go", "vendor/golang.org/x/sys/unix/*.s"]),
+    deps = [
+        ":golang.org/x/sys/internal/unsafeheader"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/config",
+    package_name = "github.com/aws/aws-sdk-go-v2/config",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/config/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/feature/ec2/imds",
+        ":github.com/aws/smithy-go/private/requestcompression",
+        ":github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds",
+        ":github.com/aws/aws-sdk-go-v2/credentials/endpointcreds",
+        ":github.com/aws/aws-sdk-go-v2/credentials/processcreds",
+        ":github.com/aws/aws-sdk-go-v2/credentials/processcreds",
+        ":github.com/aws/aws-sdk-go-v2/credentials/ssocreds",
+        ":github.com/aws/aws-sdk-go-v2/credentials/stscreds",
+        ":github.com/aws/smithy-go/auth/bearer",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/aws/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/service/ssooidc",
+        ":github.com/aws/aws-sdk-go-v2/credentials",
+        ":github.com/aws/aws-sdk-go-v2/credentials/logincreds",
+        ":github.com/aws/aws-sdk-go-v2/service/signin",
+        ":github.com/aws/aws-sdk-go-v2/service/sso",
+        ":github.com/aws/aws-sdk-go-v2/service/sts",
+        ":github.com/aws/aws-sdk-go-v2/internal/ini",
+        ":github.com/aws/aws-sdk-go-v2/internal/shareddefaults"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/ini",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/ini",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/ini/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/signin",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/signin",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/signin/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/aws/defaults",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws/retry",
+        ":github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+        ":github.com/aws/aws-sdk-go-v2/aws/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth/smithy",
+        ":github.com/aws/aws-sdk-go-v2/internal/configsources",
+        ":github.com/aws/aws-sdk-go-v2/internal/middleware",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/auth",
+        ":github.com/aws/smithy-go/document",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/metrics",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/service/signin/types",
+        ":github.com/aws/aws-sdk-go-v2/aws/protocol/restjson",
+        ":github.com/aws/smithy-go/io",
+        ":github.com/aws/smithy-go/ptr",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints/awsrulesfn",
+        ":github.com/aws/aws-sdk-go-v2/service/signin/internal/endpoints",
+        ":github.com/aws/smithy-go/endpoints",
+        ":github.com/aws/smithy-go/endpoints/private/rulesfn",
+        ":github.com/aws/smithy-go/encoding/httpbinding",
+        ":github.com/aws/smithy-go/encoding/json",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/signin/internal/endpoints",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/signin/internal/endpoints",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/signin/internal/endpoints/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints/v2",
+        ":github.com/aws/smithy-go/logging",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/credentials/stscreds",
+    package_name = "github.com/aws/aws-sdk-go-v2/credentials/stscreds",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/credentials/stscreds/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/service/sts",
+        ":github.com/aws/aws-sdk-go-v2/service/sts/types",
+        ":github.com/aws/aws-sdk-go-v2/aws/retry",
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/credentials/logincreds",
+    package_name = "github.com/aws/aws-sdk-go-v2/credentials/logincreds",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/credentials/logincreds/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk",
+        ":github.com/aws/aws-sdk-go-v2/service/signin",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/rand",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/service/signin/types",
+        ":github.com/aws/aws-sdk-go-v2/internal/shareddefaults",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/signin/types",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/signin/types",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/signin/types/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/document",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/credentials",
+    package_name = "github.com/aws/aws-sdk-go-v2/credentials",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/credentials/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/sts/types",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/sts/types",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/sts/types/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/document",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/document",
+    package_name = "github.com/aws/smithy-go/document",
+    srcs = glob(["vendor/github.com/aws/smithy-go/document/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/sts",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/sts",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/sts/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws", 
+        ":github.com/aws/aws-sdk-go-v2/aws/defaults",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws/protocol/query",
+        ":github.com/aws/aws-sdk-go-v2/aws/retry",
+        ":github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+        ":github.com/aws/aws-sdk-go-v2/aws/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth/smithy",
+        ":github.com/aws/aws-sdk-go-v2/internal/configsources",
+        ":github.com/aws/aws-sdk-go-v2/internal/middleware",
+        ":github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding",
+        ":github.com/aws/aws-sdk-go-v2/service/internal/presigned-url",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/auth",
+        ":github.com/aws/smithy-go/document",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/metrics",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/service/sts/types",
+        ":github.com/aws/aws-sdk-go-v2/aws/protocol/xml",
+        ":github.com/aws/smithy-go/encoding/xml",
+        ":github.com/aws/smithy-go/io",
+        ":github.com/aws/smithy-go/ptr",
+        ":github.com/aws/smithy-go/time",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints/awsrulesfn",
+        ":github.com/aws/aws-sdk-go-v2/service/sts/internal/endpoints",
+        ":github.com/aws/smithy-go/endpoints",
+        ":github.com/aws/smithy-go/endpoints/private/rulesfn",
+        ":github.com/aws/smithy-go/encoding/httpbinding",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/endpoints/v2",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/endpoints/v2/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/aws-sdk-go-v2/aws",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/sts/internal/endpoints",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/sts/internal/endpoints",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/sts/internal/endpoints/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints/v2",
+        ":github.com/aws/smithy-go/logging",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/encoding/xml",
+    package_name = "github.com/aws/smithy-go/encoding/xml",
+    srcs = glob(["vendor/github.com/aws/smithy-go/encoding/xml/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/encoding"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/encoding",
+    package_name = "github.com/aws/smithy-go/encoding",
+    srcs = glob(["vendor/github.com/aws/smithy-go/encoding/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/protocol/xml",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/protocol/xml",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/protocol/xml/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/internal/presigned-url",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/internal/presigned-url/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/transport/http",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/protocol/query",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/protocol/query",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/protocol/query/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/smithy-go/encoding/httpbinding",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/credentials/ssocreds",
+    package_name = "github.com/aws/aws-sdk-go-v2/credentials/ssocreds",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/credentials/ssocreds/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk",
+        ":github.com/aws/aws-sdk-go-v2/internal/shareddefaults",
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/service/sso",
+        ":github.com/aws/aws-sdk-go-v2/service/ssooidc",
+        ":github.com/aws/smithy-go/auth/bearer"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/ssooidc",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/ssooidc",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/ssooidc/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/aws/defaults",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws/retry",
+        ":github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+        ":github.com/aws/aws-sdk-go-v2/aws/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth/smithy",
+        ":github.com/aws/aws-sdk-go-v2/internal/configsources",
+        ":github.com/aws/aws-sdk-go-v2/internal/middleware",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/auth",
+        ":github.com/aws/smithy-go/document",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/metrics",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/service/ssooidc/types",
+        ":github.com/aws/aws-sdk-go-v2/aws/protocol/restjson",
+        ":github.com/aws/smithy-go/io",
+        ":github.com/aws/smithy-go/ptr",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints/awsrulesfn",
+        ":github.com/aws/aws-sdk-go-v2/service/ssooidc/internal/endpoints",
+        ":github.com/aws/smithy-go/endpoints",
+        ":github.com/aws/smithy-go/endpoints/private/rulesfn",
+        ":github.com/aws/smithy-go/encoding/httpbinding",
+        ":github.com/aws/smithy-go/encoding/json"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/encoding/json",
+    package_name = "github.com/aws/smithy-go/encoding/json",
+    srcs = glob(["vendor/github.com/aws/smithy-go/encoding/json/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/encoding"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/endpoints/private/rulesfn",
+    package_name = "github.com/aws/smithy-go/endpoints/private/rulesfn",
+    srcs = glob(["vendor/github.com/aws/smithy-go/endpoints/private/rulesfn/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/transport/http"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/endpoints",
+    package_name = "github.com/aws/smithy-go/endpoints",
+    srcs = glob(["vendor/github.com/aws/smithy-go/endpoints/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/ssooidc/internal/endpoints",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/ssooidc/internal/endpoints",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/ssooidc/internal/endpoints/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints/v2",
+        ":github.com/aws/smithy-go/logging",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/endpoints/awsrulesfn",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/endpoints/awsrulesfn",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/endpoints/awsrulesfn/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/transport/http"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/endpoints",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/endpoints",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/endpoints/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/ssooidc/types",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/ssooidc/types",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/ssooidc/types/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/document",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/sso",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/sso",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/sso/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/aws/defaults",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws/retry",
+        ":github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+        ":github.com/aws/aws-sdk-go-v2/aws/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth/smithy",
+        ":github.com/aws/aws-sdk-go-v2/internal/configsources",
+        ":github.com/aws/aws-sdk-go-v2/internal/middleware",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/auth",
+        ":github.com/aws/smithy-go/document",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/metrics",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/service/sso/types",
+        ":github.com/aws/aws-sdk-go-v2/aws/protocol/restjson",
+        ":github.com/aws/smithy-go/io",
+        ":github.com/aws/smithy-go/ptr",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints/awsrulesfn",
+        ":github.com/aws/aws-sdk-go-v2/service/sso/internal/endpoints",
+        ":github.com/aws/smithy-go/endpoints",
+        ":github.com/aws/smithy-go/endpoints/private/rulesfn",
+        ":github.com/aws/smithy-go/encoding/httpbinding",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/sso/internal/endpoints",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/sso/internal/endpoints",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/sso/internal/endpoints/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/internal/endpoints/v2",
+        ":github.com/aws/smithy-go/logging",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/protocol/restjson",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/protocol/restjson",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/protocol/restjson/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/service/sso/types",
+    package_name = "github.com/aws/aws-sdk-go-v2/service/sso/types",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/service/sso/types/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/document",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/middleware",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/middleware",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/middleware/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/internal/context",
+        ":github.com/aws/smithy-go/middleware"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/configsources",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/configsources",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/configsources/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/auth/smithy",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/auth/smithy",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/auth/smithy/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/auth",
+        ":github.com/aws/smithy-go/auth/bearer",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+        ":github.com/aws/aws-sdk-go-v2/internal/context",
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk",
+        ":github.com/aws/smithy-go/logging"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/auth",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/auth",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/auth/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/auth",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/middleware",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/signer/v4",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/signer/v4/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws/signer/internal/v4",
+        ":github.com/aws/aws-sdk-go-v2/internal/auth",
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/smithy-go/encoding/httpbinding",
+        ":github.com/aws/smithy-go/logging"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/encoding/httpbinding",
+    package_name = "github.com/aws/smithy-go/encoding/httpbinding",
+    srcs = glob(["vendor/github.com/aws/smithy-go/encoding/httpbinding/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/signer/internal/v4",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/signer/internal/v4",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/signer/internal/v4/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/internal/strings",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/strings",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/strings",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/strings/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/defaults",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/defaults",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/defaults/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/internal/shareddefaults",
+        ":github.com/aws/aws-sdk-go-v2/aws"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/shareddefaults",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/shareddefaults",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/shareddefaults/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/credentials/processcreds",
+    package_name = "github.com/aws/aws-sdk-go-v2/credentials/processcreds",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/credentials/processcreds/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/internal/sdkio"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/sdkio",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/sdkio",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/sdkio/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/credentials/endpointcreds",
+    package_name = "github.com/aws/aws-sdk-go-v2/credentials/endpointcreds",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/credentials/endpointcreds/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/credentials/endpointcreds/internal/client",
+        ":github.com/aws/smithy-go/middleware"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/credentials/endpointcreds/internal/client",
+    package_name = "github.com/aws/aws-sdk-go-v2/credentials/endpointcreds/internal/client",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/credentials/endpointcreds/internal/client/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/aws-sdk-go-v2/aws/retry",
+        ":github.com/aws/aws-sdk-go-v2/aws/transport/http",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/transport/http",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/private/requestcompression",
+    package_name = "github.com/aws/smithy-go/private/requestcompression",
+    srcs = glob(["vendor/github.com/aws/smithy-go/private/requestcompression/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/transport/http",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds",
+    package_name = "github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/credentials/ec2rolecreds/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/feature/ec2/imds",
+        ":github.com/aws/aws-sdk-go-v2/internal/rand",
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/middleware",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/feature/ec2/imds",
+    package_name = "github.com/aws/aws-sdk-go-v2/feature/ec2/imds",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/feature/ec2/imds/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/aws/retry",
+        ":github.com/aws/aws-sdk-go-v2/aws/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/feature/ec2/imds/internal/config",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/smithy-go/io",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/feature/ec2/imds/internal/config",
+    package_name = "github.com/aws/aws-sdk-go-v2/feature/ec2/imds/internal/config",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/feature/ec2/imds/internal/config/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/transport/http",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/transport/http",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/transport/http/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/smithy-go"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/retry",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/retry",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/retry/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk",
+        ":github.com/aws/smithy-go/metrics",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/aws-sdk-go-v2/internal/rand",
+        ":github.com/aws/aws-sdk-go-v2/internal/timeconv",
+        ":github.com/aws/aws-sdk-go-v2/aws/middleware",
+        ":github.com/aws/aws-sdk-go-v2/internal/context",
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/aws/ratelimit",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/ratelimit",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/ratelimit",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/ratelimit/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/context",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/context",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/context/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/middleware"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/timeconv",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/timeconv",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/timeconv/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws/middleware",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws/middleware",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/middleware/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/aws",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/aws-sdk-go-v2/internal/rand",
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/rand",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/smithy-go/tracing"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/io",
+    package_name = "github.com/aws/smithy-go/io",
+    srcs = glob(["vendor/github.com/aws/smithy-go/io/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/aws",
+    package_name = "github.com/aws/aws-sdk-go-v2/aws",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/aws/*.go"]),
+    deps = [
+        ":github.com/aws/aws-sdk-go-v2/internal/sdk",
+        ":github.com/aws/smithy-go/auth/bearer",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/aws-sdk-go-v2/internal/rand",
+        ":github.com/aws/aws-sdk-go-v2/internal/sync/singleflight",
+        ":github.com/aws/smithy-go/ptr",
+    ]
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/rand",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/rand",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/rand/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/sdk",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/sdk",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/sdk/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/aws-sdk-go-v2/internal/sync/singleflight",
+    package_name = "github.com/aws/aws-sdk-go-v2/internal/sync/singleflight",
+    srcs = glob(["vendor/github.com/aws/aws-sdk-go-v2/internal/sync/singleflight/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/ptr",
+    package_name = "github.com/aws/smithy-go/ptr",
+    srcs = glob(["vendor/github.com/aws/smithy-go/ptr/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/auth/bearer",
+    package_name = "github.com/aws/smithy-go/auth/bearer",
+    srcs = glob(["vendor/github.com/aws/smithy-go/auth/bearer/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/aws-sdk-go-v2/internal/sync/singleflight",
+        ":github.com/aws/smithy-go/transport/http",
+        ":github.com/aws/smithy-go/context",
+        ":github.com/aws/smithy-go/internal/sync/singleflight"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/internal/sync/singleflight",
+    package_name = "github.com/aws/smithy-go/internal/sync/singleflight",
+    srcs = glob(["vendor/github.com/aws/smithy-go/internal/sync/singleflight/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/middleware",
+    package_name = "github.com/aws/smithy-go/middleware",
+    srcs = glob(["vendor/github.com/aws/smithy-go/middleware/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go/logging"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/logging",
+    package_name = "github.com/aws/smithy-go/logging",
+    srcs = glob(["vendor/github.com/aws/smithy-go/logging/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/transport/http",
+    package_name = "github.com/aws/smithy-go/transport/http",
+    srcs = glob(["vendor/github.com/aws/smithy-go/transport/http/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go",
+        ":github.com/aws/smithy-go/auth",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go/metrics",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/logging",
+        ":github.com/aws/smithy-go/transport/http/internal/io",
+        ":github.com/aws/smithy-go/time",
+        ":github.com/aws/smithy-go/tracing",
+        ":github.com/aws/smithy-go/middleware",
+        ":github.com/aws/smithy-go"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/rand",
+    package_name = "github.com/aws/smithy-go/rand",
+    srcs = glob(["vendor/github.com/aws/smithy-go/rand/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/time",
+    package_name = "github.com/aws/smithy-go/time",
+    srcs = glob(["vendor/github.com/aws/smithy-go/time/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/transport/http/internal/io",
+    package_name = "github.com/aws/smithy-go/transport/http/internal/io",
+    srcs = glob(["vendor/github.com/aws/smithy-go/transport/http/internal/io/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/context",
+    package_name = "github.com/aws/smithy-go/context",
+    srcs = glob(["vendor/github.com/aws/smithy-go/context/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go",
+    package_name = "github.com/aws/smithy-go",
+    srcs = glob(["vendor/github.com/aws/smithy-go/*.go"]),
+    deps = []
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/auth",
+    package_name = "github.com/aws/smithy-go/auth",
+    srcs = glob(["vendor/github.com/aws/smithy-go/auth/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/metrics",
+    package_name = "github.com/aws/smithy-go/metrics",
+    srcs = glob(["vendor/github.com/aws/smithy-go/metrics/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go"
+    ]
+)
+
+go_library(
+    name = "github.com/aws/smithy-go/tracing",
+    package_name = "github.com/aws/smithy-go/tracing",
+    srcs = glob(["vendor/github.com/aws/smithy-go/tracing/*.go"]),
+    deps = [
+        ":github.com/aws/smithy-go"
+    ]
+)
