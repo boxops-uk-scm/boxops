@@ -1,0 +1,792 @@
+## 2.5.0-beta20251125
+## November 25, 2025
+
+SECURITY:
+
+* core/sys: BREAKING: default value of `disable_unauthed_rekey_endpoints` is `true`, to continue using unauthed rekey endpoints, set `disable_unauthed_rekey_endpoints=false` in listeners explicitly. [[GH-2125](https://github.com/openbao/openbao/pull/2125)]
+
+CHANGES:
+
+* sdk: Remove the deprecated `creation_statements`, `revocation_statements`, `rollback_statements`, and `renew_statements` fields from the dbplugin `Statements` protobuf message. [[GH-1962](https://github.com/openbao/openbao/pull/1962)]
+* api: The deprecated api.MountConfigOutput.PluginName field was removed. This was already always empty. [[GH-2036](https://github.com/openbao/openbao/pull/2036)]
+* auth/jwt: Return error msg on OIDCDiscoveryURL including '.well-known/openid-configuration' component. [[GH-2066](https://github.com/openbao/openbao/pull/2066)]
+* core/audit: removed `jsonx` as an output format option for audit mounts. [[GH-2047](https://github.com/openbao/openbao/pull/2047)]
+* sys/host-info: This endpoint may start reporting slightly higher memory usage than before (On Linux only). See https://github.com/shirou/gopsutil/releases/tag/v4.25.8 for more information. [[GH-1887](https://github.com/openbao/openbao/pull/1887)]
+
+FEATURES:
+
+* Add **declarative plugin distribution via OCI images**: using the `plugin` configuration keyword.
+  - Plugins can be automatically downloaded via the `plugin_auto_download=true` option.
+  - Plugins can be manually downloaded via the `bao plugin init` command.
+  - Plugins can be automatically registered via the `plugin_auto_register=true` option, regardless if they were manually provisioned or from OCI images. [[GH-1824](https://github.com/openbao/openbao/pull/1824)]
+* Support **Horizontal Read Scalability**: all existing HA standby nodes are automatically upgraded with read support.
+  - Requests which only perform storage read operations will be handled locally on the standby node.
+  - Requests which perform a storage write operation (or as indicated by plugins) are forwarded to the active leader.
+  - Results are eventually consistent: a write may not be immediately visible on the standby.
+  - To disable, set `disable_standby_reads=true` in the config file before startup. [[GH-1986](https://github.com/openbao/openbao/pull/1986)]
+* core/identity: Add Client Credentials flow to OIDC Provider. [[GH-1732](https://github.com/openbao/openbao/pull/1732)]
+
+IMPROVEMENTS:
+
+* audit: Add http audit device for low-volume, webhook-based audit event reporting. [[GH-1709](https://github.com/openbao/openbao/pull/1709)]
+* auth/jwt: Add type checking to role. [[GH-1854](https://github.com/openbao/openbao/pull/1854)]
+* command: `server`, `operator diagnose` and `operator validate-config` now support
+the environment variable BAO_CONFIG_FILE for the -config command option. [[GH-2115](https://github.com/openbao/openbao/pull/2115)]
+* core/metrics: Support custom path for metrics on metrics-only listeners. [[GH-1853](https://github.com/openbao/openbao/pull/1853)]
+* core/policies: Add endpoint to allow detailed listing of a subset of policies. [[GH-1965](https://github.com/openbao/openbao/pull/1965)]
+* core: Added `metrics_only` and `disallow_metrics` options to control metrics endpoint exposure on a per-listener basis. [[GH-1834](https://github.com/openbao/openbao/pull/1834)]
+* database/valkey: Adds the ability to configure the Valkey database connection using a single connection_url parameter. [[GH-1923](https://github.com/openbao/openbao/pull/1923)]
+* database: All database plugins now ignore "not found" errors on revoke by default. See [Plugin Author Guide](https://openbao.org/docs/plugins/plugin-authors-guide/#revoke-operations-should-ignore-not-found-errors) for rationale. [[GH-2101](https://github.com/openbao/openbao/pull/2101)]
+* openapi: Add response schemas for token store operations and update operation suffixes. [[GH-1840](https://github.com/openbao/openbao/pull/1840)]
+* pki: Add `allowed_ip_sans_cidr` parameter to PKI role system, to provide additional checks for IP SANs. [[GH-1833](https://github.com/openbao/openbao/pull/1833)]
+* storage/postgresql: Implement `physical.FencingHABackend` to minimize chances that writes on secondary nodes occur. [[GH-1571](https://github.com/openbao/openbao/pull/1571)]
+* transit: Add associated_data parameter to generate data key. [[GH-1828](https://github.com/openbao/openbao/pull/1828)]
+* sdk/framework: Add Response.SchemaName to allow custom response schema names in the generated OpenAPI spec. [[GH-1714](https://github.com/openbao/openbao/pull/1714)]
+
+DEPRECATIONS:
+
+* core/seal: Remove the undocumented "aead" seal mechanism. Consider switching to the [static seal](https://openbao.org/docs/configuration/seal/static) instead as a replacement. [[GH-1910](https://github.com/openbao/openbao/pull/1910)]
+* core: Remove `FeatureFlags` parsing and related code. [[GH-2045](https://github.com/openbao/openbao/pull/2045)]
+* sdk: Remove `sdk/v2/helper/license` package. [[GH-2045](https://github.com/openbao/openbao/pull/2045)]
+* ui: Remove `internal/ui/feature-flags` endpoint and all its usage. [[GH-2045](https://github.com/openbao/openbao/pull/2045)]
+
+BUG FIXES:
+
+* auth/jwt: Fix ordering of variable declarations in CEL program roles [[GH-1854](https://github.com/openbao/openbao/pull/1854)]
+* secrets/pki: Fix ordering of variable declarations in CEL program roles [[GH-1854](https://github.com/openbao/openbao/pull/1854)]
+* database/valkey: The creation_statements parameter now correctly accepts a standard array of strings for ACL rules (e.g., ["+@read", "~*"]). Previously, it incorrectly required a stringified JSON array. The old format is still supported for backward compatibility. [[GH-1959](https://github.com/openbao/openbao/pull/1959)]
+* physical/postgresql: Ensure underlying HA lock removal from database causes lock loss, write failures [[GH-2100](https://github.com/openbao/openbao/pull/2100)]
+* seal/pkcs11: Remove strict requirement of key label. (https://github.com/openbao/go-kms-wrapping/pull/56)
+
+## 2.4.4
+## November 24, 2025
+
+SECURITY:
+
+* core/identity: Correctly lowercase policy names on identity groups to prevent root policy assignment. CVE-2025-64761 / GHSA-7ff4-jw48-3436. Second part of upstream's HCSEC-2025-13 / CVE-2025-5999. [[GH-2143](https://github.com/openbao/openbao/pull/2143)]
+
+IMPROVEMENTS:
+
+* command: `operator diagnose` certificate expiration warnings are now raised if less than 15% of the certificate's validity period remains. Previously, any certificate that was set to expire in the next 30 days would be flagged. This made little sense for short-lived certificates. [[GH-2062](https://github.com/openbao/openbao/pull/2062)]
+
+BUG FIXES:
+
+* auth/cert: allow use of always-fresh OCSP servers which elide NextUpdate [[GH-2079](https://github.com/openbao/openbao/pull/2079)]
+* auth/jwt: Fix token renewal of pre-v2.3.x JWT tokens and all OIDC tokens after CEL support was introduced. [[GH-2148](https://github.com/openbao/openbao/pull/2148)]
+* command: `operator diagnose` certificate expiration warnings now contain the correct time to expiration. [[GH-2062](https://github.com/openbao/openbao/pull/2062)]
+* command: `operator diagnose` now correctly ignores trailing data in certificate files. [[GH-2065](https://github.com/openbao/openbao/pull/2065)]
+* command: `operator diagnose` now correctly verifies intermediate certs if no root certs are supplied. [[GH-2065](https://github.com/openbao/openbao/pull/2065)]
+* command: pki health check error now contains actual mount path instead of a template placeholder. [[GH-2061](https://github.com/openbao/openbao/pull/2061)]
+* core: fix nil panic in the rare case were an expiration retry is running during shutdown [[GH-2019](https://github.com/openbao/openbao/pull/2019)]
+* raft: fix memory leak when using only non-transactional operations. This was a regression introduced in release 2.4.2 with #1889. [[GH-2067](https://github.com/openbao/openbao/pull/2067)]
+* sdk/helper/ocsp: allow use of always-fresh OCSP servers which elide NextUpdate [[GH-2079](https://github.com/openbao/openbao/pull/2079)]
+
+## 2.4.3
+## October 22, 2025
+
+SECURITY:
+
+* audit: redact `HTTPRawBody` response parameter in audit logs; CVE-2025-62513 / GHSA-ghfh-fmx4-26h8. [[GH-2002](https://github.com/openbao/openbao/pull/2002)]
+* audit: redact `[]byte` type response parameters in audit logs; CVE-2025-62705 / GHSA-rc54-2g2c-g36g. [[GH-2002](https://github.com/openbao/openbao/pull/2002)]
+
+IMPROVEMENTS:
+
+* core/namespaces: Setting the `X-Vault-Namespace` Header (or the `BAO_NAMESPACE` environment variable when using the cli) to "root" now maps to the root namespace. [[GH-1918](https://github.com/openbao/openbao/pull/1918)]
+
+BUG FIXES:
+
+* core/identity: Entities timestamps are now correctly formatted in `RFC3339Nano`, as previously done so. [[GH-1873](https://github.com/openbao/openbao/pull/1873)]
+* core/namespaces: Fix mount creation failing if mount name is equal to the name of the containing namespace [[GH-1958](https://github.com/openbao/openbao/pull/1958)]
+* core/namespaces: ensure interrupted namespace creation fails gracefully; prevents identity store panic and partial memory-only namespaces [[GH-1990](https://github.com/openbao/openbao/pull/1990)]
+* core/namespaces: only report namespaces which the provided token has access to from `sys/internal/ui/namespaces` [[GH-1982](https://github.com/openbao/openbao/pull/1982)]
+* raft: fix memory leak on standby nodes [[GH-1889](https://github.com/openbao/openbao/pull/1889)]
+* sdk/framework: Reduce memory usage of repeated mounts through singleton pattern regex cache [[GH-1893](https://github.com/openbao/openbao/pull/1893)]
+* secrets/kv: KV entries timestamps are now correctly formatted in `RFC3339Nano`, as previously done so. [[GH-1872](https://github.com/openbao/openbao/pull/1872)]
+
+## 2.4.1
+## September 11, 2025
+
+SECURITY:
+
+* http: Limit the complexity of JSON in HTTP request bodies through max_request_json_memory and max_request_json_strings. HCSEC-2025-24 / CVE-2025-6203 / CVE-2025-59043. [[GH-1756](https://github.com/openbao/openbao/pull/1756)]
+
+BUG FIXES:
+
+* auth/jwt: Add missing OIDC flow in JWK validator construction [[GH-1779](https://github.com/openbao/openbao/pull/1779)]
+* auth/jwt: Support token renewal with CEL roles. [[GH-1776](https://github.com/openbao/openbao/pull/1776)]
+* auth/mfa: Allow single-flow MFA to work with inline authentication. [[GH-1753](https://github.com/openbao/openbao/pull/1753)]
+* auth/mfa: Correctly persist tokens created through two-step MFA login enforcement. [[GH-1753](https://github.com/openbao/openbao/pull/1753)]
+* command: fix `operator init` not allowing for 0 as `recovery_shares` value. [[GH-1754](https://github.com/openbao/openbao/pull/1754)]
+* command: fix `operator rotate-keys` not returning recovery keys when server is initialized with 0 `recovery_shares`. [[GH-1754](https://github.com/openbao/openbao/pull/1754)]
+
+## 2.4.0
+## August 28, 2025
+
+SECURITY:
+
+* audit/file: Restrict `mode` parameter
+  - Refuse setting an [irregular](https://pkg.go.dev/io/fs#FileMode.IsRegular) file mode
+  - Silently strip any executable bits [[GH-1651](https://github.com/openbao/openbao/pull/1651)]
+
+CHANGES:
+
+* `certutil.ParsePublicKeyPEM` of the package `github.com/openbao/openbao/sdk/v2/helper/certutil` will now return a `crypto.PublicKey` instead of `any`. You might need to remove type assertions from your code. [[GH-1611](https://github.com/openbao/openbao/pull/1611)]
+* database: Drop obsolete upgrade check in `roleAtPath()` function introduced in `v0.10` of Vault. [[GH-1675](https://github.com/openbao/openbao/pull/1675)]
+* sdk/framework: Remove `LegacyStringToSliceHookFunc`, use `mapstructure.StringToWeakSliceHookFunc` instead. [[GH-1626](https://github.com/openbao/openbao/pull/1626)]
+* sdk/helper: Removed `sdk/helper/base62`, `sdk/helper/mlock`, `sdk/helper/parseutil`, `sdk/helper/password`, `sdk/helper/strutil`, and `sdk/helper/tlsutil` packages.
+   -  Please use `github.com/openbao/go-secure-stdlib/xxx` or `github.com/hashicorp/go-secure-stdlib/xxx` instead.
+* sdk/database/helper/connutil: Removed `Initialize` from `ConnectionProducer` interface, and `SQLConnectionProducer` struct. [[GH-1676](https://github.com/openbao/openbao/pull/1676)]
+* sdk/logical: Introduce context to logical.HandleListPage(...). [[GH-1696](https://github.com/openbao/openbao/pull/1696)]
+* sdk: Bump Go version to 1.24.0 [[GH-1690](https://github.com/openbao/openbao/pull/1690)]
+* vault/seal: removal of deprecated migration path of an old pre-Vault v1.0 (encrypted) recovery config location [[GH-1424](https://github.com/openbao/openbao/pull/1424)]
+
+FEATURES:
+
+* **Allow filtering LIST, SCAN responses** via the `list_scan_response_keys_filter_path` parameter to restrict information to only readable or listable values. [[GH-1389](https://github.com/openbao/openbao/pull/1389)]
+* **Configuration-Based Audit Devices**: Create and remove audit devices through server configuration updates. Changes are applied on restart and SIGHUP with issues appearing in the logs. [[GH-1700](https://github.com/openbao/openbao/pull/1700)]
+* **Declarative Self-Initialization**: allow server operators to define initial
+  service state through request-driven initialization that occurs
+  automatically on first server start. Operators can reference environment
+  variables and files to provision initial authentication, audit, and secret
+  mounts in addition to having full control over general requests to OpenBao
+  It is suggested to put the minimal necessary configuration in this and use
+  a proper IaC platform like OpenTofu to perform further configuration of the
+  instance. [[GH-1506](https://github.com/openbao/openbao/pull/1506)]
+* **Delay recovery key generation for auto-unseal mechanisms and make rotation authenticated**:
+  Add authenticated root and recovery key rotation endpoints, allow
+  delayed recovery key generation (setting initial shares to 0).
+  Solve the issue with the unauthenticated recovery key rotation APIs. [[GH-1518](https://github.com/openbao/openbao/pull/1518)]
+* **Inline, Write-less Authentication**: support passing authentication
+  information inline with the desired main operation to avoid the need
+  for separate authentication calls, storing and maintaining tokens. This
+  authentication form will not work with operations that create leases.
+  In this form of authentication, no storage writes occur as a result of
+  authentication allowing its use on future read-enabled standby nodes. [[GH-1433](https://github.com/openbao/openbao/pull/1433)]
+* Add **static key unseal mechanism** to allow auto-unseal in environments with explicit trust chaining. [[GH-1425](https://github.com/openbao/openbao/pull/1425)]
+
+IMPROVEMENTS:
+
+* api/auth/jwt: initial implementation of JWT Auth Method [[GH-1526](https://github.com/openbao/openbao/pull/1526)]
+* auth/oidc: Add new `show_qr=true` cli option to display a QR code of the login URL. [[GH-1561](https://github.com/openbao/openbao/pull/1561)]
+* auto-unsealing: Improved the clarity of the warning message logged when the server is uninitialized and auto-unsealing is configured. [[GH-1411](https://github.com/openbao/openbao/pull/1411)]
+* builtin/credential/jwt: Support TLS authentication against explicit alt name/subject. [[GH-1533](https://github.com/openbao/openbao/pull/1533)]
+* cel: Add cel-go ext helpers for string, list, optional, regex, math, set, and encoder operations [[GH-1697](https://github.com/openbao/openbao/pull/1697)]
+* cel: Unify CEL helper functions between JWT and PKI modules, making email validation and other utilities available across both authentication and certificate management [[GH-1697](https://github.com/openbao/openbao/pull/1697)]
+* cli: add new subcommand "bao operator validate-config" to validate a configuration file syntax [[GH-1609](https://github.com/openbao/openbao/pull/1609)]
+* core: sys/seal-status: endpoint now always returns the barrier seal type, explicitly adds recovery seal type [[GH-1638](https://github.com/openbao/openbao/pull/1638)]
+* deps: Update go-jose v3 to go-jose v4 [[GH-1477](https://github.com/openbao/openbao/pull/1477)]
+* secrets/kv: Add CAS (Compare-And-Swap) support for metadata operations in KV v2 secrets engine. Metadata updates now support versioning via `metadata_cas` parameter and `metadata_cas_required` configuration option to prevent concurrent modification conflicts. [[GH-1372](https://github.com/openbao/openbao/pull/1372)]
+* ui: change the message 'Vault is sealed to 'OpenBao is Sealed' by changing the title of the unseal template [[GH-1652](https://github.com/openbao/openbao/pull/1652)]
+* seal/pkcs11: Support and default to software encryption for RSA key types. [[GH-1742](https://github.com/openbao/openbao/pull/1742)]
+
+DEPRECATIONS:
+
+* storage/postgresql: remove support for legacy PostgreSQL versions before 9.5 which require a special upsert function. [[GH-1570](https://github.com/openbao/openbao/pull/1570)]
+
+BUG FIXES:
+
+* api: Fix compatibility with sys/health from Vault Enterprise [[GH-1730](https://github.com/openbao/openbao/pull/1730)]
+* command: fixes typo in Windows command for setting BAO_ADDR in development mode [[GH-1527](https://github.com/openbao/openbao/pull/1527)]
+* core/namespaces: Prevent infinite loop in namespace loading due to incorrect list pagination when more than 100 sibling namespaces exist under a given parent [[GH-1696](https://github.com/openbao/openbao/pull/1696)]
+* identity: fix nil panic when collecting metrics with unsafe_cross_namespace_identity=true. [[GH-1715](https://github.com/openbao/openbao/pull/1715)]
+* pki: Truncate should error on expired certificates [[GH-1369](https://github.com/openbao/openbao/pull/1369)]
+* releases: add missing container image manifests for `*-hsm` variants [[GH-1597](https://github.com/openbao/openbao/pull/1597)]
+* sdk: Various constants in the `sdk` package mistakenly had no explicit type. They now now typed correctly. [[GH-1523](https://github.com/openbao/openbao/pull/1523)]
+* secrets/pki: Prevent infinite loop in tidy stemming from incorrect list pagination [[GH-1696](https://github.com/openbao/openbao/pull/1696)]
+* storage/postgresql: more graceful handling of parallel table creation [[GH-1506](https://github.com/openbao/openbao/pull/1506)]
+
+## 2.3.2
+## August 7, 2025
+
+SECURITY:
+
+* audit: Add server configuration options to disable audit mount creation via the API and to disable audit log prefixing. HCSEC-2025-14 / CVE-2025-6000 / CVE-2025-54997. [[GH-1634](https://github.com/openbao/openbao/pull/1634)]
+  - `unsafe_allow_api_audit_creation (default: false)` controls the ability to create audit mounts via the API
+  - `allow_audit_log_prefixing (default: false)` controls the availability of the prefix audit mount option
+* auth/mfa: correctly limit reuse of TOTP codes during login MFA enforcement. HCSEC-2025-19 / CVE-2025-6015 / CVE-2025-55003. [[GH-1629](https://github.com/openbao/openbao/pull/1629)]
+* auth/userpass: Prevent timing-based leak in userpass auth method. HCSEC-2025-15 / CVE-2025-6011 / CVE-2025-54999.  Assumed to also apply to HCSEC-2025-21 / CVE-2025-6010. [[GH-1628](https://github.com/openbao/openbao/pull/1628)]
+* core/auth: Correctly handle alias lookahead for user lockout consistency. HCSEC-2025-16 / CVE-2025-6004 / CVE-2025-54998.
+  auth/userpass: Consistently handle alias lookahead as case insensitive. HCSEC-2025-16 / CVE-2025-6004 / CVE-2025-54998.
+  auth/ldap: Attempt consistent entity aliasing w.r.t. spacing and casing. HCSEC-2025-16 / CVE-2025-6004 / CVE-2025-54998 and HCSEC-2025-20 / CVE-2025-6013 / CVE-2025-55001. [[GH-1632](https://github.com/openbao/openbao/pull/1632)]
+* core/identity: Correctly lowercase policy names to prevent root policy assignment. HCSEC-2025-13 / CVE-2025-5999 / CVE-2025-54996. [[GH-1627](https://github.com/openbao/openbao/pull/1627)]
+* secrets/totp: Fix TOTP verification reuse bypass when the TOTP code contains spaces. HCSEC-2025-17 / CVE-2025-6014 / CVE-2025-55000. [[GH-1625](https://github.com/openbao/openbao/pull/1625)]
+
+IMPROVEMENTS:
+
+* core: Update to Go 1.24.6. [[GH-1637](https://github.com/openbao/openbao/pull/1637)]
+
+BUG FIXES:
+
+* Ignore missing mounts when deleting a namespace. This can happen when a mount is unmounted in parallel. [[GH-1594](https://github.com/openbao/openbao/pull/1594)]
+* agent/template: add missing backoff mechanism for the templating server [[GH-1448](https://github.com/openbao/openbao/pull/1448)]
+* core/namespaces: fixed race condition in namespace deletion operation during instance sealing [[GH-1525](https://github.com/openbao/openbao/pull/1525)]
+* core/policies: fix bug with missing existing policies in namespaces during failover, startup [[GH-1613](https://github.com/openbao/openbao/pull/1613)]
+* identity/oidc: Fix unintentional lowercasing of namespace accessor in assignments. [[GH-1539](https://github.com/openbao/openbao/pull/1539)]
+
+## 2.3.1
+## June 25, 2025
+
+SECURITY:
+
+* core/sys: Add listener parameter (`disable_unauthed_rekey_endpoints`, default: `false`) to optionally disable unauthenticated rekey operations (to `sys/rekey/*` and `sys/rekey-recovery-key/*`) for a listener. This will be set to true in a future release; see the [deprecation notice](https://openbao.org/docs/deprecation/unauthed-rekey/) for more information. Auditing is now enabled for these endpoints as well. CVE-2025-52894. Upstream HCSEC-2025-11 / CVE-2025-4656.
+* sdk/framework: prevent additional information disclosure on invalid request. CVE-2025-52893. [[GH-1495](https://github.com/openbao/openbao/pull/1495)]
+
+CHANGES:
+
+* packaging/systemd: Do not set LimitNOFILE, allowing Go to automatically manage this value on behalf of the server. See also https://github.com/golang/go/issues/46279. [[GH-1179](https://github.com/openbao/openbao/pull/1179)]
+* storage/postgresql: Support empty connection URLs to use standard component-wise variables [[GH-1297](https://github.com/openbao/openbao/pull/1297)]
+* packaging: Support for Illumos removed due to broken builds [[GH-1503](https://github.com/openbao/openbao/pull/1503)]
+
+FEATURES:
+
+* **KMIP Auto-Unseal**: Add support for automatic unsealing of OpenBao using a KMIP protocol. [[GH-1144](https://github.com/openbao/openbao/pull/1144)]
+* **Namespaces UI Support**: Added namespace UI support, including namespace picker and namespace management pages. [[GH-1406](https://github.com/openbao/openbao/pull/1406)]
+* **Namespaces**: Support for tenant isolation using namespaces, application API compatible with upstream's implementation.
+  - Create, read, update, delete a hierarchical directory of namespaces
+  - Manage isolated per-namespace secrets engines, auth methods, tokens, policies and more
+  - Migrate (remount) secrets engines and auth methods between namespaces
+  - Lock and unlock namespaces
+  - Route requests to namespaces via path (`/my-namespace/secrets`) or `X-Vault-Namespace` header (or both!)
+  - CLI support via the `bao namespace` family of commands and the `-namespace` flag. [[GH-1165](https://github.com/openbao/openbao/pull/1165)]
+* Add ARM64 HSM builds and Alpine-based HSM container images [[GH-1427](https://github.com/openbao/openbao/pull/1427)]
+* Support **Common Expression Language (CEL) in PKI**. CEL allows role authors to create flexible, dynamic certificate policies with complex, custom validation support and arbitrary control over the final certificate object. [[GH-794](https://github.com/openbao/openbao/pull/794)]
+* auth/jwt: Add support for Common Expression Language (CEL) login roles. CEL allows role authors to create flexible, dynamic policies with complex, custom claim validation support and arbitrary templating of `logical.Auth` data. [[GH-869](https://github.com/openbao/openbao/pull/869)]
+* ssh: Support multiple certificate issuers in SSH secret engine mounts, enabling safer rotation of SSH CA key material [[GH-880](https://github.com/openbao/openbao/pull/880)]
+
+IMPROVEMENTS:
+
+* When using auto-unseal via KMS, KMS-specific configuration information (non-sensitive) is now logged at server startup. [[GH-1346](https://github.com/openbao/openbao/pull/1346)]
+* approle: Use transactions for read + write operations [[GH-992](https://github.com/openbao/openbao/pull/992)]
+* auth/jwt: Support lazy resolution of oidc_discovery_url or jwks_url when skip_jwks_validation=true is specified on auth/jwt/config; OIDC status is now reported on reading the configuration. [[GH-1306](https://github.com/openbao/openbao/pull/1306)]
+* core/identity: add unsafe_cross_namespace_identity to give compatibility with Vault Enterprise's cross-namespace group membership. [[GH-1432](https://github.com/openbao/openbao/pull/1432)]
+* core/policies: Add check-and-set support for modifying policies, allowing for protection against concurrent modifications. [[GH-1162](https://github.com/openbao/openbao/pull/1162)]
+* core/policies: Add endpoint to allow detailed listing of policies [[GH-1224](https://github.com/openbao/openbao/pull/1224)]
+* core/policies: Allow setting expiration on policies and component paths, removing policies or preventing usage of path rules after expiration. [[GH-1142](https://github.com/openbao/openbao/pull/1142)]
+* core: Support pagination and transactions in ClearView, CollectKeys, and ScanView, improving secret disable memory consumption and request consistency. [[GH-1102](https://github.com/openbao/openbao/pull/1102)]
+* database/valkey: Revive Redis plugin as Valkey, the OSI-licensed fork of Redis [[GH-1019](https://github.com/openbao/openbao/pull/1019)]
+* database: Use transactions for read-then-write methods in the database package [[GH-995](https://github.com/openbao/openbao/pull/995)]
+* pki: add not_after_bound and not_before_bound role parameters to safely limit issuance duration [[GH-1172](https://github.com/openbao/openbao/pull/1172)]
+* ssh: Use transactions for read-then-write or multiple write methods in the ssh package [[GH-989](https://github.com/openbao/openbao/pull/989)]
+* storage/postgresql: support retrying database connection on startup to gracefully handle service ordering issues [[GH-1280](https://github.com/openbao/openbao/pull/1280)]
+
+DEPRECATIONS:
+
+* Configuration of PKCS#11 auto-unseal using the duplicate and undocumented `module`, `token` and `key` options is now deprecated. Use the documented alternative options `lib`, `token_label` and `key_label` instead, respectively. ([More details](https://github.com/openbao/go-kms-wrapping/pull/33#discussion_r2112177962)) [[GH-1385](https://github.com/openbao/openbao/pull/1385)]
+
+BUG FIXES:
+
+* api: Stop marshaling nil interface data and adding it as a request body on an api.Request [[GH-1315](https://github.com/openbao/openbao/pull/1315)]
+* core/identity: load namespace entities, groups into MemDB preventing them from disappearing on restart. [[GH-1432](https://github.com/openbao/openbao/pull/1432)]
+* oidc: add some buffer time after calling oidcPeriodicFunc in test, to prevent flakiness [[GH-1178](https://github.com/openbao/openbao/pull/1178)]
+* pki: addresses a timing issue revealed in pki Backend_RevokePlusTidy test [[GH-1139](https://github.com/openbao/openbao/pull/1139)]
+* sealing/pkcs11: OpenBao now correctly finalizes the PKCS#11 library on shutdown (https://github.com/openbao/go-kms-wrapping/pull/32).
+This is unlikely to have caused many real-world issues so far. [[GH-1349](https://github.com/openbao/openbao/pull/1349)]
+* secrets/kv: Fix panic on detailed metadata list when results include a directory. [[GH-1388](https://github.com/openbao/openbao/pull/1388)]
+* storage/postgresql: Remove redundant PermitPool enforced by db.SetMaxOpenConns(...). [[GH-1299](https://github.com/openbao/openbao/pull/1299)]
+* storage/postgresql: skip table creation automatically on PostgreSQL replicas [[GH-1478](https://github.com/openbao/openbao/pull/1478)]
+* vault: addresses a timing issue revealed in OIDC_PeriodicFunc test [[GH-1129](https://github.com/openbao/openbao/pull/1129)]
+* vault: fixes a timing issue in OIDC_PeriodicFunc test [[GH-1100](https://github.com/openbao/openbao/pull/1100)]
+
+## 2.2.2
+## May 29, 2025
+
+SECURITY:
+
+* sdk/framework: prevent information disclosure on invalid request. HCSEC-2025-09 / CVE-2025-4166. [[GH-1323](https://github.com/openbao/openbao/pull/1323)]
+
+BUG FIXES:
+
+* ui: Fix description of Organizational Unit (OU) field in PKI. [[GH-1333](https://github.com/openbao/openbao/pull/1333)]
+
+## 2.3.0-beta20250528
+## May 28, 2025
+
+SECURITY:
+
+* sdk/framework: prevent information disclosure on invalid request. HCSEC-2025-09 / CVE-2025-4166. [[GH-1323](https://github.com/openbao/openbao/pull/1323)]
+
+CHANGES:
+
+* openbao: update modules and checksums to address vulnerabilities [[GH-1126](https://github.com/openbao/openbao/pull/1126)]
+* packaging/systemd: Do not set LimitNOFILE, allowing Go to automatically manage this value on behalf of the server. See also https://github.com/golang/go/issues/46279. [[GH-1179](https://github.com/openbao/openbao/pull/1179)]
+* storage/postgresql: Support empty connection URLs to use standard component-wise variables [[GH-1297](https://github.com/openbao/openbao/pull/1297)]
+
+FEATURES:
+
+* **KMIP Auto-Unseal**: Add support for automatic unsealing of OpenBao using a KMIP protocol. [[GH-1144](https://github.com/openbao/openbao/pull/1144)]
+* **Namespaces**: Support for tenant isolation using namespaces, application API compatible with upstream's implementation.
+  - Create, read, update, delete a hierarchical directory of namespaces
+  - Manage isolated per-namespace secrets engines, auth methods, tokens, policies and more
+  - Migrate (remount) secrets engines and auth methods between namespaces
+  - Lock and unlock namespaces
+  - Route requests to namespaces via path (`/my-namespace/secrets`) or `X-Vault-Namespace` header (or both!)
+  - CLI support via the `bao namespace` family of commands and the `-namespace` flag. [[GH-1165](https://github.com/openbao/openbao/pull/1165)]
+* ssh: Support multiple certificate issuers in SSH secret engine mounts, enabling safer rotation of SSH CA key material [[GH-880](https://github.com/openbao/openbao/pull/880)]
+
+IMPROVEMENTS:
+
+* When using auto-unseal via KMS, KMS-specific configuration information (non-sensitive) is now logged at server startup. [[GH-1346](https://github.com/openbao/openbao/pull/1346)]
+* approle: Use transactions for read + write operations [[GH-992](https://github.com/openbao/openbao/pull/992)]
+* auth/jwt: Support lazy resolution of oidc_discovery_url or jwks_url when skip_jwks_validation=true is specified on auth/jwt/config; OIDC status is now reported on reading the configuration. [[GH-1306](https://github.com/openbao/openbao/pull/1306)]
+* core/policies: Add check-and-set support for modifying policies, allowing for protection against concurrent modifications. [[GH-1162](https://github.com/openbao/openbao/pull/1162)]
+* core/policies: Add endpoint to allow detailed listing of policies [[GH-1224](https://github.com/openbao/openbao/pull/1224)]
+* core/policies: Allow setting expiration on policies and component paths, removing policies or preventing usage of path rules after expiration. [[GH-1142](https://github.com/openbao/openbao/pull/1142)]
+* core: Support pagination and transactions in ClearView, CollectKeys, and ScanView, improving secret disable memory consumption and request consistency. [[GH-1102](https://github.com/openbao/openbao/pull/1102)]
+* database/valkey: Revive Redis plugin as Valkey, the OSI-licensed fork of Redis [[GH-1019](https://github.com/openbao/openbao/pull/1019)]
+* database: Use transactions for read-then-write methods in the database package [[GH-995](https://github.com/openbao/openbao/pull/995)]
+* pki: add not_after_bound and not_before_bound role parameters to safely limit issuance duration [[GH-1172](https://github.com/openbao/openbao/pull/1172)]
+* ssh: Use transactions for read-then-write or multiple write methods in the ssh package [[GH-989](https://github.com/openbao/openbao/pull/989)]
+* storage/postgresql: support retrying database connection on startup to gracefully handle service ordering issues [[GH-1280](https://github.com/openbao/openbao/pull/1280)]
+
+BUG FIXES:
+
+* api: Stop marshaling nil interface data and adding it as a request body on an api.Request [[GH-1315](https://github.com/openbao/openbao/pull/1315)]
+* cli: Return a quoted string URL when -output-curl-string flag is passed in [[GH-1038](https://github.com/openbao/openbao/pull/1038)]
+* oidc: add some buffer time after calling oidcPeriodicFunc in test, to prevent flakiness [[GH-1178](https://github.com/openbao/openbao/pull/1178)]
+* pki: addresses a timing issue revealed in pki Backend_RevokePlusTidy test [[GH-1139](https://github.com/openbao/openbao/pull/1139)]
+* sealing/pkcs11: OpenBao now correctly finalizes the PKCS#11 library on shutdown (https://github.com/openbao/go-kms-wrapping/pull/32).
+  This is unlikely to have caused many real-world issues so far. [[GH-1349](https://github.com/openbao/openbao/pull/1349)]
+* secrets/pki: Remove null value for subproblems encoding, fixing compatibility with certain ACME clients like certbot. [[GH-1236](https://github.com/openbao/openbao/pull/1236)]
+* storage/postgresql: Remove redundant PermitPool enforced by db.SetMaxOpenConns(...). [[GH-1299](https://github.com/openbao/openbao/pull/1299)]
+* ui: Fix description of Organizational Unit (OU) field in PKI. [[GH-1333](https://github.com/openbao/openbao/pull/1333)]
+* vault: addresses a timing issue revealed in OIDC_PeriodicFunc test [[GH-1129](https://github.com/openbao/openbao/pull/1129)]
+* vault: fixes a timing issue in OIDC_PeriodicFunc test [[GH-1100](https://github.com/openbao/openbao/pull/1100)]
+
+## 2.2.1
+## April 22, 2025
+
+BUG FIXES:
+
+* cli: Return a quoted string URL when -output-curl-string flag is passed in [[GH-1038](https://github.com/openbao/openbao/pull/1038)]
+* openbao: update modules and checksums to address vulnerabilities [[GH-1126](https://github.com/openbao/openbao/pull/1126)]
+* secrets/pki: Remove null value for subproblems encoding, fixing compatibility with certain ACME clients like certbot. [[GH-1236](https://github.com/openbao/openbao/pull/1236)]
+
+## 2.2.0
+## March 5, 2025
+
+CHANGES:
+
+* command/server: Prevent and warn about loading of duplicate config file from config directory. [[GH-816](https://github.com/openbao/openbao/pull/816)]
+* container: Set -dev-no-store-token in default container images, fixing default read-only containers. [[GH-826](https://github.com/openbao/openbao/pull/826)]
+* core/seal: remove support for legacy pre-keyring barrier entries
+core/seal: remove support for legacy (direct) shamir unseal keys [[GH-750](https://github.com/openbao/openbao/pull/750)]
+* core: Remove support for Solaris due to lack of Docker support. [[GH-710](https://github.com/openbao/openbao/pull/710)]
+
+FEATURES:
+
+* **ACME TLS Listener Certificate Provisioning**: Automatically fetch TLS certificates for OpenBao Server's TCP listeners via an Automatic Certificate Management Environment (ACME - RFC 8555) capable certificate authority (CA). This allows OpenBao to be self-hosted, using a CA contained within the instance to sign the instance's own certificates. [[GH-857](https://github.com/openbao/openbao/pull/857)]
+* **PKCS#11 Auto-Unseal**: Add support for automatic unsealing of OpenBao using a PKCS#11-enabled Hardware Security Module (HSM) or Key Management System (KMS). [[GH-889](https://github.com/openbao/openbao/pull/889)]
+* **Scanning**: introduce the ability to recursively list (scan) within plugins, adding a separate `scan` ACL capability, operation type, HTTP verb (`SCAN` with `GET` fallback via `?scan=true`), API, and CLI support. This also adds support to the KVv1 and KVv2 engines. [[GH-763](https://github.com/openbao/openbao/pull/763)]
+* **Transit**: Add support for key derivation mechansims (derives a new key from a base key).
+   - This path uses the named base key and derivation algorithm specific parameters to derive a new named key.
+   - Currently, only the ECDH key agreement algorithm is supported: the base key is one's own ECC private key and the "peer_public_key" is the pem-encoded other party's ECC public key.The computed shared secret is the resulting derived key. [[GH-811](https://github.com/openbao/openbao/pull/811)]
+* **UI**: Reintroduction of the WebUI. [[GH-940](https://github.com/openbao/openbao/pull/940)]
+* raft: Added support for nodes to join the Raft cluster as non-voters. [[GH-741](https://github.com/openbao/openbao/pull/741)]
+
+IMPROVEMENTS:
+
+* audit: modify the hashWalker to handle nested structs without panicing [[GH-887](https://github.com/openbao/openbao/pull/887)]
+* auth: Use transactions for read-then-write methods in the credential package [[GH-952](https://github.com/openbao/openbao/pull/952)]
+* auth: Use transactions for write and delete config for various auth methods. [[GH-878](https://github.com/openbao/openbao/pull/878)]
+* core/mounts: Allow tuning HMAC request and response parameters on sys/, cubbyhole/, and identity/, enabling auditing of core policy changes. [[GH-921](https://github.com/openbao/openbao/pull/921)]
+* core/policies: Allow listing policies under a given prefix. [[GH-736](https://github.com/openbao/openbao/pull/736)]
+* core/policies: add `pagination_limit` to ACL policies for enforcing max pagination sizes. [[GH-802](https://github.com/openbao/openbao/pull/802)]
+* core: Bump to latest Go toolchain 1.24.0. [[GH-1000](https://github.com/openbao/openbao/pull/1000)]
+* identity: return alias metadata when listing entity aliases [[GH-1013](https://github.com/openbao/openbao/pull/1013)]
+* rabbitmq: Use transactions for read-then-write methods in the rabbitmq package [[GH-997](https://github.com/openbao/openbao/pull/997)]
+* secret/pki: Add new endpoint `pki/certs/detailed` to return detailed cert list. [[GH-680](https://github.com/openbao/openbao/pull/680)]
+* secret/pki: Add pagination to `tidy` operations for improved scalability in large certificate stores. [[GH-678](https://github.com/openbao/openbao/pull/678)]
+* secrets/kv: add a `detailed-metadata/:prefix` endpoint that supports listing entries along with their corresponding metadata in the detailed key_info response field [[GH-766](https://github.com/openbao/openbao/pull/766)]
+* transit: Use transactions for read + write policy operations [[GH-956](https://github.com/openbao/openbao/pull/956)]
+* ui: Remove client count menu [[GH-734](https://github.com/openbao/openbao/pull/734)]
+
+BUG FIXES:
+
+* core-listener: Fix operator diagnose with unix-socker listener [[GH-958](https://github.com/openbao/openbao/pull/958)]
+* raft: Fix noisy warn on follower-less keyring rotation. [[GH-937](https://github.com/openbao/openbao/pull/937)]
+* secrets/pki: Fix bao pki health-check detection on non-pki mounts. [[GH-935](https://github.com/openbao/openbao/pull/935)]
+* ui: fix missing checkmarks in all checkboxes, due to invalid use of sass-svg-uri package [[GH-1042](https://github.com/openbao/openbao/pull/1042)]
+
+
+## 2.2.0-beta20250213
+## February 13, 2025
+
+CHANGES:
+
+* command/server: Prevent and warn about loading of duplicate config file from config directory. [[GH-816](https://github.com/openbao/openbao/pull/816)]
+* container: Set -dev-no-store-token in default container images, fixing default read-only containers. [[GH-826](https://github.com/openbao/openbao/pull/826)]
+* core/seal: remove support for legacy pre-keyring barrier entries
+core/seal: remove support for legacy (direct) shamir unseal keys [[GH-750](https://github.com/openbao/openbao/pull/750)]
+
+FEATURES:
+
+* **ACME TLS Listener Certificate Provisioning**: Automatically fetch TLS certificates for OpenBao Server's TCP listeners via an Automatic Certificate Management Environment (ACME - RFC 8555) capable certificate authority (CA). This allows OpenBao to be self-hosted, using a CA contained within the instance to sign the instance's own certificates. [[GH-857](https://github.com/openbao/openbao/pull/857)]
+* **PKCS#11 Auto-Unseal**: Add support for automatic unsealing of OpenBao using a PKCS#11-enabled Hardware Security Module (HSM) or Key Management System (KMS). [[GH-889](https://github.com/openbao/openbao/pull/889)]
+* **Scanning**: introduce the ability to recursively list (scan) within plugins, adding a separate `scan` ACL capability, operation type, HTTP verb (`SCAN` with `GET` fallback via `?scan=true`), API, and CLI support. This also adds support to the KVv1 and KVv2 engines. [[GH-763](https://github.com/openbao/openbao/pull/763)]
+* **Transit**: Add support for key derivation mechansims (derives a new key from a base key).
+   - This path uses the named base key and derivation algorithm specific parameters to derive a new named key.
+   - Currently, only the ECDH key agreement algorithm is supported: the base key is one's own ECC private key and the "peer_public_key" is the pem-encoded other party's ECC public key.The computed shared secret is the resulting derived key. [[GH-811](https://github.com/openbao/openbao/pull/811)]
+* **UI**: Reintroduction of the WebUI. [[GH-940](https://github.com/openbao/openbao/pull/940)]
+* raft: Added support for nodes to join the Raft cluster as non-voters. [[GH-741](https://github.com/openbao/openbao/pull/741)]
+
+IMPROVEMENTS:
+
+* audit: modify the hashWalker to handle nested structs without panicing [[GH-887](https://github.com/openbao/openbao/pull/887)]
+* auth: Use transactions for read-then-write methods in the credential package [[GH-952](https://github.com/openbao/openbao/pull/952)]
+* auth: Use transactions for write and delete config for various auth methods. [[GH-878](https://github.com/openbao/openbao/pull/878)]
+* core/mounts: Allow tuning HMAC request and response parameters on sys/, cubbyhole/, and identity/, enabling auditing of core policy changes. [[GH-921](https://github.com/openbao/openbao/pull/921)]
+* core/policies: Allow listing policies under a given prefix. [[GH-736](https://github.com/openbao/openbao/pull/736)]
+* core/policies: add `pagination_limit` to ACL policies for enforcing max pagination sizes. [[GH-802](https://github.com/openbao/openbao/pull/802)]
+* core: Bump to latest Go toolchain 1.24.0. [[GH-1000](https://github.com/openbao/openbao/pull/1000)]
+* rabbitmq: Use transactions for read-then-write methods in the rabbitmq package [[GH-997](https://github.com/openbao/openbao/pull/997)]
+* secret/pki: Add new endpoint `pki/certs/detailed` to return detailed cert list. [[GH-680](https://github.com/openbao/openbao/pull/680)]
+* secret/pki: Add pagination to `tidy` operations for improved scalability in large certificate stores. [[GH-678](https://github.com/openbao/openbao/pull/678)]
+* secrets/kv: add a `detailed-metadata/:prefix` endpoint that supports listing entries along with their corresponding metadata in the detailed key_info response field [[GH-766](https://github.com/openbao/openbao/pull/766)]
+* transit: Use transactions for read + write policy operations [[GH-956](https://github.com/openbao/openbao/pull/956)]
+* ui: Remove client count menu [[GH-734](https://github.com/openbao/openbao/pull/734)]
+
+BUG FIXES:
+
+* core-listener: Fix operator diagnose with unix-socker listener [[GH-958](https://github.com/openbao/openbao/pull/958)]
+* raft: Fix noisy warn on follower-less keyring rotation. [[GH-937](https://github.com/openbao/openbao/pull/937)]
+* secrets/pki: Fix bao pki health-check detection on non-pki mounts. [[GH-935](https://github.com/openbao/openbao/pull/935)]
+
+## 2.1.1
+## January 21, 2025
+
+IMPROVEMENTS:
+
+* core: Bump to latest Go toolchain 1.23.5. [[GH-912](https://github.com/openbao/openbao/pull/912)]
+
+## 2.1.0
+## November 29, 2024
+
+SECURITY:
+
+* core/identity: fix root namespace privilege escalation via entity modification. HCSEC-2024-21 / CVE-2024-9180. [[GH-695](https://github.com/openbao/openbao/pull/695)]
+* raft: Fix memory exhaustion when processing raft cluster join requests; results in longer challenge/answers. HCSEC-2024-26 / CVE-2024-8185. [[GH-690](https://github.com/openbao/openbao/pull/690)]
+* secrets/ssh: Deny globally valid certificate issuance without valid_principals or allow_empty_principals override. HCSEC-2024-20 / CVE-2024-7594. (**potentially breaking**) [[GH-561](https://github.com/openbao/openbao/pull/561)]
+
+CHANGES:
+
+* api: Load all CA certificates specified in environment variables. [[GH-574](https://github.com/openbao/openbao/pull/574)]
+* auth/userpass: Drop support for Vault v0.2 password entries with no hash.
+sys/initialize: Drop support for pre Vault 1.3 stored Shamir share unseal.
+command/ssh: Drop support for pre Vault 1.1 auto-SSH role detection.
+plugins: Drop support for pre Vault 0.9.4 non-GRPC communication protocols.
+core: Drop support for pre Vault 1.10 batch tokens.
+core: Drop support for pre Vault 1.0 namespaces. [[GH-457](https://github.com/openbao/openbao/pull/457)]
+* cli: Remove 'bao transform ...' CLIs as the Transform plugin is not present in OpenBao. [[GH-455](https://github.com/openbao/openbao/pull/455)]
+* command/debug: Replace mholt/archiver with standard library utils. This may change file permissions but does not affect archive layout. [[GH-611](https://github.com/openbao/openbao/pull/611)]
+* serviceregistration/kubernetes: labels use `openbao` as prefix instead of `vault`. [[GH-416](https://github.com/openbao/openbao/pull/416)]
+* core: Remove support for Solaris due to lack of Docker support. [[GH-710](https://github.com/openbao/openbao/pull/710)]
+
+FEATURES:
+
+* **Remove Mount Table Limits**: Using transactional storage, we've split the
+auth and secret mount tables into separate storage entires, removing the
+requirement that the entire table fit into a single storage entry limited by
+`max_entry_size`. This allows potentially hundreds of thousands of mounts on
+a single scaled-up server. [[GH-622](https://github.com/openbao/openbao/pull/622)]
+* **Transactional Storage**: Plugin developers can now take advantage of safe
+  storage modification APIs when the underlying physical storage supports
+  them. The `physical.TransactionalBackend` and `logical.TransactionalStorage`
+  types allow developers to begin read-only and writable transactions,
+  committing or rolling back the desired changes. [[GH-292](https://github.com/openbao/openbao/pull/292)]
+* **Transit**: Support PKI CSR and certificate storage alongside key material. This allows callers to securely create keys and submit requests for certificates without the key material leaving Transit. Storage of the certificate on the key avoids the need for an additional K/V mount. Rotation of this certificate and its chain is also supported. [[GH-536](https://github.com/openbao/openbao/pull/536)]
+* auth/oidc: Add a new `callback_mode` role option value `device` to use the oidc device flow instead of a callback, add a new `poll_interval` role option to control how often to poll for a response, and add a new `callbackmode=device` option to the oidc login method in the cli. [[GH-319](https://github.com/openbao/openbao/pull/319)]
+* auth/oidc: Add new `callback_mode=direct` role option to cause the oidc callback to be direct to the server instead of the client, and add a `callbackmode=direct` option to the oidc login method in the cli. [[GH-318](https://github.com/openbao/openbao/pull/318)]
+* physical/postgres: Reintroduce Postgres database for OpenBao storage, implementing paginated list support. This feature is currently in **preview** and breaking changes may occur. [[GH-467](https://github.com/openbao/openbao/pull/467)]
+
+IMPROVEMENTS:
+
+* auth/jwt: Allow templating ACL policies from data in claims on JWT or OIDC ID tokens. [[GH-618](https://github.com/openbao/openbao/pull/618)]
+* auth/oidc: Add a new `oauth2_metadata` configuration option to enable sending any of the tokens from the token issuer to the client. [[GH-320](https://github.com/openbao/openbao/pull/320)]
+* core: Add endpoint to inspect request information [[GH-513](https://github.com/openbao/openbao/pull/513)]
+* core: Update to Go 1.23.3. [[GH-699](https://github.com/openbao/openbao/pull/699)]
+* core: Upgrade RHEL UBI container image to 9.5. [[GH-701](https://github.com/openbao/openbao/pull/701)]
+* docker: add `/bin/vault` symlink to docker images [[GH-548](https://github.com/openbao/openbao/pull/548)]
+* raft: Update to hashicorp/raft@v1.7.1, go.etcd.io/bbolt@v1.3.11 for bug fixes and performance improvements. [[GH-633](https://github.com/openbao/openbao/pull/633)]
+* rpm: Fix packaging to properly annotate configs entries for noreplace [[GH-639](https://github.com/openbao/openbao/pull/639)]
+* sdk: Use quay.io/openbao/openbao in containerized testing [[GH-427](https://github.com/openbao/openbao/pull/427)]
+* secret/pki: Add `revoked_safety_buffer` to control retention on revoked certificates separately from expired certificates. [[GH-653](https://github.com/openbao/openbao/pull/653)]
+* secret/pki: Delete invalid certificates during tidy via `tidy_invalid_certs=true` if they cannot be parsed due to Go's x509 handling. [[GH-665](https://github.com/openbao/openbao/pull/665)]
+* secret/pki: Support revoking expired certificates with the `allow_expired_cert_revocation` CRL configuration. [[GH-638](https://github.com/openbao/openbao/pull/638)]
+* secrets/kv: Implement transactions to prevent canceled operations from corrupting storage. [[GH-560](https://github.com/openbao/openbao/pull/560)]
+* secrets/pki: Use transactions for root generation, issuer import [[GH-498](https://github.com/openbao/openbao/pull/498)]
+* secrets/pki: add `not_before` parameter to precisely define a certificate's "not before" field. [[GH-515](https://github.com/openbao/openbao/pull/515)]
+* storage/postgresql: Add support for transactional storage semantics. [[GH-608](https://github.com/openbao/openbao/pull/608)]
+* storage/postgresql: Allow table creation to improve first-start UX. [[GH-614](https://github.com/openbao/openbao/pull/614)]
+* storage/raft: Add support for transactional storage semantics. [[GH-292](https://github.com/openbao/openbao/pull/292)]
+* ui: Remove Vault references on sibebar, splash screen & loading page. [[GH-668](https://github.com/openbao/openbao/pull/668)]
+* ui: Update documentation links. [[GH-669](https://github.com/openbao/openbao/pull/669)]
+
+BUG FIXES:
+
+* api/output_string: Change vault reference to bao. [[GH-511](https://github.com/openbao/openbao/pull/511)]
+* cli: Always pass `BAO_ADDR` to the token helper, so the token helper can know
+the address even if it was provided through the `-address` flag. For
+compatibility we also set `VAULT_ADDR`. [[GH-348](https://github.com/openbao/openbao/pull/348)]
+* core: Fix server panic on AppRole login requests with invalid parameter typing [[GH-512](https://github.com/openbao/openbao/pull/512)]
+* docker: fix collision between the cluster address and local JSON configuration sharing the same variable within the docker-entrypoint script [[GH-446](https://github.com/openbao/openbao/pull/446)]
+* docker: fix configuration of bao cluster and redirect address on separate interfaces when using environment variables [[GH-682](https://github.com/openbao/openbao/pull/682)]
+* physical/cache: Ensure later modifications to entry do not impact cached value. [[GH-483](https://github.com/openbao/openbao/pull/483)]
+* release: remove changelog/ directory from binary release tarballs [[GH-641](https://github.com/openbao/openbao/pull/641)]
+* secrets/pki: Fix ACME HTTP-01 challenge validation with IPv6 addresses [[GH-559](https://github.com/openbao/openbao/pull/559)]
+* secrets/pki: Fix handling of reusing existing Ed25519 keys [[GH-461](https://github.com/openbao/openbao/pull/461)]
+* serviceregistration/k8s: Fix compatibility with legacy VAULT_-prefixed environment variables. [[GH-527](https://github.com/openbao/openbao/pull/527)]
+
+## 2.1.0-beta20241114
+## November 14, 2024
+
+SECURITY:
+
+* core/identity: fix root namespace privilege escalation via entity modification. HCSEC-2024-21 / CVE-2024-9180. [[GH-695](https://github.com/openbao/openbao/pull/695)]
+* raft: Fix memory exhaustion when processing raft cluster join requests; results in longer challenge/answers. HCSEC-2024-26 / CVE-2024-8185. [[GH-690](https://github.com/openbao/openbao/pull/690)]
+* secrets/ssh: Deny globally valid certificate issuance without valid_principals or allow_empty_principals override. HCSEC-2024-20 / CVE-2024-7594. (**potentially breaking**) [[GH-561](https://github.com/openbao/openbao/pull/561)]
+
+CHANGES:
+
+* api: Load all CA certificates specified in environment variables. [[GH-574](https://github.com/openbao/openbao/pull/574)]
+* auth/userpass: Drop support for Vault v0.2 password entries with no hash.
+sys/initialize: Drop support for pre Vault 1.3 stored Shamir share unseal.
+command/ssh: Drop support for pre Vault 1.1 auto-SSH role detection.
+plugins: Drop support for pre Vault 0.9.4 non-GRPC communication protocols.
+core: Drop support for pre Vault 1.10 batch tokens.
+core: Drop support for pre Vault 1.0 namespaces. [[GH-457](https://github.com/openbao/openbao/pull/457)]
+* cli: Remove 'bao transform ...' CLIs as the Transform plugin is not present in OpenBao. [[GH-455](https://github.com/openbao/openbao/pull/455)]
+* command/debug: Replace mholt/archiver with standard library utils. This may change file permissions but does not affect archive layout. [[GH-611](https://github.com/openbao/openbao/pull/611)]
+* serviceregistration/kubernetes: labels use `openbao` as prefix instead of `vault`. [[GH-416](https://github.com/openbao/openbao/pull/416)]
+* core: Remove support for Solaris due to lack of Docker support. [[GH-710](https://github.com/openbao/openbao/pull/710)]
+
+FEATURES:
+
+* **Remove Mount Table Limits**: Using transactional storage, we've split the
+auth and secret mount tables into separate storage entires, removing the
+requirement that the entire table fit into a single storage entry limited by
+`max_entry_size`. This allows potentially hundreds of thousands of mounts on
+a single scaled-up server. [[GH-622](https://github.com/openbao/openbao/pull/622)]
+* **Transactional Storage**: Plugin developers can now take advantage of safe
+  storage modification APIs when the underlying physical storage supports
+  them. The `physical.TransactionalBackend` and `logical.TransactionalStorage`
+  types allow developers to begin read-only and writable transactions,
+  committing or rolling back the desired changes. [[GH-292](https://github.com/openbao/openbao/pull/292)]
+* **Transit**: Support PKI CSR and certificate storage alongside key material. This allows callers to securely create keys and submit requests for certificates without the key material leaving Transit. Storage of the certificate on the key avoids the need for an additional K/V mount. Rotation of this certificate and its chain is also supported. [[GH-536](https://github.com/openbao/openbao/pull/536)]
+* auth/oidc: Add a new `callback_mode` role option value `device` to use the oidc device flow instead of a callback, add a new `poll_interval` role option to control how often to poll for a response, and add a new `callbackmode=device` option to the oidc login method in the cli. [[GH-319](https://github.com/openbao/openbao/pull/319)]
+* auth/oidc: Add new `callback_mode=direct` role option to cause the oidc callback to be direct to the server instead of the client, and add a `callbackmode=direct` option to the oidc login method in the cli. [[GH-318](https://github.com/openbao/openbao/pull/318)]
+* physical/postgres: Reintroduce Postgres database for OpenBao storage, implementing paginated list support. This feature is currently in **preview** and breaking changes may occur. [[GH-467](https://github.com/openbao/openbao/pull/467)]
+
+IMPROVEMENTS:
+
+* auth/jwt: Allow templating ACL policies from data in claims on JWT or OIDC ID tokens. [[GH-618](https://github.com/openbao/openbao/pull/618)]
+* auth/oidc: Add a new `oauth2_metadata` configuration option to enable sending any of the tokens from the token issuer to the client. [[GH-320](https://github.com/openbao/openbao/pull/320)]
+* core: Add endpoint to inspect request information [[GH-513](https://github.com/openbao/openbao/pull/513)]
+* core: Update to Go 1.23.3. [[GH-699](https://github.com/openbao/openbao/pull/699)]
+* core: Upgrade RHEL UBI container image to 9.5. [[GH-701](https://github.com/openbao/openbao/pull/701)]
+* docker: add `/bin/vault` symlink to docker images [[GH-548](https://github.com/openbao/openbao/pull/548)]
+* raft: Update to hashicorp/raft@v1.7.1, go.etcd.io/bbolt@v1.3.11 for bug fixes and performance improvements. [[GH-633](https://github.com/openbao/openbao/pull/633)]
+* rpm: Fix packaging to properly annotate configs entries for noreplace [[GH-639](https://github.com/openbao/openbao/pull/639)]
+* sdk: Use quay.io/openbao/openbao in containerized testing [[GH-427](https://github.com/openbao/openbao/pull/427)]
+* secret/pki: Add `revoked_safety_buffer` to control retention on revoked certificates separately from expired certificates. [[GH-653](https://github.com/openbao/openbao/pull/653)]
+* secret/pki: Delete invalid certificates during tidy via `tidy_invalid_certs=true` if they cannot be parsed due to Go's x509 handling. [[GH-665](https://github.com/openbao/openbao/pull/665)]
+* secret/pki: Support revoking expired certificates with the `allow_expired_cert_revocation` CRL configuration. [[GH-638](https://github.com/openbao/openbao/pull/638)]
+* secrets/kv: Implement transactions to prevent canceled operations from corrupting storage. [[GH-560](https://github.com/openbao/openbao/pull/560)]
+* secrets/pki: Use transactions for root generation, issuer import [[GH-498](https://github.com/openbao/openbao/pull/498)]
+* secrets/pki: add `not_before` parameter to precisely define a certificate's "not before" field. [[GH-515](https://github.com/openbao/openbao/pull/515)]
+* storage/postgresql: Add support for transactional storage semantics. [[GH-608](https://github.com/openbao/openbao/pull/608)]
+* storage/postgresql: Allow table creation to improve first-start UX. [[GH-614](https://github.com/openbao/openbao/pull/614)]
+* storage/raft: Add support for transactional storage semantics. [[GH-292](https://github.com/openbao/openbao/pull/292)]
+* ui: Remove Vault references on sibebar, splash screen & loading page. [[GH-668](https://github.com/openbao/openbao/pull/668)]
+* ui: Update documentation links. [[GH-669](https://github.com/openbao/openbao/pull/669)]
+
+BUG FIXES:
+
+* api/output_string: Change vault reference to bao. [[GH-511](https://github.com/openbao/openbao/pull/511)]
+* cli: Always pass `BAO_ADDR` to the token helper, so the token helper can know
+the address even if it was provided through the `-address` flag. For
+compatibility we also set `VAULT_ADDR`. [[GH-348](https://github.com/openbao/openbao/pull/348)]
+* core: Fix server panic on AppRole login requests with invalid parameter typing [[GH-512](https://github.com/openbao/openbao/pull/512)]
+* docker: fix collision between the cluster address and local JSON configuration sharing the same variable within the docker-entrypoint script [[GH-446](https://github.com/openbao/openbao/pull/446)]
+* docker: fix configuration of bao cluster and redirect address on separate interfaces when using environment variables [[GH-682](https://github.com/openbao/openbao/pull/682)]
+* physical/cache: Ensure later modifications to entry do not impact cached value. [[GH-483](https://github.com/openbao/openbao/pull/483)]
+* release: remove changelog/ directory from binary release tarballs [[GH-641](https://github.com/openbao/openbao/pull/641)]
+* secrets/pki: Fix ACME HTTP-01 challenge validation with IPv6 addresses [[GH-559](https://github.com/openbao/openbao/pull/559)]
+* secrets/pki: Fix handling of reusing existing Ed25519 keys [[GH-461](https://github.com/openbao/openbao/pull/461)]
+* serviceregistration/k8s: Fix compatibility with legacy VAULT_-prefixed environment variables. [[GH-527](https://github.com/openbao/openbao/pull/527)]
+
+## 2.0.3
+## November 15, 2024
+
+SECURITY:
+
+* core/identity: fix root namespace privilege escalation via entity modification. HCSEC-2024-21 / CVE-2024-9180. [[GH-695](https://github.com/openbao/openbao/pull/695)]
+* raft: Fix memory exhaustion when processing raft cluster join requests; results in longer challenge/answers. HCSEC-2024-26 / CVE-2024-8185. [[GH-690](https://github.com/openbao/openbao/pull/690)]
+
+CHANGES:
+
+* command/debug: Replace mholt/archiver with standard library utils. This may change file permissions but does not affect archive layout. [[GH-611](https://github.com/openbao/openbao/pull/611)]
+
+IMPROVEMENTS:
+
+* core: Update to Go 1.22.9. [[GH-725](https://github.com/openbao/openbao/pull/725)]
+* core: Upgrade RHEL UBI container image to 9.5. [[GH-701](https://github.com/openbao/openbao/pull/701)]
+
+BUG FIXES:
+
+* release: remove changelog/ directory from binary release tarballs [[GH-641](https://github.com/openbao/openbao/pull/641)]
+
+## 2.0.2
+## October 5, 2024
+
+SECURITY:
+
+* secrets/ssh: Deny globally valid certificate issuance without valid_principals or allow_empty_principals override. HCSEC-2024-20 / CVE-2024-7594. (**potentially breaking**) [[GH-561](https://github.com/openbao/openbao/pull/561)]
+
+IMPROVEMENTS:
+
+* docker: add `/bin/vault` symlink to docker images [[GH-548](https://github.com/openbao/openbao/pull/548)]
+
+BUG FIXES:
+
+* api/output_string: Change vault reference to bao. [[GH-511](https://github.com/openbao/openbao/pull/511)]
+* core: Fix server panic on AppRole login requests with invalid parameter typing [[GH-512](https://github.com/openbao/openbao/pull/512)]
+* secrets/pki: Fix ACME HTTP-01 challenge validation with IPv6 addresses [[GH-559](https://github.com/openbao/openbao/pull/559)]
+* serviceregistration/k8s: Fix compatibility with legacy VAULT_-prefixed environment variables. [[GH-527](https://github.com/openbao/openbao/pull/527)]
+
+## 2.0.1
+## September 3, 2024
+
+CHANGES:
+
+* serviceregistration/kubernetes: labels use `openbao` as prefix instead of `vault`. [[GH-416](https://github.com/openbao/openbao/pull/416)]
+
+IMPROVEMENTS:
+
+* core: Update Go to 1.22.6 [[GH-504](https://github.com/openbao/openbao/pull/504)]
+
+BUG FIXES:
+
+* cli: Always pass `BAO_ADDR` to the token helper, so the token helper can know
+the address even if it was provided through the `-address` flag. For
+compatibility we also set `VAULT_ADDR`. [[GH-348](https://github.com/openbao/openbao/pull/348)]
+* docker: fix collision between the cluster address and local JSON configuration sharing the same variable within the docker-entrypoint script [[GH-446](https://github.com/openbao/openbao/pull/446)]
+* secrets/pki: Fix handling of reusing existing Ed25519 keys [[GH-461](https://github.com/openbao/openbao/pull/461)]
+
+## 2.0.0
+### July 16, 2024
+
+> [!WARNING]
+> OpenBao's 2.0.0 GA does not include the builtin WebUI! You can only access a running Bao instance via the CLI or API.
+
+SECURITY:
+
+* auth/cert: compare full bytes of trusted leaf certificates with incoming client certificates to prevent trusting certs with the same serial number but not the same public/private key. [[GH-173](https://github.com/openbao/openbao/pull/173)]
+* auth/jwt: BREAKING: Fix handling of aud claims which are a single string, to behave the same as list claims. [[GH-263](https://github.com/openbao/openbao/pull/263)]
+
+CHANGES:
+
+* added other registries for docker images [[GH-269](https://github.com/openbao/openbao/pull/269)]
+* core: Bump Go version to 1.22.0. [[GH-120](https://github.com/openbao/openbao/pull/120)]
+* core: OpenBao version 2.0.0-alpha20240329.
+
+  core: Retracted all prior Vault versions.
+
+  api: Retracted all prior Vault versions.
+
+  sdk: Retracted all prior Vault versions. [[GH-238](https://github.com/openbao/openbao/pull/238)]
+
+* core: Remove mlock functionality from OpenBao and make the "disable_mlock" config option obsolete. [[GH-363](https://github.com/openbao/openbao/pull/363)]
+* secret/transit: Remove ability to use v1 and v2 Transit convergent encryption keys migrated from Vault v0.6.2 or earlier. [[GH-85](https://github.com/openbao/openbao/pull/85)]
+
+FEATURES:
+
+* **Paginated Lists**: Allow plugins to support pagination on `LIST` requests, reducing server and client burden by limiting large responses. This uses optional `after` and `limit` parameters for clients to control the size of responses with a relative indexing into result entry sets. [[GH-170](https://github.com/openbao/openbao/pull/170)]
+
+IMPROVEMENTS:
+
+* auth: Add token_strictly_bind_ip to support strictly binding issued token to login request's IP address. [[GH-202](https://github.com/openbao/openbao/pull/202)]
+* cli: Expand handling of -non-interactive to prevent reading from stdin. [[GH-221](https://github.com/openbao/openbao/pull/221)]
+* sdk/helper/shamir: Use CS-PRNG for shuffling X coordinates; do not rely on math/rand. [[GH-210](https://github.com/openbao/openbao/pull/210)]
+* sdk/helper/shamir: move Shamir's code into public SDK namespace to encourage external reuse [[GH-181](https://github.com/openbao/openbao/pull/181)]
+* secret/pki: Add Delta CRL Distribution Point to AIA URLs, allowing AIA-aware clients to find Delta CRLs dynamically. [[GH-215](https://github.com/openbao/openbao/pull/215)]
+* secret/pki: Add support for KeyUsage, ExtKeyUsage when issuing CA certificates, allowing compliance with CA/BF guidelines (e.g., with GCP Load Balancers). [[GH-76](https://github.com/openbao/openbao/pull/76)]
+* secret/pki: Add support for basicConstraints x509 extension when issuing certificates with sign-verbatim. [[GH-201](https://github.com/openbao/openbao/pull/201)]
+* secret/pki: Allow pki/issue/:role with key_type=any roles, via explicit key_type and key_bits request parameters. [[GH-209](https://github.com/openbao/openbao/pull/209)]
+* secret/transit: Add support for XChaCha20-Poly1305 keys, preventing nonce-reuse without key rotation. [[GH-36](https://github.com/openbao/openbao/pull/36)]
+* secret/transit: Allow choosing export key format, specifying format=der or format=pem for consistent PKIX encoded public keys. [[GH-212](https://github.com/openbao/openbao/pull/212)]
+* secret/transit: Allow soft deletion of keys, preventing their use and rotation but retaining key material until restored or fully deleted. [[GH-211](https://github.com/openbao/openbao/pull/211)]
+* secrets/pki: Remove Vault Enterprise-only cross-cluster, unified CRL stubs (breaking). [[GH-365](https://github.com/openbao/openbao/pull/365)]
+* ui: The latest versions of Chrome do not automatically redirect back to an Android app after multiple redirects during an OIDC authentication flow. A link was added to allow the user to manually redirect back to the app. [[GH-184](https://github.com/openbao/openbao/pull/184)]
+
+BUG FIXES:
+
+* cli/login: Avoid calling the token helper in `get` mode. [[GH-313](https://github.com/openbao/openbao/pull/313)]
+* core/pluings: Fix compatibility when running pre-built Vault plugins. [[GH-321](https://github.com/openbao/openbao/pull/321)]
+* core: re-introduce Server Side Consistent Tokens (SSCTs) from upstream, defaulting to disabled [[GH-298](https://github.com/openbao/openbao/pull/298)]
+* packaging: fix systemd service to refer to /etc/openbao/env for environment variables [[GH-275](https://github.com/openbao/openbao/pull/275)]
+* physical/raft: fix ListPage calls when after=. resulting in an empty list [[GH-294](https://github.com/openbao/openbao/pull/294)]
+* secret/pki: Use user-submitted ordering for SANs, fixing issues where automatic ordering causes parse failures in some browsers. [[GH-50](https://github.com/openbao/openbao/pull/50)]
+* secret/rabbitmq: Fix role reading causing audit log panic when vhost_topics are set. [[GH-224](https://github.com/openbao/openbao/pull/224)]
+* secret/transit: Allow use of generated destination wrapping keys rather than strictly requiring exported keys. [[GH-211](https://github.com/openbao/openbao/pull/211)]
+
+## 2.0.0-beta20240618
+### June 18, 2024
+
+> [!WARNING]
+> OpenBao's Beta Release does not include the builtin WebUI! You can only access a running Bao instance via the CLI or API.
+
+CHANGES:
+
+* added other registries for docker images [[GH-269](https://github.com/openbao/openbao/pull/269)]
+
+BUG FIXES:
+
+* cli/login: Avoid calling the token helper in `get` mode. [[GH-313](https://github.com/openbao/openbao/pull/313)]
+* core/pluings: Fix compatibility when running pre-built Vault plugins. [[GH-321](https://github.com/openbao/openbao/pull/321)]
+* core: re-introduce Server Side Consistent Tokens (SSCTs) from upstream, defaulting to disabled [[GH-298](https://github.com/openbao/openbao/pull/298)]
+* packaging: fix systemd service to refer to /etc/openbao/env for environment variables [[GH-275](https://github.com/openbao/openbao/pull/275)]
+* physical/raft: fix ListPage calls when after=. resulting in an empty list [[GH-294](https://github.com/openbao/openbao/pull/294)]
+
+## 2.0.0-alpha20240329
+### March 29, 2024
+
+> [!WARNING]
+> OpenBao's Alpha Release does not include the builtin WebUI! You can only access a running Bao instance via the CLI or API.
+
+SECURITY:
+
+* auth/cert: compare full bytes of trusted leaf certificates with incoming client certificates to prevent trusting certs with the same serial number but not the same public/private key. [[GH-173](https://github.com/openbao/openbao/pull/173)]
+
+CHANGES:
+
+* core: Bump Go version to 1.22.0. [[GH-120](https://github.com/openbao/openbao/pull/120)]
+* core: OpenBao version 2.0.0-alpha20240329.
+core: Retracted all prior Vault versions.
+api: Retracted all prior Vault versions.
+sdk: Retracted all prior Vault versions. [[GH-238](https://github.com/openbao/openbao/pull/238)]
+* secret/transit: Remove ability to use v1 and v2 Transit convergent encryption keys migrated from Vault v0.6.2 or earlier. [[GH-85](https://github.com/openbao/openbao/pull/85)]
+
+FEATURES:
+
+* **Paginated Lists**: Allow plugins to support pagination on `LIST` requests, reducing server and client burden by limiting large responses. This uses optional `after` and `limit` parameters for clients to control the size of responses with a relative indexing into result entry sets. [[GH-170](https://github.com/openbao/openbao/pull/170)]
+
+IMPROVEMENTS:
+
+* auth: Add token_strictly_bind_ip to support strictly binding issued token to login request's IP address. [[GH-202](https://github.com/openbao/openbao/pull/202)]
+* cli: Expand handling of -non-interactive to prevent reading from stdin. [[GH-221](https://github.com/openbao/openbao/pull/221)]
+* sdk/helper/shamir: Use CS-PRNG for shuffling X coordinates; do not rely on math/rand. [[GH-210](https://github.com/openbao/openbao/pull/210)]
+* sdk/helper/shamir: move Shamir's code into public SDK namespace to encourage external reuse [[GH-181](https://github.com/openbao/openbao/pull/181)]
+* secret/pki: Add Delta CRL Distribution Point to AIA URLs, allowing AIA-aware clients to find Delta CRLs dynamically. [[GH-215](https://github.com/openbao/openbao/pull/215)]
+* secret/pki: Add support for KeyUsage, ExtKeyUsage when issuing CA certificates, allowing compliance with CA/BF guidelines (e.g., with GCP Load Balancers). [[GH-76](https://github.com/openbao/openbao/pull/76)]
+* secret/pki: Add support for basicConstraints x509 extension when issuing certificates with sign-verbatim. [[GH-201](https://github.com/openbao/openbao/pull/201)]
+* secret/pki: Allow pki/issue/:role with key_type=any roles, via explicit key_type and key_bits request parameters. [[GH-209](https://github.com/openbao/openbao/pull/209)]
+* secret/transit: Add support for XChaCha20-Poly1305 keys, preventing nonce-reuse without key rotation. [[GH-36](https://github.com/openbao/openbao/pull/36)]
+* secret/transit: Allow choosing export key format, specifying format=der or format=pem for consistent PKIX encoded public keys. [[GH-212](https://github.com/openbao/openbao/pull/212)]
+* secret/transit: Allow soft deletion of keys, preventing their use and rotation but retaining key material until restored or fully deleted. [[GH-211](https://github.com/openbao/openbao/pull/211)]
+* ui: The latest versions of Chrome do not automatically redirect back to an Android app after multiple redirects during an OIDC authentication flow. A link was added to allow the user to manually redirect back to the app. [[GH-184](https://github.com/openbao/openbao/pull/184)]
+
+BUG FIXES:
+
+* secret/pki: Use user-submitted ordering for SANs, fixing issues where automatic ordering causes parse failures in some browsers. [[GH-50](https://github.com/openbao/openbao/pull/50)]
+* secret/rabbitmq: Fix role reading causing audit log panic when vhost_topics are set. [[GH-224](https://github.com/openbao/openbao/pull/224)]
+* secret/transit: Allow use of generated destination wrapping keys rather than strictly requiring exported keys. [[GH-211](https://github.com/openbao/openbao/pull/211)]
