@@ -14,6 +14,7 @@ import (
 	log "github.com/hashicorp/go-hclog"
 	"github.com/openbao/openbao/command/agentproxyshared/auth"
 	"github.com/openbao/openbao/command/agentproxyshared/auth/approle"
+	"github.com/openbao/openbao/command/agentproxyshared/auth/aws"
 	"github.com/openbao/openbao/command/agentproxyshared/auth/cert"
 	"github.com/openbao/openbao/command/agentproxyshared/auth/jwt"
 	"github.com/openbao/openbao/command/agentproxyshared/auth/kerberos"
@@ -42,6 +43,8 @@ func GetAutoAuthMethodFromConfig(autoAuthMethodType string, authConfig *auth.Aut
 		return approle.NewApproleAuthMethod(authConfig)
 	case "token_file":
 		return token_file.NewTokenFileAuthMethod(authConfig)
+	case "aws":
+		return aws.NewAWSAuthMethod(authConfig)
 	default:
 		return nil, fmt.Errorf("unknown auth method %q", autoAuthMethodType)
 	}
