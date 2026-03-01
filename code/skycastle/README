@@ -1,0 +1,5 @@
+ipfs init --profile server
+ipfs config Addresses.API /ip4/127.0.0.1/tcp/5001
+ipfs config Addresses.Gateway /ip4/127.0.0.1/tcp/8080
+ipfs config Routing.Type none
+ipfs daemon &
