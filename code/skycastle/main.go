@@ -12,13 +12,28 @@ import (
 
 var ErrWorkflowNotFound = fmt.Errorf("workflow not found")
 
-func main() {
-	skycastle.InitLogger(log.DebugLevel)
+var logLevel string
 
+func main() {
 	rootCmd := &cobra.Command{
 		Use:   "skycastle",
 		Short: "Skycastle CLI",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			level, err := log.ParseLevel(logLevel)
+			if err != nil {
+				return fmt.Errorf("invalid log level: %w", err)
+			}
+			skycastle.InitLogger(level)
+			return nil
+		},
 	}
+
+	rootCmd.PersistentFlags().StringVar(
+		&logLevel,
+		"log-level",
+		"info",
+		"Set the logging level (debug, info, warn, error)",
+	)
 
 	describeCmd := &cobra.Command{
 		Use:   "describe <target>",
