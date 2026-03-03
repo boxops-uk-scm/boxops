@@ -1,0 +1,8 @@
+{
+  "externalFormatters.languages": {
+    "starlark": {
+      "command": "/home/ubuntu/go/bin/buildifier",
+      "arguments": []
+    }
+  }
+}

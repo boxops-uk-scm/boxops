@@ -10,11 +10,11 @@ import (
 
 func AnyByte[R any]() Parser[byte, R] {
 	return func(s State, accept Accept[byte, R], reject Reject[R]) R {
-		if s.ix >= len(s.input) {
+		if s.Ix >= len(s.Input) {
 			return reject(false, UnexpectedEndOfInput(s, "any byte"), s)
 		}
 
-		b := s.input[s.ix]
+		b := s.Input[s.Ix]
 		s = s.Advance([]byte{b})
 		return accept(true, b, s)
 	}
@@ -22,12 +22,12 @@ func AnyByte[R any]() Parser[byte, R] {
 
 func Byte[R any](b byte) Parser[byte, R] {
 	return func(s State, accept Accept[byte, R], reject Reject[R]) R {
-		if s.ix >= len(s.input) {
+		if s.Ix >= len(s.Input) {
 			return reject(false, UnexpectedEndOfInput(s, fmt.Sprintf("%q", b)), s)
 		}
 
-		if s.input[s.ix] != b {
-			return reject(false, NewParseError(s, fmt.Sprintf("%q", b), fmt.Sprintf("%q", s.input[s.ix])), s)
+		if s.Input[s.Ix] != b {
+			return reject(false, NewParseError(s, fmt.Sprintf("%q", b), fmt.Sprintf("%q", s.Input[s.Ix])), s)
 		}
 
 		s = s.Advance([]byte{b})
@@ -37,11 +37,11 @@ func Byte[R any](b byte) Parser[byte, R] {
 
 func Satisfy[R any](predicate func(byte) bool, expected string) Parser[byte, R] {
 	return func(s State, accept Accept[byte, R], reject Reject[R]) R {
-		if s.ix >= len(s.input) {
+		if s.Ix >= len(s.Input) {
 			return reject(false, UnexpectedEndOfInput(s, expected), s)
 		}
 
-		b := s.input[s.ix]
+		b := s.Input[s.Ix]
 		if !predicate(b) {
 			return reject(false, NewParseError(s, expected, fmt.Sprintf("%q", b)), s)
 		}
@@ -53,14 +53,14 @@ func Satisfy[R any](predicate func(byte) bool, expected string) Parser[byte, R] 
 
 func String[R any](str string) Parser[string, R] {
 	return func(s State, accept Accept[string, R], reject Reject[R]) R {
-		if s.ix+len(str) > len(s.input) {
+		if s.Ix+len(str) > len(s.Input) {
 			return reject(false, UnexpectedEndOfInput(s, fmt.Sprintf("%q", str)), s)
 		}
 
 		b := unsafe.Slice(unsafe.StringData(str), len(str))
 
-		if !bytes.Equal(s.input[s.ix:s.ix+len(str)], b) {
-			return reject(false, NewParseError(s, fmt.Sprintf("%q", str), fmt.Sprintf("%q", s.input[s.ix:s.ix+len(str)])), s)
+		if !bytes.Equal(s.Input[s.Ix:s.Ix+len(str)], b) {
+			return reject(false, NewParseError(s, fmt.Sprintf("%q", str), fmt.Sprintf("%q", s.Input[s.Ix:s.Ix+len(str)])), s)
 		}
 
 		s = s.Advance([]byte(str))
@@ -70,28 +70,28 @@ func String[R any](str string) Parser[string, R] {
 
 func TakeWhile[R any](predicate func(byte) bool) Parser[[]byte, R] {
 	return func(s State, accept Accept[[]byte, R], reject Reject[R]) R {
-		start := s.ix
-		for s.ix < len(s.input) && predicate(s.input[s.ix]) {
-			s = s.Advance([]byte{s.input[s.ix]})
+		start := s.Ix
+		for s.Ix < len(s.Input) && predicate(s.Input[s.Ix]) {
+			s = s.Advance([]byte{s.Input[s.Ix]})
 		}
-		return accept(s.ix > start, s.input[start:s.ix], s)
+		return accept(s.Ix > start, s.Input[start:s.Ix], s)
 	}
 }
 
 func TakeWhile1[R any](predicate func(byte) bool, expected string) Parser[[]byte, R] {
 	return func(s State, accept Accept[[]byte, R], reject Reject[R]) R {
-		if s.ix >= len(s.input) {
+		if s.Ix >= len(s.Input) {
 			return reject(false, UnexpectedEndOfInput(s, expected), s)
 		}
 
-		start := s.ix
-		for s.ix < len(s.input) && predicate(s.input[s.ix]) {
-			s = s.Advance([]byte{s.input[s.ix]})
+		start := s.Ix
+		for s.Ix < len(s.Input) && predicate(s.Input[s.Ix]) {
+			s = s.Advance([]byte{s.Input[s.Ix]})
 		}
-		if s.ix == start {
-			return reject(false, NewParseError(s, expected, fmt.Sprintf("%q", s.input[s.ix])), s)
+		if s.Ix == start {
+			return reject(false, NewParseError(s, expected, fmt.Sprintf("%q", s.Input[s.Ix])), s)
 		}
-		return accept(true, s.input[start:s.ix], s)
+		return accept(true, s.Input[start:s.Ix], s)
 	}
 }
 

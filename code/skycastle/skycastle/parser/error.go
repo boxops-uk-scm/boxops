@@ -9,9 +9,10 @@ import (
 )
 
 type ParseError struct {
-	at       State
-	expected string
-	got      string
+	At       State
+	Expected string
+	Got      string
+	Message  string
 }
 
 var (
@@ -22,18 +23,17 @@ func (e ParseError) Error() error {
 	return fmt.Errorf(
 		"%w at line %d, col %d: expected %s, got %s",
 		ErrParse,
-		e.at.line,
-		e.at.column,
-		e.expected,
-		e.got)
+		e.At.Line,
+		e.At.Column,
+		e.Expected,
+		e.Got)
 }
 
 func (e ParseError) Pretty() string {
-	lines := strings.Split(string(e.at.input), "\n")
-	line := e.at.line
-	col := e.at.column
+	lines := strings.Split(string(e.At.Input), "\n")
+	line := e.At.Line
+	col := e.At.Column
 
-	// Styles
 	errWord := color.New(color.FgRed, color.Bold).Sprint("error")
 	locStyle := color.New(color.FgBlue)
 	caretStyle := color.New(color.FgYellow)
@@ -41,14 +41,16 @@ func (e ParseError) Pretty() string {
 
 	var sb strings.Builder
 
-	// Header
 	sb.WriteString(errWord)
-	fmt.Fprintf(&sb, ": expected %s, got %s\n", e.expected, e.got)
 
-	// Location line
+	if e.Message != "" {
+		fmt.Fprintf(&sb, ": %s\n", e.Message)
+	} else {
+		fmt.Fprintf(&sb, ": expected %s, got %s\n", e.Expected, e.Got)
+	}
+
 	fmt.Fprintf(&sb, "%s\n", locStyle.Sprintf("  --> input:%d:%d", line, col))
 
-	// Bounds check
 	if line < 1 || line > len(lines) {
 		return sb.String()
 	}
@@ -58,7 +60,6 @@ func (e ParseError) Pretty() string {
 	pad := strings.Repeat(" ", lineNumWidth)
 
 	gutter := func(num string) string {
-		// Keep the coloring only on the gutter, like your original.
 		return locStyle.Sprintf("%*s |", lineNumWidth, num)
 	}
 	emptyGutter := gutter(pad)
@@ -71,7 +72,6 @@ func (e ParseError) Pretty() string {
 	caretCol := min(max(col-1, 0), len(srcLine))
 	leading := strings.Repeat(" ", caretCol)
 
-	// Caret + "here"
 	sb.WriteString(caretStyle.Sprint(" " + leading + "^"))
 	sb.WriteString(caretHereStyle.Sprint(" here"))
 	sb.WriteString("\n")
@@ -82,24 +82,24 @@ func (e ParseError) Pretty() string {
 
 func UnexpectedEndOfInput(at State, expected string) ParseError {
 	return ParseError{
-		at:       at,
-		expected: expected,
-		got:      "end of input",
+		At:       at,
+		Expected: expected,
+		Got:      "end of input",
 	}
 }
 
 func ExpectedEndOfInput(at State, got string) ParseError {
 	return ParseError{
-		at:       at,
-		expected: "end of input",
-		got:      got,
+		At:       at,
+		Expected: "end of input",
+		Got:      got,
 	}
 }
 
 func NewParseError(at State, expected string, got string) ParseError {
 	return ParseError{
-		at:       at,
-		expected: expected,
-		got:      got,
+		At:       at,
+		Expected: expected,
+		Got:      got,
 	}
 }

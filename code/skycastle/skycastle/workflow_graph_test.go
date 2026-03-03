@@ -28,7 +28,7 @@ func TestBuild_ProducersAreOnlyFromOutputs_NotFromInputs(t *testing.T) {
 		t.Fatalf("AddOutput: %v", err)
 	}
 
-	wf, err := b.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{bb})
+	wf, err := b.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{bb})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestBuild_ConsumersAreOnlyFromInputs_NotFromOutputs(t *testing.T) {
 		t.Fatalf("AddOutput: %v", err)
 	}
 
-	wf, err := b.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{bb})
+	wf, err := b.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{bb})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestDigest_DeterministicWithPortMapOrder(t *testing.T) {
 		}
 		_ = b.AddOutput(act, Port("out"), out)
 
-		wf, err := b.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{out})
+		wf, err := b.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{out})
 		if err != nil {
 			t.Fatalf("Build: %v", err)
 		}
@@ -142,7 +142,7 @@ func TestDigest_ChangesWhenCommandChanges(t *testing.T) {
 	_ = b.AddInput(act1, Port("in"), in)
 	_ = b.AddOutput(act1, Port("out"), out)
 
-	res, err := b.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{out})
+	res, err := b.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{out})
 	wf1 := must(t, res, err)
 	d1 := wf1.Digest()
 
@@ -155,7 +155,7 @@ func TestDigest_ChangesWhenCommandChanges(t *testing.T) {
 	_ = b2.AddInput(act2, Port("in"), in2)
 	_ = b2.AddOutput(act2, Port("out"), out2)
 
-	res, err = b2.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{out2})
+	res, err = b2.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{out2})
 	wf2 := must(t, res, err)
 	d2 := wf2.Digest()
 
@@ -176,7 +176,7 @@ func TestDigest_IgnoresDescriptions(t *testing.T) {
 		_ = b.AddInput(act, Port("in"), in)
 		_ = b.AddOutput(act, Port("out"), out)
 
-		res, err := b.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{out})
+		res, err := b.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{out})
 		wf := must(t, res, err)
 		return wf.Digest()
 	}
@@ -198,7 +198,7 @@ func TestDigest_ChangesWhenPolicyChanges(t *testing.T) {
 		_ = b.AddInput(act, Port("in"), in)
 		_ = b.AddOutput(act, Port("out"), out)
 
-		res, err := b.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{out})
+		res, err := b.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{out})
 		wf := must(t, res, err)
 		return wf.Digest()
 	}
@@ -227,7 +227,7 @@ func TestDigest_IgnoresUnreachableGraphParts(t *testing.T) {
 	_ = b.AddInput(jAct, Port("in"), jIn)
 	_ = b.AddOutput(jAct, Port("out"), jOut)
 
-	res, err := b.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{bb})
+	res, err := b.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{bb})
 
 	wf := must(t, res, err)
 	d1 := wf.Digest()
@@ -240,7 +240,7 @@ func TestDigest_IgnoresUnreachableGraphParts(t *testing.T) {
 	_ = b2.AddInput(act2, Port("in"), a2)
 	_ = b2.AddOutput(act2, Port("out"), b2out)
 
-	res, err = b2.Build(Target{Path: "p", Name: "t"}, []ArtifactHandle{b2out})
+	res, err = b2.Build(Target{Path: Path[Relative, File]{path: "p"}, Name: "t"}, []ArtifactHandle{b2out})
 	wf2 := must(t, res, err)
 	d2 := wf2.Digest()
 

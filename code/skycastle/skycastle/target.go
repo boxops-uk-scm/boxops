@@ -8,7 +8,7 @@ import (
 )
 
 type Target struct {
-	Path string
+	Path Path[Relative, File]
 	Name string
 }
 
@@ -19,11 +19,6 @@ func (t Target) String() string {
 var isTargetPathChar = func(b byte) bool {
 	return ascii.IsLower(b) || ascii.IsUpper(b) || ascii.IsDigit(b) || b == '/' || b == '.' || b == '_' || b == '-'
 }
-
-var pathP = parser.TakeWhile[parser.Result[Target]](
-	func(b byte) bool {
-		return isTargetPathChar(b)
-	})
 
 func isTargetNameChar(b byte) bool {
 	return ascii.IsLower(b) || ascii.IsUpper(b) || ascii.IsDigit(b) || b == '_' || b == '-' || b == '=' || b == ',' || b == '@' || b == '~' || b == '+'
@@ -41,13 +36,13 @@ var delimiterP = parser.Byte[parser.Result[Target]](':')
 var targetP = parser.SkipThen(
 	prefixP,
 	parser.Then(
-		pathP,
-		func(path []byte) parser.Parser[Target, parser.Result[Target]] {
+		relativeFileP[parser.Result[Target]](isTargetPathChar),
+		func(path Path[Relative, File]) parser.Parser[Target, parser.Result[Target]] {
 			return parser.SkipThen(
 				delimiterP,
 				parser.Map(nameP, func(name []byte) Target {
 					return Target{
-						Path: string(path),
+						Path: path,
 						Name: string(name),
 					}
 				}),

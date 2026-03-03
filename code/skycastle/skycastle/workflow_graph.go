@@ -25,7 +25,7 @@ func NewEdgeId() EdgeId {
 	return EdgeId(NewUnique())
 }
 
-type Edge struct {
+type WorkflowGraphEdge struct {
 	Id          EdgeId
 	Description string
 	Command     string
@@ -34,10 +34,10 @@ type Edge struct {
 	Outputs     map[Port]NodeId
 }
 
-type ActionOption func(*Edge)
+type ActionOption func(*WorkflowGraphEdge)
 
 func WithActionDescription(description string) ActionOption {
-	return func(n *Edge) {
+	return func(n *WorkflowGraphEdge) {
 		n.Description = description
 	}
 }
@@ -57,7 +57,7 @@ func WithMaxDuration(maxDurationSeconds int) PolicyOption {
 }
 
 func WithPolicy(policy Policy) ActionOption {
-	return func(n *Edge) {
+	return func(n *WorkflowGraphEdge) {
 		n.Policy = policy
 	}
 }
@@ -70,29 +70,29 @@ func WithPolicyOptions(opts ...PolicyOption) ActionOption {
 	return WithPolicy(policy)
 }
 
-type Node struct {
+type WorkflowGraphNode struct {
 	Id          NodeId
 	Description string
 	Kind        ArtifactKind
 }
 
-type ArtifactOption func(*Node)
+type ArtifactOption func(*WorkflowGraphNode)
 
 func WithArtifactDescription(description string) ArtifactOption {
-	return func(n *Node) {
+	return func(n *WorkflowGraphNode) {
 		n.Description = description
 	}
 }
 
 type WorkflowGraph struct {
-	Nodes map[NodeId]Node
-	Edges map[EdgeId]Edge
+	Nodes map[NodeId]WorkflowGraphNode
+	Edges map[EdgeId]WorkflowGraphEdge
 }
 
 func NewWorkflowGraph() *WorkflowGraph {
 	return &WorkflowGraph{
-		Nodes: make(map[NodeId]Node),
-		Edges: make(map[EdgeId]Edge),
+		Nodes: make(map[NodeId]WorkflowGraphNode),
+		Edges: make(map[EdgeId]WorkflowGraphEdge),
 	}
 }
 
@@ -144,7 +144,7 @@ func (b *WorkflowGraphBuilder) AddAction(command string, opts ...ActionOption) A
 	id := NewEdgeId()
 	handle := NewActionHandle()
 
-	edge := Edge{
+	edge := WorkflowGraphEdge{
 		Id:      id,
 		Command: command,
 		Policy:  DefaultPolicy(),
@@ -166,7 +166,7 @@ func (b *WorkflowGraphBuilder) AddArtifact(kind ArtifactKind, opts ...ArtifactOp
 	id := NewNodeId()
 	handle := NewArtifactHandle()
 
-	node := Node{
+	node := WorkflowGraphNode{
 		Id:   id,
 		Kind: kind,
 	}

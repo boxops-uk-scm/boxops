@@ -69,7 +69,7 @@ func Repeat[T any, R any](p Parser[T, R], n int, name string) Parser[[]T, R] {
 				return accept(consumedAny, out, st)
 			}
 
-			if st.ix >= len(st.input) {
+			if st.Ix >= len(st.Input) {
 				expected := fmt.Sprint(n, " ", name)
 				got := fmt.Sprintf("%d before input was exhausted", i)
 				return reject(consumedAny, NewParseError(st, expected, got), st)

@@ -9,7 +9,7 @@ import (
 
 type StarlarkFunction func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error)
 
-func WorkflowBuiltin(packagePath string, b *WorkflowGraphBuilder, callback func(Workflow)) StarlarkFunction {
+func WorkflowBuiltin(packagePath Path[Relative, File], b *WorkflowGraphBuilder, callback func(Workflow)) StarlarkFunction {
 	return func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (val starlark.Value, err error) {
 		if len(args) > 0 {
 			err = fmt.Errorf("workflow() does not accept positional arguments")

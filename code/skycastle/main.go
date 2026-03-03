@@ -21,29 +21,23 @@ func main() {
 		Short: "Describe a workflow",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			execCtx, err := skycastle.NewExecContext(skycastle.WithRepoRootPathFromFilesystem())
-			if err != nil {
-				return err
-			}
-
 			target, err := skycastle.ParseTarget(args[0])
 			if err != nil {
-				return err
+				fmt.Println(err)
+				os.Exit(1)
 			}
 
-			module, err := skycastle.LoadModule(cmd.Context(), execCtx, target.Path)
+			executionOptions, err := skycastle.NewExecutionOptions()
 			if err != nil {
 				return err
 			}
 
-			workflow, ok := module.Workflows[target]
-			if !ok {
-				return ErrWorkflowNotFound
+			workflow, err := skycastle.Execute(cmd.Context(), executionOptions, target)
+			if err != nil {
+				return err
 			}
 
 			workflow.PrettyPrint(os.Stdout)
-
-			_ = module
 			return nil
 		},
 	}

@@ -1,12 +1,11 @@
 package skycastle
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
+	"skycastle/skycastle/parser"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/syntax"
@@ -25,8 +24,6 @@ func WithRepoRootPath(path string) ExecConfigOption {
 	}
 }
 
-var ErrRepoRootEnvVarNotSet = errors.New("SKYCASTLE_REPO_ROOT environment variable not set")
-
 func WithRepoRootPathFromEnv() ExecConfigOption {
 	return func(c *ExecConfig) error {
 		if repoRootPath, ok := os.LookupEnv("SKYCASTLE_REPO_ROOT"); ok {
@@ -34,11 +31,9 @@ func WithRepoRootPathFromEnv() ExecConfigOption {
 			return nil
 		}
 
-		return ErrRepoRootEnvVarNotSet
+		return errors.New("SKYCASTLE_REPO_ROOT environment variable not set")
 	}
 }
-
-var ErrRepoRootNotDetected = errors.New("unable to detect repo root path")
 
 func WithRepoRootPathFromFilesystem() ExecConfigOption {
 	return func(c *ExecConfig) error {
@@ -75,13 +70,12 @@ func WithRepoRootPathFromFilesystem() ExecConfigOption {
 			dir = parent
 		}
 
-		return ErrRepoRootNotDetected
+		return errors.New("unable to detect repo root path")
 	}
 }
 
 type ExecContext struct {
-	Config  ExecConfig
-	Modules sync.Map
+	Config ExecConfig
 }
 
 type Module struct {
@@ -102,12 +96,8 @@ func NewExecContext(opts ...ExecConfigOption) (*ExecContext, error) {
 	}, nil
 }
 
-func LoadModule(ctx context.Context, execCtx *ExecContext, path string) (Module, error) {
-	if val, ok := execCtx.Modules.Load(path); ok {
-		return val.(Module), nil
-	}
-
-	absolutePath := filepath.Join(execCtx.Config.RepoRootPath, path)
+func LoadModule(execCtx *ExecContext, path Path[Relative, File]) (Module, error) {
+	absolutePath := filepath.Join(execCtx.Config.RepoRootPath, path.String())
 	src, err := os.ReadFile(absolutePath)
 	if err != nil {
 		return Module{}, err
@@ -127,12 +117,43 @@ func LoadModule(ctx context.Context, execCtx *ExecContext, path string) (Module,
 	}
 
 	thread := &starlark.Thread{
-		Name:  path,
+		Name:  path.String(),
 		Print: func(_ *starlark.Thread, msg string) { fmt.Println(msg) },
+		Load: func(thread *starlark.Thread, module string) (starlark.StringDict, error) {
+			dict := starlark.StringDict{}
+			switch module {
+			case "path/to/foo.star":
+				dict["foo"] = starlark.String("foo")
+			case "path/to/baa.star":
+				dict["baa"] = starlark.String("baa")
+			default:
+				return nil, fmt.Errorf("unknown module: %s", module)
+			}
+
+			return dict, nil
+		},
 	}
 
-	globals, err := starlark.ExecFileOptions(&syntax.FileOptions{}, thread, path, src, builtins)
+	globals, err := starlark.ExecFileOptions(&syntax.FileOptions{}, thread, path.String(), src, builtins)
 	if err != nil {
+		var syntaxError syntax.Error
+		if errors.As(err, &syntaxError) {
+			state := parser.State{
+				Input:  src,
+				Line:   int(syntaxError.Pos.Line),
+				Column: int(syntaxError.Pos.Col),
+			}
+
+			parseError := parser.ParseError{
+				Message: syntaxError.Msg,
+				At:      state,
+			}
+
+			fmt.Println(parseError.Pretty())
+
+			return Module{}, parseError.Error()
+		}
+
 		return Module{}, err
 	}
 

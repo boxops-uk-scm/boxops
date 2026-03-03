@@ -4,10 +4,11 @@ go 1.25.6
 
 require (
 	github.com/apple/foundationdb/bindings/go v0.0.0-20260219071659-c9bb8f15361f
+	github.com/fatih/color v1.18.0
 	github.com/galsondor/go-ascii v0.0.0-20151210013816-e2eb5175fb10
 	github.com/go-git/go-git/v5 v5.16.5
-	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
+	github.com/xlab/treeprint v1.2.0
 	go.starlark.net v0.0.0-20260210143700-b62fd896b91b
 )
 
@@ -19,14 +20,13 @@ require (
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
-	github.com/fatih/color v1.18.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
+	github.com/hmdsefi/gograph v0.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/onsi/gomega v1.36.3 // indirect
@@ -38,7 +38,6 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	github.com/xlab/treeprint v1.2.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect

@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"fmt"
+	"os"
 	"unsafe"
 )
 
@@ -21,8 +21,8 @@ func Exact[T any](p Parser[T, Result[T]], input []byte) (T, error) {
 	st := NewState(input)
 	res := p(st,
 		func(_ bool, v T, st2 State) Result[T] {
-			if st2.ix != len(input) {
-				return Result[T]{ok: false, err: ExpectedEndOfInput(st2, string(st2.input[st2.ix:]))}
+			if st2.Ix != len(input) {
+				return Result[T]{ok: false, err: ExpectedEndOfInput(st2, string(st2.Input[st2.Ix:]))}
 			}
 			return Result[T]{val: v, ok: true}
 		},
@@ -33,7 +33,7 @@ func Exact[T any](p Parser[T, Result[T]], input []byte) (T, error) {
 		return res.val, nil
 	}
 
-	fmt.Println(res.err.Pretty())
+	os.Stderr.WriteString(res.err.Pretty() + "\n")
 	return res.val, res.err.Error()
 }
 
