@@ -2,6 +2,8 @@ package skycastle
 
 import (
 	"fmt"
+	"log/slog"
+	"skycastle/skycastle/slice_extensions"
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
@@ -9,10 +11,22 @@ import (
 
 type StarlarkFunction func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error)
 
-func WorkflowBuiltin(packagePath Path[Relative, File], b *WorkflowGraphBuilder, callback func(Workflow)) StarlarkFunction {
-	return func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (val starlark.Value, err error) {
+func WorkflowBuiltin(packagePath Path[Relative, File], callback func(Workflow)) StarlarkFunction {
+	return func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (val starlark.Value, err error) {
 		if len(args) > 0 {
 			err = fmt.Errorf("workflow() does not accept positional arguments")
+			return
+		}
+
+		local := thread.Local(workflowBuilderThreadLocalKey)
+		if local == nil {
+			err = fmt.Errorf("workflow() called outside of a workflow context")
+			return
+		}
+
+		b, ok := local.(*WorkflowGraphBuilder)
+		if !ok {
+			err = fmt.Errorf("invalid workflow builder in thread local")
 			return
 		}
 
@@ -71,6 +85,14 @@ func WorkflowBuiltin(packagePath Path[Relative, File], b *WorkflowGraphBuilder, 
 			workflowOpts...,
 		)
 
+		slog.Debug("Created workflow",
+			"name", name,
+			"description", description,
+			"goals", fmt.Sprintf("%v", slice_extensions.Map(goalHandles, func(h ArtifactHandle) string {
+				return Unique(h).Short()
+			})),
+		)
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to build workflow: %w", err)
 		}
@@ -81,18 +103,30 @@ func WorkflowBuiltin(packagePath Path[Relative, File], b *WorkflowGraphBuilder, 
 	}
 }
 
-func FileBuiltin(b *WorkflowGraphBuilder) StarlarkFunction {
-	return ArtifactBuiltin(b, ArtifactKindFile)
+func FileBuiltin() StarlarkFunction {
+	return ArtifactBuiltin(ArtifactKindFile)
 }
 
-func DirBuiltin(b *WorkflowGraphBuilder) StarlarkFunction {
-	return ArtifactBuiltin(b, ArtifactKindDirectory)
+func DirBuiltin() StarlarkFunction {
+	return ArtifactBuiltin(ArtifactKindDirectory)
 }
 
-func ArtifactBuiltin(b *WorkflowGraphBuilder, kind ArtifactKind) StarlarkFunction {
-	return func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (val starlark.Value, err error) {
+func ArtifactBuiltin(kind ArtifactKind) StarlarkFunction {
+	return func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (val starlark.Value, err error) {
 		if len(args) > 0 {
 			err = fmt.Errorf("artifact() does not accept positional arguments")
+			return
+		}
+
+		local := thread.Local(workflowBuilderThreadLocalKey)
+		if local == nil {
+			err = fmt.Errorf("workflow() called outside of a workflow context")
+			return
+		}
+
+		b, ok := local.(*WorkflowGraphBuilder)
+		if !ok {
+			err = fmt.Errorf("invalid workflow builder in thread local")
 			return
 		}
 
@@ -118,8 +152,18 @@ func ArtifactBuiltin(b *WorkflowGraphBuilder, kind ArtifactKind) StarlarkFunctio
 	}
 }
 
-func ActionBuiltin(b *WorkflowGraphBuilder) StarlarkFunction {
-	return func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func ActionBuiltin() StarlarkFunction {
+	return func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		local := thread.Local(workflowBuilderThreadLocalKey)
+		if local == nil {
+			return nil, fmt.Errorf("action() called outside of a workflow context")
+		}
+
+		b, ok := local.(*WorkflowGraphBuilder)
+		if !ok {
+			return nil, fmt.Errorf("invalid workflow builder in thread local")
+		}
+
 		var (
 			description string
 			command     string
@@ -159,6 +203,11 @@ func ActionBuiltin(b *WorkflowGraphBuilder) StarlarkFunction {
 		action := b.AddAction(
 			command,
 			actionOpts...,
+		)
+
+		slog.Debug("Created action",
+			"description", description,
+			"handle", Unique(action).Short(),
 		)
 
 		stdoutArtifactHandle, _ := b.AddOutputFile(
@@ -205,6 +254,11 @@ func ActionBuiltin(b *WorkflowGraphBuilder) StarlarkFunction {
 					return nil, err
 				}
 
+				slog.Debug("Added input to action",
+					"action", Unique(action).Short(),
+					"port", port,
+					"artifact", Unique(ArtifactHandle(artifactHandle)).Short(),
+				)
 				b.AddInput(action, port, ArtifactHandle(artifactHandle))
 			}
 		}
@@ -246,6 +300,11 @@ func ActionBuiltin(b *WorkflowGraphBuilder) StarlarkFunction {
 					return nil, err
 				}
 
+				slog.Debug("Added output to action",
+					"action", Unique(action).Short(),
+					"port", port,
+					"artifact", Unique(ArtifactHandle(artifactHandle)).Short(),
+				)
 				err = b.AddOutput(action, port, ArtifactHandle(artifactHandle))
 				if err != nil {
 					return nil, fmt.Errorf("failed to add output for key %v: %v", key, err)
@@ -270,7 +329,7 @@ func ActionBuiltin(b *WorkflowGraphBuilder) StarlarkFunction {
 	}
 }
 
-func PolicyBuiltin(_ *WorkflowGraphBuilder) StarlarkFunction {
+func PolicyBuiltin() StarlarkFunction {
 	return func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (val starlark.Value, err error) {
 		policy := Policy{}
 

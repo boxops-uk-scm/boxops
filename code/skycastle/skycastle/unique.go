@@ -21,6 +21,10 @@ func (u Unique) String() string {
 	return base64.RawURLEncoding.EncodeToString(u[:])
 }
 
+func (u Unique) Short() string {
+	return u.String()[:8]
+}
+
 func (u Unique) StarlarkString() starlark.String {
 	return starlark.String(u.String())
 }

@@ -2,15 +2,19 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"skycastle/skycastle"
 
+	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
 
 var ErrWorkflowNotFound = fmt.Errorf("workflow not found")
 
 func main() {
+	skycastle.InitLogger(log.DebugLevel)
+
 	rootCmd := &cobra.Command{
 		Use:   "skycastle",
 		Short: "Skycastle CLI",
@@ -23,18 +27,22 @@ func main() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target, err := skycastle.ParseTarget(args[0])
 			if err != nil {
-				fmt.Println(err)
+				slog.Error(err.Error())
 				os.Exit(1)
 			}
 
-			executionOptions, err := skycastle.NewExecutionOptions()
+			executionOptions, err := skycastle.NewExecutionOptions(
+				skycastle.WithConcurrencyLimit(1),
+			)
 			if err != nil {
-				return err
+				slog.Error(err.Error())
+				os.Exit(1)
 			}
 
 			workflow, err := skycastle.Execute(cmd.Context(), executionOptions, target)
 			if err != nil {
-				return err
+				slog.Error(err.Error())
+				os.Exit(1)
 			}
 
 			workflow.PrettyPrint(os.Stdout)
