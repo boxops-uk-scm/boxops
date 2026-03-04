@@ -154,6 +154,10 @@ func ArtifactBuiltin(kind ArtifactKind) StarlarkFunction {
 
 func ActionBuiltin() StarlarkFunction {
 	return func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		if len(args) > 0 {
+			return nil, fmt.Errorf("action() does not accept positional arguments")
+		}
+
 		local := thread.Local(workflowBuilderThreadLocalKey)
 		if local == nil {
 			return nil, fmt.Errorf("action() called outside of a workflow context")
@@ -170,6 +174,7 @@ func ActionBuiltin() StarlarkFunction {
 			policyDict  *starlark.Dict
 			inputsDict  *starlark.Dict
 			outputsDict *starlark.Dict
+			envDict     *starlark.Dict
 		)
 
 		if err := starlark.UnpackArgs("action", args, kwargs,
@@ -178,6 +183,7 @@ func ActionBuiltin() StarlarkFunction {
 			"policy?", &policyDict,
 			"inputs?", &inputsDict,
 			"outputs?", &outputsDict,
+			"env?", &envDict,
 		); err != nil {
 			return nil, err
 		}
@@ -198,6 +204,37 @@ func ActionBuiltin() StarlarkFunction {
 			}
 
 			actionOpts = append(actionOpts, WithPolicy(policy))
+		}
+
+		if envDict != nil {
+			env := make(map[string]string)
+			iter := envDict.Iterate()
+			defer iter.Done()
+
+			var key starlark.Value
+			for iter.Next(&key) {
+				name, ok := key.(starlark.String)
+				if !ok {
+					return nil, fmt.Errorf("env var names must be strings")
+				}
+
+				value, ok, err := envDict.Get(key)
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					return nil, fmt.Errorf("env var key not found: %v", key)
+				}
+
+				valueStr, ok := value.(starlark.String)
+				if !ok {
+					return nil, fmt.Errorf("env var value for key %v is not a string: %v", key, value)
+				}
+
+				env[name.GoString()] = valueStr.GoString()
+			}
+
+			actionOpts = append(actionOpts, WithEnv(env))
 		}
 
 		action := b.AddAction(

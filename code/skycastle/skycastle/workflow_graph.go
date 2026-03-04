@@ -30,11 +30,24 @@ type WorkflowGraphEdge struct {
 	Description string
 	Command     string
 	Policy      Policy
+	Env         map[string]string
 	Inputs      map[Port]NodeId
 	Outputs     map[Port]NodeId
 }
 
 type ActionOption func(*WorkflowGraphEdge)
+
+func WithEnvVar(key, value string) ActionOption {
+	return func(n *WorkflowGraphEdge) {
+		n.Env[key] = value
+	}
+}
+
+func WithEnv(env map[string]string) ActionOption {
+	return func(n *WorkflowGraphEdge) {
+		maps.Copy(n.Env, env)
+	}
+}
 
 func WithActionDescription(description string) ActionOption {
 	return func(n *WorkflowGraphEdge) {
@@ -150,6 +163,7 @@ func (b *WorkflowGraphBuilder) AddAction(command string, opts ...ActionOption) A
 		Policy:  DefaultPolicy(),
 		Inputs:  make(map[Port]NodeId),
 		Outputs: make(map[Port]NodeId),
+		Env:     make(map[string]string),
 	}
 
 	for _, opt := range opts {
@@ -539,6 +553,23 @@ func (ar ActionCursor) Workflow() Workflow {
 func (ar ActionCursor) Command() string {
 	edge := ar.ws.graph.Edges[ar.id]
 	return edge.Command
+}
+
+func (ar ActionCursor) Env() iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		edge := ar.ws.graph.Edges[ar.id]
+		for key, value := range edge.Env {
+			if !yield(key, value) {
+				return
+			}
+		}
+	}
+}
+
+func (ar ActionCursor) EnvVar(name string) (string, bool) {
+	edge := ar.ws.graph.Edges[ar.id]
+	value, ok := edge.Env[name]
+	return value, ok
 }
 
 func (ar ActionCursor) Policy() Policy {

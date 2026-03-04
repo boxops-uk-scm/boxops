@@ -42,6 +42,9 @@ def smoke_test_http(binary, description = "Smoke test: start server and hit /hea
         inputs = {
             "BIN": binary,
         },
+        env = {
+            "GODEBUG": "madvdontneed=1",
+        },
     )
 
 build_api = go_build(

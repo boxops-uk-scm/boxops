@@ -3,6 +3,7 @@ package skycastle
 import (
 	"fmt"
 	"io"
+	"maps"
 
 	"github.com/fatih/color"
 	"github.com/xlab/treeprint"
@@ -17,6 +18,7 @@ type workflowStyles struct {
 	None    *color.Color
 	Digest  *color.Color
 	Value   *color.Color
+	EnvVar  *color.Color
 }
 
 func defaultWorkflowStyles() workflowStyles {
@@ -29,6 +31,7 @@ func defaultWorkflowStyles() workflowStyles {
 		None:    color.New(color.Faint),
 		Digest:  color.New(),
 		Value:   color.New(),
+		EnvVar:  color.New(color.FgYellow),
 	}
 }
 
@@ -72,6 +75,16 @@ func addAction(parent treeprint.Tree, st workflowStyles, act Action) {
 	p := act.Policy()
 	pol.AddNode(fmt.Sprintf("%s %s", st.Key.Sprint("MaxDurationSeconds:"), intOrNone(st, p.MaxDurationSeconds)))
 	pol.AddNode(fmt.Sprintf("%s %s", st.Key.Sprint("MaxRetries:"), intOrNone(st, p.MaxRetries)))
+
+	env := ac.AddBranch(st.Key.Sprint("Env:"))
+	envMap := maps.Collect(act.Env())
+	if len(envMap) == 0 {
+		env.AddNode(st.None.Sprint("<none>"))
+	} else {
+		for k, v := range envMap {
+			env.AddNode(fmt.Sprintf("%s=%s", st.EnvVar.Sprint(safeString(k)), st.Value.Sprint(safeString(v))))
+		}
+	}
 
 	ins := ac.AddBranch(st.Key.Sprint("Inputs:"))
 	hasAny := false
