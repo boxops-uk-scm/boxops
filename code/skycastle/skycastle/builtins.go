@@ -34,12 +34,16 @@ func WorkflowBuiltin(packagePath Path[Relative, File], callback func(Workflow)) 
 			name        string
 			description string
 			goals       *starlark.List
+			inputsDict  *starlark.Dict
+			envDict     *starlark.Dict
 		)
 
 		if err = starlark.UnpackArgs("workflow", args, kwargs,
 			"name", &name,
 			"description?", &description,
 			"goals?", &goals,
+			"inputs?", &inputsDict,
+			"env?", &envDict,
 		); err != nil {
 			return
 		}
@@ -71,6 +75,45 @@ func WorkflowBuiltin(packagePath Path[Relative, File], callback func(Workflow)) 
 			}
 		}
 
+		inputs := make(map[Port]ArtifactHandle)
+		if inputsDict != nil {
+			iter := inputsDict.Iterate()
+			defer iter.Done()
+
+			var key starlark.Value
+			for iter.Next(&key) {
+				name, ok := key.(starlark.String)
+				if !ok {
+					return nil, fmt.Errorf("input names must be strings")
+				}
+
+				value, ok, err := inputsDict.Get(key)
+				if err != nil {
+					return nil, err
+				}
+				if !ok {
+					return nil, fmt.Errorf("input key not found: %v", key)
+				}
+
+				artifactIdS, ok := value.(starlark.String)
+				if !ok {
+					return nil, fmt.Errorf("input value for key %v is not a string: %v", key, value)
+				}
+
+				artifactHandle, err := UniqueFromStarlarkString(artifactIdS)
+				if err != nil {
+					return nil, fmt.Errorf("invalid handle for key %v: %v", key, err)
+				}
+
+				port, err := PortFromStarlarkString(name)
+				if err != nil {
+					return nil, err
+				}
+
+				inputs[port] = ArtifactHandle(artifactHandle)
+			}
+		}
+
 		workflowOpts := []WorkflowSpecOption{}
 		if description != "" {
 			workflowOpts = append(workflowOpts, WithWorkflowDescription(description))
@@ -82,6 +125,7 @@ func WorkflowBuiltin(packagePath Path[Relative, File], callback func(Workflow)) 
 				Name: name,
 			},
 			goalHandles,
+			inputs,
 			workflowOpts...,
 		)
 
@@ -283,7 +327,7 @@ func ActionBuiltin() StarlarkFunction {
 
 				artifactHandle, err := UniqueFromStarlarkString(artifactIdS)
 				if err != nil {
-					return nil, fmt.Errorf("invalid UUID for key %v: %v", key, err)
+					return nil, fmt.Errorf("invalid handle for key %v: %v", key, err)
 				}
 
 				port, err := PortFromStarlarkString(name)
@@ -329,7 +373,7 @@ func ActionBuiltin() StarlarkFunction {
 
 				artifactHandle, err := UniqueFromStarlarkString(artifactIdS)
 				if err != nil {
-					return nil, fmt.Errorf("invalid UUID for key %v: %v", key, err)
+					return nil, fmt.Errorf("invalid handle for key %v: %v", key, err)
 				}
 
 				port, err := PortFromStarlarkString(name)

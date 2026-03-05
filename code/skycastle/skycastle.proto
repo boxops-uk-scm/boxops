@@ -1,0 +1,41 @@
+syntax = "proto3";
+package skycastle;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package "skycastle"
+
+enum ActionStatus {
+  ACTION_STATUS_UNKNOWN = 0;
+  ACTION_STATUS_PENDING = 1;
+  ACTION_STATUS_IN_PROGRESS = 2;
+  ACTION_STATUS_COMPLETED = 3;
+  ACTION_STATUS_CANCELLED = 4;
+  ACTION_STATUS_FAILED = 5;
+}
+
+message ActionPending {
+
+}
+
+message ActionInProgress {
+  google.protobuf.Timestamp start_time = 1;
+}
+
+message ActionInputsNotSatisfiable {
+
+}
+
+message ActionCancelledByUser {
+  optional string reason = 1;
+}
+
+message ActionTimeout {}
+
+message ActionNonZeroExitCode {
+  int32 exit_code = 1;
+}
+
+message ActionCompleted {
+  google.protobuf.Timestamp end_time = 2;
+}

@@ -22,4 +22,6 @@ type Workflow interface {
 	Actions() iter.Seq[Action]
 	Artifacts() iter.Seq[Artifact]
 	PrettyPrint(io.Writer) error
+	Input(Port) (Artifact, bool)
+	Inputs() iter.Seq2[Port, Artifact]
 }

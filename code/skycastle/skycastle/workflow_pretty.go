@@ -37,18 +37,47 @@ func defaultWorkflowStyles() workflowStyles {
 
 func (wf WorkflowSpec) PrettyPrint(w io.Writer) error {
 	st := defaultWorkflowStyles()
-	goals := treeprint.NewWithRoot(st.Key.Sprint("Goals:"))
 
 	fmt.Printf("%s %s\n", st.Key.Sprint("Target:"), st.Value.Sprint(safeString(wf.Target())))
 	fmt.Printf("%s %s\n", st.Key.Sprint("Digest:"), st.Digest.Sprint(safeString(wf.Digest())))
 	fmt.Printf("%s %s\n", st.Key.Sprint("Description:"), st.Value.Sprint(wf.Description()))
 
-	for goal := range wf.Goals() {
-		addArtifact(goals, st, goal)
+	goals := treeprint.NewWithRoot(st.Key.Sprint("Goals:"))
+	if len(wf.goals) == 0 {
+		goals = treeprint.NewWithRoot(st.Key.Sprint("Goals: ") + st.None.Sprint("<none>"))
+	} else {
+		for goal := range wf.Goals() {
+			addArtifact(goals, st, goal)
+		}
 	}
 
-	_, err := io.WriteString(w, goals.String())
-	return err
+	inputs := treeprint.NewWithRoot(st.Key.Sprint("Inputs:"))
+
+	if len(wf.inputs) == 0 {
+		inputs = treeprint.NewWithRoot(st.Key.Sprint("Inputs: ") + st.None.Sprint("<none>"))
+	} else {
+		for inPort, inArt := range wf.Inputs() {
+			addInputArtifact(inputs, st, inPort, inArt)
+		}
+	}
+
+	var err error
+	_, err = io.WriteString(w, inputs.String())
+	if err != nil {
+		return err
+	}
+
+	_, err = io.WriteString(w, goals.String())
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func addInputArtifact(parent treeprint.Tree, st workflowStyles, port Port, a Artifact) {
+	input := parent.AddBranch(fmt.Sprintf("%s %s", st.Key.Sprint("Input:"), st.Port.Sprint(safeString(port))))
+	addArtifact(input, st, a)
 }
 
 func addArtifact(parent treeprint.Tree, st workflowStyles, a Artifact) {

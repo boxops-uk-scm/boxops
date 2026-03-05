@@ -1,4 +1,4 @@
-load("code/skycastle/go.star", "go_build", "go_test")
+load("code/skycastle/examples/go.star", "go_build", "go_test")
 
 def tar_gz(name, input_file, description = None, max_retries = 1, max_duration_seconds = 120):
     return action(
@@ -75,12 +75,19 @@ smoke = smoke_test_http(
     max_duration_seconds = 90,
 )
 
+source = file(
+    description = "Source code for the Go HTTP service",
+)
+
 workflow(
     name = "build",
     description = "Build a small Go HTTP service",
     goals = [
         build_api.outputs["OUT"],
     ],
+    inputs = {
+        "SOURCE": source,
+    },
 )
 
 workflow(

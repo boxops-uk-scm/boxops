@@ -139,6 +139,7 @@ type WorkflowGraphBuilder struct {
 	Cospan          *WorkflowGraphCospan
 	ArtifactHandles map[ArtifactHandle]NodeId
 	ActionHandles   map[ActionHandle]EdgeId
+	Inputs          map[Port]NodeId
 }
 
 func NewWorkflowGraphBuilder() *WorkflowGraphBuilder {
@@ -150,6 +151,7 @@ func NewWorkflowGraphBuilder() *WorkflowGraphBuilder {
 		},
 		ArtifactHandles: make(map[ArtifactHandle]NodeId),
 		ActionHandles:   make(map[ActionHandle]EdgeId),
+		Inputs:          make(map[Port]NodeId),
 	}
 }
 
@@ -333,6 +335,7 @@ func (left *WorkflowGraphBuilder) Connect(right *WorkflowGraphBuilder) {
 
 type WorkflowSpec struct {
 	graph       *WorkflowGraph
+	inputs      map[Port]NodeId
 	producers   map[NodeId]Producer
 	consumers   map[NodeId][]Consumer
 	description string
@@ -428,11 +431,12 @@ func digestSum(h hash.Hash) Digest {
 	return d
 }
 
-func (b *WorkflowGraphBuilder) Build(target Target, goals []ArtifactHandle, opts ...WorkflowSpecOption) (Workflow, error) {
+func (b *WorkflowGraphBuilder) Build(target Target, goals []ArtifactHandle, inputs map[Port]ArtifactHandle, opts ...WorkflowSpecOption) (Workflow, error) {
 	spec := &WorkflowSpec{
 		graph:     b.Cospan.Apex,
 		target:    target,
 		goals:     make([]NodeId, len(goals)),
+		inputs:    make(map[Port]NodeId),
 		producers: make(map[NodeId]Producer),
 		consumers: make(map[NodeId][]Consumer),
 	}
@@ -447,6 +451,14 @@ func (b *WorkflowGraphBuilder) Build(target Target, goals []ArtifactHandle, opts
 			return nil, ErrInvalidArtifactHandle
 		}
 		spec.goals[i] = artifactId
+	}
+
+	for port, artifact := range inputs {
+		artifactId, ok := b.ArtifactHandles[artifact]
+		if !ok {
+			return nil, ErrInvalidArtifactHandle
+		}
+		spec.inputs[port] = artifactId
 	}
 
 	for _, edge := range spec.graph.Edges {
@@ -480,6 +492,24 @@ func (wr *WorkflowSpec) Digest() Digest {
 
 func (wr *WorkflowSpec) Target() Target {
 	return wr.target
+}
+
+func (wr *WorkflowSpec) Input(port Port) (Artifact, bool) {
+	artifactId, ok := wr.inputs[port]
+	if !ok {
+		return nil, false
+	}
+	return ArtifactCursor{ws: wr, id: artifactId}, true
+}
+
+func (wr *WorkflowSpec) Inputs() iter.Seq2[Port, Artifact] {
+	return func(yield func(Port, Artifact) bool) {
+		for port, artifactId := range wr.inputs {
+			if !yield(port, ArtifactCursor{ws: wr, id: artifactId}) {
+				return
+			}
+		}
+	}
 }
 
 func (wr *WorkflowSpec) Goals() iter.Seq[Artifact] {
@@ -527,7 +557,10 @@ func (ar ArtifactCursor) Kind() ArtifactKind {
 }
 
 func (ar ArtifactCursor) Producer() (Port, Action) {
-	producer := ar.ws.producers[ar.id]
+	producer, ok := ar.ws.producers[ar.id]
+	if !ok {
+		return "", nil
+	}
 	return producer.Port, ActionCursor{ws: ar.ws, id: producer.ActionId}
 }
 
