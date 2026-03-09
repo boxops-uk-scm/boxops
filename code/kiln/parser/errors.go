@@ -19,12 +19,164 @@ type SourceError struct {
 	Context    []ErrorContext
 }
 
+type SourceErrorOption func(*SourceError)
+
+func NewSourceError(span SourceSpan, options ...SourceErrorOption) SourceError {
+	err := SourceError{
+		SourceSpan: span,
+	}
+
+	for _, option := range options {
+		option(&err)
+	}
+
+	return err
+}
+
+func WithExpected(expected ...string) SourceErrorOption {
+	return func(err *SourceError) {
+		err.Expected = expected
+	}
+}
+
+func WithGot(got string) SourceErrorOption {
+	return func(err *SourceError) {
+		err.Got = got
+	}
+}
+
+func WithMessage(message string) SourceErrorOption {
+	return func(err *SourceError) {
+		err.Message = message
+	}
+}
+
+func WithContext(span SourceSpan, message string) SourceErrorOption {
+	return func(err *SourceError) {
+		err.Context = append(err.Context, ErrorContext{
+			Span:    span,
+			Message: message,
+		})
+	}
+}
+
+func WithDefaultContext() SourceErrorOption {
+	return func(err *SourceError) {
+		err.Context = append(err.Context, ErrorContext{
+			Span:    err.SourceSpan,
+			Message: "here",
+		})
+	}
+}
+
+type SourceErrorFormat struct {
+	TabSize         int
+	ShowWhitespace  bool
+	ErrorStyle      *color.Color
+	PositionStyle   *color.Color
+	ContextStyle    *color.Color
+	DefaultStyle    *color.Color
+	GutterStyle     *color.Color
+	WhitespaceStyle *color.Color
+}
+
+type SourceErrorFormatOption func(*SourceErrorFormat)
+
+func WithTabSize(tabSize int) SourceErrorFormatOption {
+	return func(format *SourceErrorFormat) {
+		format.TabSize = tabSize
+	}
+}
+
+func WithShowWhitespace(show bool) SourceErrorFormatOption {
+	return func(format *SourceErrorFormat) {
+		format.ShowWhitespace = show
+	}
+}
+
+func WithErrorStyle(style *color.Color) SourceErrorFormatOption {
+	return func(format *SourceErrorFormat) {
+		format.ErrorStyle = style
+	}
+}
+
+func WithPositionStyle(style *color.Color) SourceErrorFormatOption {
+	return func(format *SourceErrorFormat) {
+		format.PositionStyle = style
+	}
+}
+
+func WithContextStyle(style *color.Color) SourceErrorFormatOption {
+	return func(format *SourceErrorFormat) {
+		format.ContextStyle = style
+	}
+}
+
+func WithDefaultStyle(style *color.Color) SourceErrorFormatOption {
+	return func(format *SourceErrorFormat) {
+		format.DefaultStyle = style
+	}
+}
+
+func WithGutterStyle(style *color.Color) SourceErrorFormatOption {
+	return func(format *SourceErrorFormat) {
+		format.GutterStyle = style
+	}
+}
+
+func WithWhitespaceStyle(style *color.Color) SourceErrorFormatOption {
+	return func(format *SourceErrorFormat) {
+		format.WhitespaceStyle = style
+	}
+}
+
+func NewFormatOptions(options ...SourceErrorFormatOption) SourceErrorFormat {
+	formatOptions := SourceErrorFormat{
+		TabSize:         4,
+		ShowWhitespace:  false,
+		ErrorStyle:      color.New(color.FgRed, color.Bold),
+		PositionStyle:   color.New(color.Faint),
+		ContextStyle:    color.New(color.FgYellow),
+		DefaultStyle:    color.New(),
+		GutterStyle:     color.New(color.FgBlue),
+		WhitespaceStyle: color.New(color.Faint),
+	}
+
+	for _, option := range options {
+		option(&formatOptions)
+	}
+
+	return formatOptions
+}
+
+func (s SourceError) Error() string {
+	var b strings.Builder
+	s.FPrintln(&b)
+	return b.String()
+}
+
+func UnexpectedEOF(span SourcePosition, expected ...string) SourceError {
+	return SourceError{
+		SourceSpan: SourceSpan{Start: span},
+		Message:    "unexpected end of input",
+		Expected:   expected,
+	}
+}
+
+func ExpectedEOF(span SourcePosition, expected ...string) SourceError {
+	return SourceError{
+		SourceSpan: SourceSpan{Start: span},
+		Expected:   []string{"end of input"},
+		Got:        fmt.Sprintf("%q", span.Peek()),
+	}
+}
+
 type ErrorContext struct {
 	Span    SourceSpan
 	Message string
 }
 
-func FPrintList(fprint func(w io.Writer, a ...any), to io.Writer, items []string) {
+func fprintList(fprint func(w io.Writer, a ...any), to io.Writer, items []string) {
 	switch len(items) {
 	case 0:
 		return
@@ -41,21 +193,21 @@ func FPrintList(fprint func(w io.Writer, a ...any), to io.Writer, items []string
 	}
 }
 
-func (err SourceError) FPrintln(to io.Writer) {
-	var (
-		styleNone     = color.New()
-		styleDull     = color.New(color.Faint)
-		styleError    = color.New(color.FgRed, color.Bold)
-		stylePosition = color.New(color.FgBlue)
-		styleContext  = color.New(color.FgYellow)
-	)
+func (err SourceError) FPrintln(to io.Writer, options ...SourceErrorFormatOption) {
+	format := NewFormatOptions(options...)
 
 	file, ok := to.(*os.File)
 	if !ok || !isatty.IsTerminal(file.Fd()) {
-		styleError.DisableColor()
-		stylePosition.DisableColor()
-		styleContext.DisableColor()
-		styleDull.DisableColor()
+		format = SourceErrorFormat{
+			TabSize:         format.TabSize,
+			ShowWhitespace:  format.ShowWhitespace,
+			ErrorStyle:      color.New(),
+			PositionStyle:   color.New(),
+			ContextStyle:    color.New(),
+			DefaultStyle:    color.New(),
+			GutterStyle:     color.New(),
+			WhitespaceStyle: color.New(),
+		}
 	}
 
 	const (
@@ -67,13 +219,35 @@ func (err SourceError) FPrintln(to io.Writer) {
 		return strings.ReplaceAll(s, tab, strings.Repeat(" ", tabWidth))
 	}
 
+	fprintExpandedTabs := func(fprint func(w io.Writer, a ...any), s string) {
+		if !format.ShowWhitespace {
+			fprint(to, s)
+			return
+		}
+
+		for _, r := range s {
+			switch r {
+			case '\t':
+				format.WhitespaceStyle.Fprint(to, "→")
+				format.WhitespaceStyle.Fprint(to, strings.Repeat(" ", format.TabSize-1))
+			case ' ':
+				format.WhitespaceStyle.Fprint(to, "·")
+			case '\n':
+				format.WhitespaceStyle.Fprintln(to, "↵")
+			case '\r':
+			default:
+				fprint(to, string(r))
+			}
+		}
+	}
+
 	displayWidth := func(s string) int {
 		return runewidth.StringWidth(expandTabs(s))
 	}
 
 	locationString := func(span SourceSpan) string {
-		startLine, startCol := span.Start.Line(), span.Start.Column()
-		endLine, endCol := span.End().Line(), span.End().Column()
+		startLine, startCol := span.Start.Line(), span.Start.Column()-1
+		endLine, endCol := span.End().Line(), span.End().Column()-1
 
 		if startLine == endLine && startCol+1 == endCol {
 			if span.Start.Path.IsZero() {
@@ -83,9 +257,9 @@ func (err SourceError) FPrintln(to io.Writer) {
 		}
 
 		if span.Start.Path.IsZero() {
-			return fmt.Sprintf("[%d:%d, %d:%d)", startLine, startCol, endLine, endCol)
+			return fmt.Sprintf("%d:%d-%d:%d", startLine, startCol, endLine, endCol)
 		}
-		return fmt.Sprintf("%s [%d:%d, %d:%d)", span.Start.Path, startLine, startCol, endLine, endCol)
+		return fmt.Sprintf("%s %d:%d-%d:%d", span.Start.Path, startLine, startCol, endLine, endCol)
 	}
 
 	lineNumbersWidth := 0
@@ -100,20 +274,18 @@ func (err SourceError) FPrintln(to io.Writer) {
 	}
 
 	fprintGutter := func(lineNumber int) {
-		stylePosition.Fprintf(to, "%*d | ", lineNumbersWidth, lineNumber)
+		format.GutterStyle.Fprintf(to, "%*d | ", lineNumbersWidth, lineNumber)
 	}
 
 	fprintEmptyGutter := func() {
-		stylePosition.Fprintf(to, "%*s | ", lineNumbersWidth, "")
+		format.GutterStyle.Fprintf(to, "%*s | ", lineNumbersWidth, "")
 	}
 
 	fprintFullLine := func(span SourceSpan) {
 		fprintGutter(span.Start.Line())
-		styleNone.Fprintln(to, expandTabs(
-			span.LineStartTo().String()+
-				span.String()+
-				span.LineEndFrom().String(),
-		))
+		fprintExpandedTabs(format.DefaultStyle.FprintFunc(), span.LineStartTo().String()+
+			span.String()+
+			span.LineEndFrom().String()+"\n")
 	}
 
 	fprintSingleLineMarker := func(prefixWidth, spanWidth int, message string) {
@@ -122,13 +294,13 @@ func (err SourceError) FPrintln(to io.Writer) {
 		}
 
 		fprintEmptyGutter()
-		styleNone.Fprint(to, strings.Repeat(" ", prefixWidth))
-		styleContext.Fprint(to, strings.Repeat("^", spanWidth))
+		format.DefaultStyle.Fprint(to, strings.Repeat(" ", prefixWidth))
+		format.ContextStyle.Fprint(to, strings.Repeat("^", spanWidth))
 		if message != "" {
-			styleContext.Fprint(to, " ")
-			styleContext.Fprint(to, message)
+			format.ContextStyle.Fprint(to, " ")
+			format.ContextStyle.Fprint(to, message)
 		}
-		styleContext.Fprintln(to)
+		format.ContextStyle.Fprintln(to)
 	}
 
 	fprintMultiLineEdgeMarker := func(prefixWidth, spanWidth int, message string) {
@@ -137,20 +309,20 @@ func (err SourceError) FPrintln(to io.Writer) {
 		}
 
 		fprintEmptyGutter()
-		styleNone.Fprint(to, strings.Repeat(" ", prefixWidth))
+		format.DefaultStyle.Fprint(to, strings.Repeat(" ", prefixWidth))
 
 		if spanWidth == 1 {
-			styleContext.Fprint(to, "^")
+			format.ContextStyle.Fprint(to, "^")
 		} else {
-			styleContext.Fprint(to, strings.Repeat("-", spanWidth-1))
-			styleContext.Fprint(to, "^")
+			format.ContextStyle.Fprint(to, strings.Repeat("-", spanWidth-1))
+			format.ContextStyle.Fprint(to, "^")
 		}
 
 		if message != "" {
-			styleContext.Fprint(to, " ")
-			styleContext.Fprint(to, message)
+			format.ContextStyle.Fprint(to, " ")
+			format.ContextStyle.Fprint(to, message)
 		}
-		styleContext.Fprintln(to)
+		format.ContextStyle.Fprintln(to)
 	}
 
 	fprintSingleLineContext := func(ctx ErrorContext) {
@@ -160,9 +332,9 @@ func (err SourceError) FPrintln(to io.Writer) {
 		after := span.LineEndFrom()
 
 		fprintGutter(span.Start.Line())
-		styleNone.Fprint(to, expandTabs(before.String()))
-		styleNone.Fprint(to, expandTabs(span.String()))
-		styleNone.Fprintln(to, expandTabs(after.String()))
+		fprintExpandedTabs(format.DefaultStyle.FprintFunc(), before.String())
+		fprintExpandedTabs(format.DefaultStyle.FprintFunc(), span.String())
+		fprintExpandedTabs(format.DefaultStyle.FprintFunc(), after.String()+"\n")
 
 		fprintSingleLineMarker(
 			displayWidth(before.String()),
@@ -199,23 +371,25 @@ func (err SourceError) FPrintln(to io.Writer) {
 		)
 	}
 
-	styleError.Fprint(to, "error")
+	format.ErrorStyle.Fprint(to, "error")
 	if err.Message != "" {
-		styleNone.Fprint(to, ": ")
-		styleNone.Fprint(to, err.Message)
+		format.DefaultStyle.Fprint(to, ": ")
+		format.DefaultStyle.Fprint(to, err.Message)
 	}
 
-	styleNone.Fprint(to, " at ")
-	styleDull.Fprint(to, locationString(err.SourceSpan))
+	if (len(err.Context) == 0 || err.Context[0].Span.Path() != err.SourceSpan.Path()) && !err.SourceSpan.Path().IsZero() {
+		format.DefaultStyle.Fprint(to, " at ")
+		format.PositionStyle.Fprint(to, locationString(err.SourceSpan))
+	}
 
 	if len(err.Expected) > 0 {
-		styleNone.Fprint(to, ": expected ")
-		FPrintList(styleNone.FprintFunc(), to, err.Expected)
+		format.DefaultStyle.Fprint(to, ": expected ")
+		fprintList(format.DefaultStyle.FprintFunc(), to, err.Expected)
 	}
 
 	if err.Got != "" {
-		styleNone.Fprint(to, "; got ")
-		styleNone.Fprint(to, err.Got)
+		format.DefaultStyle.Fprint(to, "; got ")
+		format.DefaultStyle.Fprint(to, err.Got)
 	}
 
 	if len(err.Context) == 0 {
@@ -229,7 +403,7 @@ func (err SourceError) FPrintln(to io.Writer) {
 			fmt.Fprintln(to)
 		}
 
-		styleDull.Fprintln(to, locationString(ctx.Span))
+		format.PositionStyle.Fprintln(to, locationString(ctx.Span))
 
 		previousLine, hasPreviousLine := ctx.Span.PreviousLine()
 		if hasPreviousLine && !previousLine.IsWhitespace() {

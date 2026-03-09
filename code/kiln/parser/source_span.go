@@ -11,6 +11,13 @@ type SourceSpan struct {
 	Length int
 }
 
+func Singleton(pos SourcePosition) SourceSpan {
+	return SourceSpan{
+		Start:  pos,
+		Length: 1,
+	}
+}
+
 func (s SourceSpan) Path() path.Path[path.Absolute, path.File] {
 	return s.Start.Path
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/boxops-uk-scm/boxops/code/kiln/path"
 )
 
-const Newline = '\n'
+const Newline byte = '\n'
 
 type SourcePosition struct {
 	Path     path.Path[path.Absolute, path.File]
@@ -14,8 +14,25 @@ type SourcePosition struct {
 	Position Position
 }
 
+func (s SourcePosition) Advance(by []byte) SourcePosition {
+	s.Position = s.Position.Advance(by)
+	return s
+}
+
 func (s SourcePosition) EOF() bool {
 	return s.Position.Index >= len(s.Source)
+}
+
+func (s SourcePosition) Index() int {
+	return s.Position.Index
+}
+
+func (s SourcePosition) Line() int {
+	return s.Position.Line
+}
+
+func (s SourcePosition) Column() int {
+	return s.Position.Column
 }
 
 func (s SourcePosition) Peek() byte {
@@ -34,19 +51,6 @@ func (s SourcePosition) Pop() (byte, SourcePosition) {
 	c := s.Source[s.Position.Index]
 	s.Position = s.Position.Advance([]byte{c})
 	return c, s
-}
-
-func (s SourcePosition) Advance(by []byte) SourcePosition {
-	s.Position = s.Position.Advance(by)
-	return s
-}
-
-func (s SourcePosition) Line() int {
-	return s.Position.Line
-}
-
-func (s SourcePosition) Column() int {
-	return s.Position.Column
 }
 
 func (s SourcePosition) PreviousLineEnd() (SourcePosition, bool) {
@@ -109,7 +113,7 @@ type Position struct {
 	Column int
 }
 
-func Zero() Position {
+func NewPosition() Position {
 	return Position{
 		Index:  0,
 		Line:   1,
