@@ -1,0 +1,16 @@
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-block-size: 100svb;
+  }
+
+  svg {
+    fill: currentColor;
+  }
+}

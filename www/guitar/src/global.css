@@ -1,0 +1,40 @@
+@layer base;
+
+/* @layer reset {
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+	}
+
+	* {
+		font-family: 'dejavu-sans', sans-serif;
+	}
+
+	html {
+		-webkit-text-size-adjust: none;
+		text-size-adjust: none;
+		line-height: 1.5;
+		-webkit-font-smoothing: antialiased;
+    block-size: 100%;
+	}
+
+	body {
+    margin: 0;
+		min-block-size: 100%;
+	}
+
+  html {
+    scrollbar-gutter: stable;
+  }
+
+	button {
+		appearance: none;
+		-webkit-appearance: none;
+	}
+
+	a {
+		text-decoration: none;
+		color: inherit;
+	}
+} */
