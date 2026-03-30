@@ -3,9 +3,8 @@ import { createEntryPointRoute } from "../relay/createEntryPointRoute";
 import * as stylex from "@stylexjs/stylex";
 
 import './chords.css';
-import Fretboard, { BarreMarker, FretMarker } from "../components/guitar/Fretboard";
+import Fretboard, { BarreMarker, FretMarker, MuteMarker, OpenStringMarker } from "../components/guitar/Fretboard";
 import { FretSpan } from "../music/Fingering";
-import { useState } from "react";
 
 const entryPointRoute = createEntryPointRoute({
   queries: {},
@@ -18,28 +17,37 @@ const entryPointRoute = createEntryPointRoute({
 type ChordsProps = object;
 
 function Chords(_: ChordsProps) {
-  const [minFret, setMinFret] = useState(0);
-  const [maxFret, setMaxFret] = useState(5);
-
-  const fretSpan = new FretSpan(Math.min(minFret, maxFret), Math.max(minFret, maxFret));
+  const fretSpan = new FretSpan(0, 14);
 
   return <main {...stylex.props(styles.page)}>
-    <Fretboard direction="vertical" xstyle={styles.vertical} fretSpan={fretSpan}>
-      <BarreMarker fret={1} fromString={1} toString={6} showNumbers />
-      <FretMarker fret={3} string={4} label={3} />
-      <FretMarker fret={5} string={3} label={4} />
-      <FretMarker fret={3} string={2} label={2} />
-    </Fretboard>
-    <Fretboard direction="horizontal" xstyle={styles.horizontal} fretSpan={fretSpan}>
-      <BarreMarker fret={1} fromString={1} toString={6} showNumbers />
+    <Fretboard direction="vertical" xstyle={styles.vertical} fretSpan={fretSpan} showFretNumbers showDots>
+      <BarreMarker fret={1} fromString={1} toString={6} label={1} />
       <FretMarker fret={3} string={5} label={3} />
       <FretMarker fret={3} string={4} label={4} />
       <FretMarker fret={2} string={3} label={2} />
     </Fretboard>
-    <button onClick={() => { setMinFret(f => Math.max(0, f - 1)) }}>-Min</button>
-    <button onClick={() => { setMinFret(f => f + 1) }}>+Min</button>
-    <button onClick={() => { setMaxFret(f => Math.max(0, f - 1)) }}>-Max</button>
-    <button onClick={() => { setMaxFret(f => f + 1) }}>+Max</button>
+    <Fretboard direction="horizontal" xstyle={styles.horizontal} fretSpan={fretSpan} showFretNumbers showDots>
+      <OpenStringMarker string={1} />
+      <FretMarker fret={1} string={2} label={2} />
+      <OpenStringMarker string={3} />
+      <FretMarker fret={2} string={4} label={3} />
+      <FretMarker fret={3} string={5} label={4} />
+      <MuteMarker string={6} />
+    </Fretboard>
+    <Fretboard direction="vertical" xstyle={styles.vertical} fretSpan={fretSpan} showFretNumbers showDots>
+      <OpenStringMarker string={1} />
+      <FretMarker fret={1} string={2} label={2} />
+      <OpenStringMarker string={3} />
+      <FretMarker fret={2} string={4} label={3} />
+      <FretMarker fret={3} string={5} label={4} />
+      <MuteMarker string={6} />
+    </Fretboard>
+    <Fretboard direction="horizontal" xstyle={styles.horizontal} fretSpan={fretSpan} showFretNumbers showDots>
+      <BarreMarker fret={1} fromString={1} toString={6} label={1} />
+      <FretMarker fret={3} string={5} label={3} />
+      <FretMarker fret={3} string={4} label={4} />
+      <FretMarker fret={2} string={3} label={2} />
+    </Fretboard>
   </main>
 }
 
@@ -54,15 +62,18 @@ const styles = stylex.create({
     width: '100%',
     height: '100%',
     minHeight: '100svh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    alignContent: 'center',
     justifyContent: 'center',
+    gap: '32px',
   },
   vertical: {
-    height: '300px',
+    maxWidth: '50vw',
+    maxHeight: '50vh',
   },
   horizontal: {
-    width: '500px',
+    maxWidth: '50vw',
+    maxHeight: '50vh',
   }
 });
