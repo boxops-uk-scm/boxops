@@ -6,23 +6,24 @@ import SVGBase, { type SVGBaseProps } from "./SVGBase";
 
 export default function Fretboard(props: FretboardProps & { direction?: 'horizontal' | 'vertical' }) {
   const direction = props.direction ?? 'horizontal';
-  if (direction === 'horizontal') {
-    return <HorizontalFretboard {...props} />
-  } else {
-    return <VerticalFretboard {...props} />
-  }
+
+  return direction === 'vertical'
+    ? <></>
+    : <HorizontalFretboard {...props} />
 }
 
 export type FretboardProps = {
   fretSpan: FretSpan;
 } & Omit<SVGBaseProps, | 'viewBox' | 'aspectRatio'>;
 
-const FRET_ASPECT_RATIO = 3/2;
-const STRING_COUNT = 6;
-
 export type FretboardLayoutContextType = {
   fretSpan: FretSpan;
-  toCoordinates: (position: { fret: number, string: number }) => { x: number, y: number };
+  fretboardOrigin: { x: number, y: number };
+  fretSize: { width: number, height: number };
+  fretboardSize: { width: number, height: number };
+  containerSize: { width: number, height: number };
+  aspectRatio: number;
+  coordinateTransform: (fret: Fret, string: StringNumber) => { x: number, y: number };
 };
 
 const FretboardLayoutContext = createContext<FretboardLayoutContextType | null>(null);
@@ -35,31 +36,85 @@ export function useFretboardLayout(): FretboardLayoutContextType {
   return ctx;
 }
 
-export function FretMarker({
-  position,
-  label
-}: {
-  position: FretboardPosition;
-  label?: string | number;
-}) {
-  const { toCoordinates } = useFretboardLayout();
-  const { x, y } = toCoordinates({ 
-    fret: position.fret - 0.33, 
-    string: position.string 
-  }); 
-
-  return <>
-    { position.fret > 0
-      ? <circle cx={x} cy={y} r={0.035} fill="#F54927" />
-      : <circle cx={x} cy={y} r={label !== undefined ? 0.035 : 0.015} stroke="black" fill='transparent' strokeWidth={0.004} />
-    }
-    {label && (
-      <text x={x} y={y} fontSize={0.04} fontWeight={400} fill="white" fontFamily="'DejaVu Sans', sans-serif" textAnchor="middle" alignmentBaseline="central" style={{ userSelect: 'none' }}>
-        {label}
-      </text>
-    )}
-  </>;
+export function useFretboardCoordinateTransform(): (fret: Fret, string: StringNumber) => { x: number, y: number } {
+  const { coordinateTransform } = useFretboardLayout();
+  return coordinateTransform;
 }
+
+// export function BarreMarkerV1({
+//   fret,
+//   fromString,
+//   toString,
+//   showNumbers = false,
+// }: {
+//   fret: Fret,
+//   fromString: StringNumber,
+//   toString: StringNumber,
+//   showNumbers?: boolean,
+// }) {
+//   const { toCoordinates } = useFretboardLayout();
+//   const start = toCoordinates({ fret: fret - 0.33, string: fromString });
+//   const end = toCoordinates({ fret: fret - 0.33, string: toString });
+
+//   return <>
+//     <line 
+//       x1={start.x} 
+//       y1={start.y} 
+//       x2={end.x} 
+//       y2={end.y} 
+//       stroke="rgba(245, 73, 39, 0.5)" 
+//       strokeWidth={0.07} 
+//       strokeLinecap="round" 
+//     />
+//     <FretMarkerV1 position={new FretboardPosition(fromString, fret)} label={showNumbers ? fret : undefined} />
+//     <FretMarkerV1 position={new FretboardPosition(toString, fret)} label={showNumbers ? fret : undefined} />
+//   </>;
+// }
+
+// export function OpenStringMarkerV1({
+//   string,
+// }: {
+//   string: StringNumber;
+// }) {
+//   const { toCoordinates } = useFretboardLayout();
+//   const { x, y } = toCoordinates({ 
+//     fret: -0.33, 
+//     string
+//   });
+
+//   return <circle cx={x} cy={y} r={0.015} strokeWidth={0.004} stroke='black' fill='transparent' />;
+// }
+
+// export function MutedMarkerV1({
+//   string,
+// }: {
+//   string: StringNumber;
+// }) {
+//   const { toCoordinates } = useFretboardLayout();
+//   const { x, y } = toCoordinates({ 
+//     fret: -0.33, 
+//     string 
+//   });
+
+//   return <>
+//     <line 
+//       x1={x - 0.015} 
+//       y1={y - 0.015} 
+//       x2={x + 0.015} 
+//       y2={y + 0.015} 
+//       stroke="black" 
+//       strokeWidth={0.004} 
+//     />
+//     <line 
+//       x1={x - 0.015} 
+//       y1={y + 0.015} 
+//       x2={x + 0.015} 
+//       y2={y - 0.015} 
+//       stroke="black" 
+//       strokeWidth={0.004} 
+//     />
+//   </>
+// }
 
 export function BarreMarker({
   fret,
@@ -72,13 +127,12 @@ export function BarreMarker({
   toString: StringNumber,
   showNumbers?: boolean,
 }) {
-  const { toCoordinates } = useFretboardLayout();
-  const start = toCoordinates({ fret: fret - 0.33, string: fromString });
-  const end = toCoordinates({ fret: fret - 0.33, string: toString });
+  const { coordinateTransform } = useFretboardLayout();
+  const { fretSize } = useFretboardLayout();
+  const start = coordinateTransform(fret - 0.33, fromString);
+  const end = coordinateTransform(fret - 0.33, toString);
 
-  if (isNaN(start.x) || isNaN(start.y) || isNaN(end.x) || isNaN(end.y)) {
-    console.error("Found the NaN!", { fret, fromString, toString, start, end });
-  }
+  const strokeWidth = 2 * 0.35 * fretSize.height;
 
   return <>
     <line 
@@ -87,141 +141,119 @@ export function BarreMarker({
       x2={end.x} 
       y2={end.y} 
       stroke="rgba(245, 73, 39, 0.5)" 
-      strokeWidth={0.07} 
+      strokeWidth={strokeWidth} 
       strokeLinecap="round" 
     />
-    <FretMarker position={new FretboardPosition(fromString, fret)} label={showNumbers ? fret : undefined} />
-    <FretMarker position={new FretboardPosition(toString, fret)} label={showNumbers ? fret : undefined} />
+    <FretMarker fret={fret} string={fromString} label={showNumbers ? fret : undefined} />
+    <FretMarker fret={fret} string={toString} label={showNumbers ? fret : undefined} />
   </>;
 }
 
-export function MutedMarker({
+export function FretMarker({
+  fret,
   string,
+  label
 }: {
+  fret: Fret;
   string: StringNumber;
+  label?: string | number;
 }) {
-  const { toCoordinates } = useFretboardLayout();
-  const { x, y } = toCoordinates({ 
-    fret: -0.33, 
-    string 
-  });
+  const { fretSpan, fretSize } = useFretboardLayout();
+  const transform = useFretboardCoordinateTransform();
+  const { x, y } = transform(fret - 0.33, string);
 
-  return <>
-    <line 
-      x1={x - 0.015} 
-      y1={y - 0.015} 
-      x2={x + 0.015} 
-      y2={y + 0.015} 
-      stroke="black" 
-      strokeWidth={0.004} 
-    />
-    <line 
-      x1={x - 0.015} 
-      y1={y + 0.015} 
-      x2={x + 0.015} 
-      y2={y - 0.015} 
-      stroke="black" 
-      strokeWidth={0.004} 
-    />
-  </>
-}
+  if (fretSpan.contains(new FretboardPosition(string, fret))) {
+    return <>
+      <circle cx={x} cy={y} r={0.35 * fretSize.height} fill="#F54927" />
+      {label !== undefined && (
+        <text style={{ userSelect: 'none' }} x={x} y={y} fontWeight='bold' textAnchor="middle" dominantBaseline="central" fontSize={0.4 * fretSize.height} fill="white">{label}</text>
+      )}
+    </>;
+  }
 
-function VerticalFretboard({ fretSpan, children, ...props }: FretboardProps) {
-  fretSpan = fretSpan.clamp();
-
-  const aspectRatio = STRING_COUNT / (FRET_ASPECT_RATIO * (fretSpan.width() + 1));
-  const fretboardHeight = 1;
-  const fretboardWidth = fretboardHeight * aspectRatio;
-  const fretWidth = fretboardWidth / (STRING_COUNT + 1);
-  const fretHeight = fretboardHeight / (fretSpan.width() + 1);
-  const padding = 0.025;
-  const width = fretboardWidth + 2 * padding;
-  const height = fretboardHeight + 2 * padding;
-  const viewBox = `0 0 ${width} ${height}`;
-  const y1 = fretSpan.lowerEndpoint === 0 ? padding + fretHeight : padding;
-
-  return (
-    <FretboardLayoutContext.Provider value={{
-      fretSpan,
-      toCoordinates: (position) => {
-        const { fret, string } = position;
-        const x = padding + fretboardWidth * (STRING_COUNT - string + 1) / (STRING_COUNT + 1);
-        const y = padding + fretboardHeight * (fret - fretSpan.lowerEndpoint! + 1) / (fretSpan.width() + 1);
-        return { x, y };
-      }
-    }}>
-      <SVGBase 
-        viewBox={viewBox} 
-        aspectRatio={aspectRatio} 
-        {...props}>
-        {/* <rect x={padding + fretWidth} y={padding + fretHeight} width={fretboardWidth - 2 * fretWidth} height={fretboardHeight - 2 * fretHeight} fill="white" /> */}
-        {
-          Array.from({ length: fretSpan.width() }, (_, i) => {
-            const y = padding + fretboardHeight * (i + 1) / (fretSpan.width() + 1);
-            const fretNumber = fretSpan.lowerEndpoint! + i;
-            const strokeWidth = fretNumber === 0 ? 0.004 : 0.0015;
-            return <line key={i} x1={padding + fretWidth - 0.00075} y1={y} x2={padding + fretboardWidth - fretWidth + 0.00075} y2={y} stroke="#000" strokeWidth={strokeWidth} />
-          })
-        }
-        {
-          Array.from({ length: 6 }, (_, i) => {
-            const x = padding + fretboardWidth * (i + 1) / 7;
-            return <line key={i} x1={x} y1={y1} x2={x} y2={padding + fretboardHeight - fretHeight} stroke="#000" strokeWidth={0.0015} />
-          })
-        }
-        {children}
-      </SVGBase>
-    </FretboardLayoutContext.Provider>
-  );
+  return <></>
 }
 
 function HorizontalFretboard({ fretSpan, children, ...props }: FretboardProps) {
   fretSpan = fretSpan.clamp();
 
-  const aspectRatio = FRET_ASPECT_RATIO * (fretSpan.width() + 1) / 6;
-  const fretboardWidth = 1;
-  const fretboardHeight = fretboardWidth / aspectRatio;
-  const fretWidth = fretboardWidth / (fretSpan.width() + 1);
-  const stringSpacing = fretboardHeight / 7; 
-  const padding = 0.025;
-  const width = fretboardWidth + 2 * padding;
-  const height = fretboardHeight + 2 * padding;
-  const viewBox = `0 0 ${width} ${height}`;
-  const x1 = fretSpan.lowerEndpoint === 0 ? padding + fretWidth : padding;
+  const stringCount = 6;
+  const fretAspectRatio = 3/2;
+
+  const fretboardSizeFrets = {
+    width: fretSpan.width(),
+    height: stringCount - 1,
+  };
+
+  const containerWidthFrets = {
+    width: fretboardSizeFrets.width + 2,
+    height: fretboardSizeFrets.height + 2,
+  }
+  
+  const aspectRatio = fretAspectRatio * containerWidthFrets.width / containerWidthFrets.height;
+
+  const containerSize = {
+    width: 1,
+    height: 1 / aspectRatio,
+  };
+
+  const fretSize = {
+    width: containerSize.width / containerWidthFrets.width,
+    height: containerSize.height / containerWidthFrets.height,
+  }
+
+  const fretboardSize = {
+    width: fretSize.width * fretboardSizeFrets.width,
+    height: fretSize.height * fretboardSizeFrets.height,
+  }
+
+  const fretboardOrigin = {
+    x: fretSize.width * (1 - fretSpan.lowerEndpoint!),
+    y: fretSize.height,
+  }
+
+  const lowerEndpointPosition = {
+    x: fretSize.width,
+    y: fretSize.height,
+  };
+
+  const viewBox = `0 0 ${containerSize.width} ${containerSize.height}`;
 
   return (
     <FretboardLayoutContext.Provider value={{
       fretSpan,
-      toCoordinates: (position) => {
-        const { fret, string } = position;
-        const x = padding + fretboardWidth * (fret - fretSpan.lowerEndpoint! + 1) / (fretSpan.width() + 1);
-        const y = padding + fretboardHeight * string / 7;
+      fretboardOrigin,
+      fretSize,
+      fretboardSize,
+      containerSize,
+      aspectRatio,
+      coordinateTransform: (fret: Fret, string: StringNumber) => {
+        // In horizontal fretboard: frets are horizontal (X), strings are vertical (Y)
+        const x = fretboardOrigin.x + fretSize.width * fret;
+        const y = fretboardOrigin.y + fretSize.height * (string - 1);
         return { x, y };
       }
     }}>
-      <SVGBase 
+      <SVGBase
         viewBox={viewBox} 
-        aspectRatio={width / height} 
+        aspectRatio={aspectRatio} 
         {...props}>
-        {/* <rect 
-          x={padding + fretWidth} 
-          y={padding + stringSpacing} 
-          width={fretboardWidth - 2 * fretWidth} 
-          height={fretboardHeight - 2 * stringSpacing} 
-          fill="white" 
-        /> */}
         {
-          Array.from({ length: fretSpan.width() }, (_, i) => {
-            const x = padding + fretboardWidth * (i + 1) / (fretSpan.width() + 1);
+          Array.from({ length: fretboardSizeFrets.width + 1 }, (_, i) => {
+            const x = lowerEndpointPosition.x + fretSize.width * i;
+            const y1 = lowerEndpointPosition.y - 0.001;
+            const y2 = lowerEndpointPosition.y + fretboardSize.height + 0.001;
             const fretNumber = fretSpan.lowerEndpoint! + i;
-            const strokeWidth = fretNumber === 0 ? 0.004 : 0.0015;
-            return <line key={i} x1={x} y1={padding + stringSpacing - 0.00075} x2={x} y2={padding + fretboardHeight - stringSpacing + 0.00075} stroke="#000" strokeWidth={strokeWidth} />
+            const strokeWidth = fretNumber === 0 ? 3 : 1;
+            return <line vectorEffect='non-scaling-stroke' key={i} x1={x} y1={y1} x2={x} y2={y2} stroke="#000" strokeWidth={strokeWidth} />;
           })
         }
         {
-          Array.from({ length: 6 }, (_, i) => {
-            const y = padding + fretboardHeight * (i + 1) / 7;
-            return <line key={i} x1={x1} y1={y} x2={padding + fretboardWidth - fretWidth} y2={y} stroke="#000" strokeWidth={0.0015} />
+          Array.from({ length: stringCount }, (_, i) => {
+            const y = lowerEndpointPosition.y + fretSize.height * i;
+            const x1 = lowerEndpointPosition.x - 0.001;
+            const x2 = lowerEndpointPosition.x + fretboardSize.width + 0.001;
+            return <line vectorEffect='non-scaling-stroke' key={i} x1={x1} y1={y} x2={x2} y2={y} stroke="#000" strokeWidth={1} />
           })
         }
         {children}

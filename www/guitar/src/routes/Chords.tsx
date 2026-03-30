@@ -3,9 +3,9 @@ import { createEntryPointRoute } from "../relay/createEntryPointRoute";
 import * as stylex from "@stylexjs/stylex";
 
 import './chords.css';
-import Fretboard, { BarreMarker, FretMarker, MutedMarker } from "../components/guitar/Fretboard";
+import Fretboard, { BarreMarker, FretMarker } from "../components/guitar/Fretboard";
 import { FretSpan } from "../music/Fingering";
-import { FretboardPosition } from "../music/Fretboard";
+import { useState } from "react";
 
 const entryPointRoute = createEntryPointRoute({
   queries: {},
@@ -18,23 +18,28 @@ const entryPointRoute = createEntryPointRoute({
 type ChordsProps = object;
 
 function Chords(_: ChordsProps) {
-  const fretSpan = new FretSpan(1, 5);
+  const [minFret, setMinFret] = useState(0);
+  const [maxFret, setMaxFret] = useState(5);
+
+  const fretSpan = new FretSpan(Math.min(minFret, maxFret), Math.max(minFret, maxFret));
 
   return <main {...stylex.props(styles.page)}>
     <Fretboard direction="vertical" xstyle={styles.vertical} fretSpan={fretSpan}>
       <BarreMarker fret={1} fromString={1} toString={6} showNumbers />
-      <FretMarker position={new FretboardPosition(4, 3)} label={3} />
-      <FretMarker position={new FretboardPosition(5, 3)} label={4} />
-      <FretMarker position={new FretboardPosition(3, 2)} label={2} />
+      <FretMarker fret={3} string={4} label={3} />
+      <FretMarker fret={5} string={3} label={4} />
+      <FretMarker fret={3} string={2} label={2} />
     </Fretboard>
     <Fretboard direction="horizontal" xstyle={styles.horizontal} fretSpan={fretSpan}>
-      <FretMarker position={new FretboardPosition(1, 0)} />
-      <FretMarker position={new FretboardPosition(2, 1)} label={1} />
-      <FretMarker position={new FretboardPosition(3, 0)} />
-      <FretMarker position={new FretboardPosition(4, 2)} label={2} />
-      <FretMarker position={new FretboardPosition(5, 3)} label={3} />
-      <MutedMarker string={6} />
+      <BarreMarker fret={1} fromString={1} toString={6} showNumbers />
+      <FretMarker fret={3} string={5} label={3} />
+      <FretMarker fret={3} string={4} label={4} />
+      <FretMarker fret={2} string={3} label={2} />
     </Fretboard>
+    <button onClick={() => { setMinFret(f => Math.max(0, f - 1)) }}>-Min</button>
+    <button onClick={() => { setMinFret(f => f + 1) }}>+Min</button>
+    <button onClick={() => { setMaxFret(f => Math.max(0, f - 1)) }}>-Max</button>
+    <button onClick={() => { setMaxFret(f => f + 1) }}>+Max</button>
   </main>
 }
 
@@ -52,11 +57,12 @@ const styles = stylex.create({
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   vertical: {
-    width: '300px',
+    height: '300px',
   },
   horizontal: {
-    height: '300px',
+    width: '500px',
   }
 });
