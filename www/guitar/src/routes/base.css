@@ -1,0 +1,22 @@
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    margin: 0;
+    min-block-size: 100dvb;
+  }
+}
+
+body {
+  background-color: #EFE8E0;
+  isolation: isolate;
+  font-family: 'DejaVu Sans', sans-serif;
+}

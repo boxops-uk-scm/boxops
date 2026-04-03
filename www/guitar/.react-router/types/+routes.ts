@@ -14,13 +14,13 @@ type Pages = {
   "/": {
     params: {};
   };
-  "/resources": {
+  "/resources/chords": {
     params: {};
   };
-  "/scale-finder": {
+  "/resources/scales": {
     params: {};
   };
-  "/chords": {
+  "/resources/mode-quiz": {
     params: {};
   };
 };
@@ -28,30 +28,30 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/resources" | "/scale-finder" | "/chords";
+    page: "/" | "/resources/chords" | "/resources/scales" | "/resources/mode-quiz";
   };
   "routes/_index.tsx": {
     id: "routes/_index";
     page: "/";
   };
-  "routes/Resources.tsx": {
-    id: "routes/Resources";
-    page: "/resources";
-  };
-  "routes/ScaleFinder.tsx": {
-    id: "routes/ScaleFinder";
-    page: "/scale-finder";
-  };
   "routes/Chords.tsx": {
     id: "routes/Chords";
-    page: "/chords";
+    page: "/resources/chords";
+  };
+  "routes/Scales.tsx": {
+    id: "routes/Scales";
+    page: "/resources/scales";
+  };
+  "routes/ModeQuiz.tsx": {
+    id: "routes/ModeQuiz";
+    page: "/resources/mode-quiz";
   };
 };
 
 type RouteModules = {
   "root": typeof import("./src/root.tsx");
   "routes/_index": typeof import("./src/routes/_index.tsx");
-  "routes/Resources": typeof import("./src/routes/Resources.tsx");
-  "routes/ScaleFinder": typeof import("./src/routes/ScaleFinder.tsx");
   "routes/Chords": typeof import("./src/routes/Chords.tsx");
+  "routes/Scales": typeof import("./src/routes/Scales.tsx");
+  "routes/ModeQuiz": typeof import("./src/routes/ModeQuiz.tsx");
 };

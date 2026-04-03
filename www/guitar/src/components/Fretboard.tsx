@@ -197,7 +197,7 @@ export function FretboardSVG({
       preserveAspectRatio="xMidYMid meet"
       overflow="visible"
     >
-      <rect 
+      <rect
         x={fromFret * FRET_WIDTH}
         y={STRING_SPACING}
         width={effectiveFretboardWidth}

@@ -1,5 +1,7 @@
-import type { IEquiv } from "@thi.ng/api";
+import type { ICompare, IEquiv } from "@thi.ng/api";
 import { ScaleDegree } from "./Scale";
+import { SortedSet } from "@thi.ng/sorted-map/sorted-set";
+import { Arbitrary } from "./Arbitrary";
 
 export type ModeName
   = 'Ionian'
@@ -10,11 +12,15 @@ export type ModeName
   | 'Aeolian'
   | 'Locrian';
 
-export class Mode implements IEquiv {
+export class Mode implements ICompare<Mode>, IEquiv {
   public readonly name: ModeName;
   
   public constructor(name: ModeName) {
     this.name = name;
+  }
+
+  compare(x: Mode): number {
+    return this.toDegreeOfParentScale().toOrdinal() - x.toDegreeOfParentScale().toOrdinal();
   }
 
   public equiv(other: unknown): boolean {
@@ -69,7 +75,7 @@ export class Mode implements IEquiv {
       case 'Subdominant': return Mode.lydian();
       case 'Dominant': return Mode.mixolydian();
       case 'Submediant': return Mode.aeolian();
-      case 'LeadingTone': return Mode.locrian();
+      case 'Leading Tone': return Mode.locrian();
     }
   }
 
@@ -83,6 +89,10 @@ export class Mode implements IEquiv {
       Mode.aeolian(),
       Mode.locrian()
     ];
+  }
+
+  public static random(not?: SortedSet<Mode>): Mode {
+    return Arbitrary.choice(Mode.all(), not);
   }
 
   public static ionian(): Mode {

@@ -7,10 +7,11 @@ import type { RelativePitch } from "./RelativePitch";
 import { Interval } from "./Interval";
 import { Accidental } from "./Accidental";
 import type { NaturalPitchClass } from "./NaturalPitchClass";
-import type { IEquiv } from "@thi.ng/api";
+import type { ICompare, IEquiv } from "@thi.ng/api";
+import { Arbitrary } from "./Arbitrary";
 import { Pattern } from "./Fingering";
 
-export class MajorScale implements DiatonicScale, IEquiv {
+export class MajorScale implements DiatonicScale, ICompare<MajorScale>, IEquiv {
   public readonly tonic: Spelling;
   public readonly degrees: SortedMap<ScaleDegree, Spelling>;
   public readonly tuning: Tuning;
@@ -34,10 +35,17 @@ export class MajorScale implements DiatonicScale, IEquiv {
     this.pattern = Pattern.ionianPattern;
   }
 
+  public toString(): string {
+    return this.name;
+  }
+
   equiv(o: unknown): boolean {
     return o instanceof MajorScale && this.tonic.equiv(o.tonic);
   }
 
+  compare(o: MajorScale): number {
+    return this.tonic.compare(o.tonic);
+  }
 
   public notes(onString?: StringNumber): Note[] {
     const notes: Note[] = [];
@@ -141,16 +149,11 @@ export class MajorScale implements DiatonicScale, IEquiv {
   );
 
   public static random(not?: SortedSet<MajorScale>): MajorScale {
-    while (true) {
-      const scale = Array.from(this.standardScales.values())[Math.floor(Math.random() * this.standardScales.size)];
-      if (!not || !not.has(scale)) {
-        return scale;
-      }
-    }
+    return Arbitrary.choice(Array.from(MajorScale.standardScales.values()), not);
   }
 
   private static _getStandard(spelling: Spelling): MajorScale {
-    return this.standardScales.get(spelling)!;
+    return MajorScale.standardScales.get(spelling)!;
   }
 
   public static c(tuning?: Tuning): MajorScale {

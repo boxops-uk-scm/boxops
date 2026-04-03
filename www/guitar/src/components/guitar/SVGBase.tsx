@@ -13,7 +13,6 @@ export default function SVGBase({
   xstyle, 
   viewBox = "0 0 100 100", 
   aspectRatio, 
-  style: customStyle, 
   ...props 
 }: SVGBaseProps) {
   const stylexProps = stylex.props(styles.container, xstyle);
@@ -23,8 +22,7 @@ export default function SVGBase({
       {...props} 
       {...stylexProps} 
       style={{ 
-        ...stylexProps.style, 
-        ...customStyle, 
+        ...stylexProps.style,
         aspectRatio: aspectRatio ? String(aspectRatio) : undefined 
       }}
     >
@@ -49,5 +47,6 @@ const styles = stylex.create({
     left: 0,
     width: '100%',
     height: '100%',
+    maxInlineSize: '100%',
   }
 });

@@ -1,6 +1,6 @@
-@layer reset, base;
+@layer base;
 
-@layer reset {
+/* @layer reset {
 	*,
 	*::before,
 	*::after {
@@ -37,4 +37,4 @@
 		text-decoration: none;
 		color: inherit;
 	}
-}
+} */

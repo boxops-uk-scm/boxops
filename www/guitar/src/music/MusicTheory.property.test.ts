@@ -723,14 +723,14 @@ describe('Fingering Pattern — ergonomics', () => {
   test('Property 5: fretSpan() is non-negative', () => {
     fc.assert(fc.property(
       arbitraryModeAndPattern,
-      ({ pattern }) => pattern.fretSpan() >= 0,
+      ({ pattern }) => pattern.fretSpan().width() >= 0,
     ), { numRuns: 50 });
   });
  
   test('Property 6: fretSpan() is at most 4 frets', () => {
     fc.assert(fc.property(
       arbitraryModeAndPattern,
-      ({ pattern }) => Math.abs(pattern.fretSpan()) <= 4,
+      ({ pattern }) => Math.abs(pattern.fretSpan().width()) <= 4,
     ), { numRuns: 50 });
   });
   

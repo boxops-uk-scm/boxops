@@ -3,6 +3,7 @@ import { createContext, useContext } from "react";
 import { FretSpan } from "../../music/Fingering";
 import { FretboardPosition, type Fret, type StringNumber } from "../../music/Fretboard";
 import SVGBase, { type SVGBaseProps } from "./SVGBase";
+import * as stylex from "@stylexjs/stylex";
 
 export default function Fretboard({ direction = 'horizontal', ...props }: FretboardProps & { direction?: 'horizontal' | 'vertical' }) {
   return direction === 'vertical'
@@ -14,6 +15,7 @@ export type FretboardProps = {
   fretSpan: FretSpan;
   showFretNumbers?: boolean;
   showDots?: boolean;
+  xstyle?: stylex.StyleXStyles;
 } & Omit<SVGBaseProps, | 'viewBox' | 'aspectRatio'>;
 
 export type FretboardLayoutContextType = {
@@ -57,7 +59,6 @@ export function useFretboardCoordinateTransform(): (fret: Fret, string: StringNu
   };
 }
 
-const FRET_COLOR = '#F54927';
 const FRET_COLOR_TRANSLUCENT = 'rgba(245, 73, 39, 0.5)';
 
 const STRING_COUNT: number = 6;
@@ -75,25 +76,24 @@ export function MuteMarker({ string }: { string: StringNumber }) {
     : lowerEndpointOrigin.y + fretSize.height * (string - 1);
 
   const size = 0.2 * stringSpacing;
+  const strokeWidth = 0.05 * stringSpacing;
 
   return <>
     <line
-      vectorEffect='non-scaling-stroke'
       x1={x - size}
       y1={y - size}
       x2={x + size}
       y2={y + size}
       stroke="black"
-      strokeWidth={2}
+      strokeWidth={strokeWidth}
     />
     <line
-      vectorEffect='non-scaling-stroke'
       x1={x - size}
       y1={y + size}
       x2={x + size}
       y2={y - size}
       stroke="black"
-      strokeWidth={2}
+      strokeWidth={strokeWidth}
     />
   </>;
 }
@@ -110,14 +110,14 @@ export function OpenStringMarker({ string }: { string: StringNumber }) {
     : lowerEndpointOrigin.y + fretSize.height * (string - 1);
 
   const radius = 0.2 * stringSpacing;
+  const strokeWidth = 0.05 * stringSpacing;
 
   return (
     <circle
-      vectorEffect='non-scaling-stroke'
       cx={x}
       cy={y}
       r={radius}
-      strokeWidth={2}
+      strokeWidth={strokeWidth}
       stroke='black'
       fill='transparent'
     />
@@ -163,11 +163,15 @@ export function BarreMarker({
 export function FretMarker({
   fret,
   string,
-  label
+  label,
+  fretStyle,
+  textStyle
 }: {
   fret: Fret;
   string: StringNumber;
   label?: string | number;
+  fretStyle?: stylex.StyleXStyles;
+  textStyle?: stylex.StyleXStyles;
 }) {
   const { fretSpan, stringSpacing } = useFretboardLayout();
   const transform = useFretboardCoordinateTransform();
@@ -175,7 +179,7 @@ export function FretMarker({
 
   if (fretSpan.contains(new FretboardPosition(string, fret))) {
     return <>
-      <circle cx={x} cy={y} r={0.35 * stringSpacing} fill={FRET_COLOR} />
+      <circle cx={x} cy={y} r={0.35 * stringSpacing} {...stylex.props(styles.fretMarker, fretStyle)} />
       {label !== undefined && (
         <text
           style={{ userSelect: 'none' }}
@@ -185,7 +189,7 @@ export function FretMarker({
           textAnchor="middle"
           dominantBaseline="central"
           fontSize={0.4 * stringSpacing}
-          fill="white"
+          {...stylex.props(styles.fretMarkerLabel, textStyle)}
         >
           {label}
         </text>
@@ -196,7 +200,16 @@ export function FretMarker({
   return <></>
 }
 
-function HorizontalFretboard({ fretSpan, children, showFretNumbers = false, showDots = false, ...props }: FretboardProps) {
+const styles = stylex.create({
+  fretMarker: {
+    fill: '#F54927',
+  },
+  fretMarkerLabel: {
+    fill: 'white',
+  }
+});
+
+function HorizontalFretboard({ fretSpan, children, showFretNumbers = false, showDots = false, xstyle, ...props }: FretboardProps) {
   fretSpan = fretSpan.clamp();
 
   const visibleFretSpan = fretSpan.withLowerEndpoint(
@@ -244,6 +257,8 @@ function HorizontalFretboard({ fretSpan, children, showFretNumbers = false, show
 
   const viewBox = `0 0 ${containerSize.width} ${containerSize.height}`;
 
+  const strokeWidth = 0.03 * fretSize.height;
+
   return (
     <FretboardLayoutContext.Provider value={{
       direction: 'horizontal',
@@ -257,20 +272,20 @@ function HorizontalFretboard({ fretSpan, children, showFretNumbers = false, show
       aspectRatio,
       lowerEndpointOrigin,
     }}>
-      <SVGBase viewBox={viewBox} aspectRatio={aspectRatio} {...props}>
+      <SVGBase viewBox={viewBox} aspectRatio={aspectRatio} {...props} xstyle={xstyle}>
         {Array.from({ length: fretboardSizeFrets.width + 1 }, (_, i) => {
-          const x = lowerEndpointOrigin.x + fretSize.width * i;
-          const y1 = lowerEndpointOrigin.y - 0.001;
-          const y2 = lowerEndpointOrigin.y + fretboardSize.height + 0.001;
           const fretNumber = visibleFretSpan.lowerEndpoint! + i;
-          const strokeWidth = fretNumber === 0 ? 3 : 1;
-          return <line vectorEffect='non-scaling-stroke' key={i} x1={x} y1={y1} x2={x} y2={y2} stroke="#000" strokeWidth={strokeWidth} />;
+          const stringSpacing = fretSize.height;
+          const x = lowerEndpointOrigin.x + fretSize.width * i;
+          const y1 = lowerEndpointOrigin.y - (fretNumber === 0 ? 0.01 * stringSpacing : 0);
+          const y2 = lowerEndpointOrigin.y + fretboardSize.height + (fretNumber === 0 ? 0.01 * stringSpacing : 0);
+          return <line key={i} x1={x} y1={y1} x2={x} y2={y2} stroke="#000" strokeWidth={fretNumber === 0 ? 3 * strokeWidth : strokeWidth} />;
         })}
         {Array.from({ length: STRING_COUNT }, (_, i) => {
           const y  = lowerEndpointOrigin.y + fretSize.height * i;
-          const x1 = lowerEndpointOrigin.x - 0.001;
-          const x2 = lowerEndpointOrigin.x + fretboardSize.width + 0.001;
-          return <line vectorEffect='non-scaling-stroke' key={i} x1={x1} y1={y} x2={x2} y2={y} stroke="#000" strokeWidth={1} />;
+          const x1 = lowerEndpointOrigin.x;
+          const x2 = lowerEndpointOrigin.x + fretboardSize.width;
+          return <line key={i} x1={x1} y1={y} x2={x2} y2={y} stroke="#000" strokeWidth={strokeWidth} />;
         })}
         {
           showFretNumbers && Array.from({ length: fretboardSizeFrets.width + 1 }, (_, i) => {
@@ -326,7 +341,7 @@ function HorizontalFretboard({ fretSpan, children, showFretNumbers = false, show
   );
 }
 
-function VerticalFretboard({ fretSpan, children, showFretNumbers = false, showDots = false, ...props }: FretboardProps) {
+function VerticalFretboard({ fretSpan, children, showFretNumbers = false, showDots = false, xstyle, ...props }: FretboardProps) {
   fretSpan = fretSpan.clamp();
 
   const visibleFretSpan = fretSpan.withLowerEndpoint(
@@ -374,6 +389,8 @@ function VerticalFretboard({ fretSpan, children, showFretNumbers = false, showDo
 
   const viewBox = `0 0 ${containerSize.width} ${containerSize.height}`;
 
+  const strokeWidth = 0.03 * fretSize.width;
+
   return (
     <FretboardLayoutContext.Provider value={{
       direction: 'vertical',
@@ -387,23 +404,23 @@ function VerticalFretboard({ fretSpan, children, showFretNumbers = false, showDo
       aspectRatio,
       lowerEndpointOrigin,
     }}>
-      <SVGBase viewBox={viewBox} aspectRatio={aspectRatio} {...props}>
+      <SVGBase viewBox={viewBox} aspectRatio={aspectRatio} xstyle={xstyle} {...props}>
         {Array.from({ length: fretboardSizeFrets.height + 1 }, (_, i) => {
+          const fretNumber = visibleFretSpan.lowerEndpoint! + i;
+          const stringSpacing = fretSize.height;
           const y  = lowerEndpointOrigin.y + fretSize.height * i;
-          const x1 = lowerEndpointOrigin.x - 0.001;
-          const x2 = lowerEndpointOrigin.x + fretboardSize.width + 0.001;
-          const fretNumber  = visibleFretSpan.lowerEndpoint! + i;
-          const strokeWidth = fretNumber === 0 ? 3 : 1;
-          return <line vectorEffect='non-scaling-stroke' key={i} x1={x1} y1={y} x2={x2} y2={y} stroke="#000" strokeWidth={strokeWidth} />;
+          const x1 = lowerEndpointOrigin.x - (fretNumber === 0 ? 0.01 * stringSpacing : 0);
+          const x2 = lowerEndpointOrigin.x + fretboardSize.width + (fretNumber === 0 ? 0.01 * stringSpacing : 0);
+          return <line key={i} x1={x1} y1={y} x2={x2} y2={y} stroke="#000" strokeWidth={fretNumber === 0 ? 3 * strokeWidth : strokeWidth} />;
         })}
         {Array.from({ length: STRING_COUNT }, (_, i) => {
           const x  = lowerEndpointOrigin.x + fretSize.width * i;
-          const y1 = lowerEndpointOrigin.y - 0.001;
-          const y2 = lowerEndpointOrigin.y + fretboardSize.height + 0.001;
-          return <line vectorEffect='non-scaling-stroke' key={i} x1={x} y1={y1} x2={x} y2={y2} stroke="#000" strokeWidth={1} />;
+          const y1 = lowerEndpointOrigin.y;
+          const y2 = lowerEndpointOrigin.y + fretboardSize.height;
+          return <line key={i} x1={x} y1={y1} x2={x} y2={y2} stroke="#000" strokeWidth={strokeWidth} />;
         })}
         {
-          showFretNumbers && Array.from({ length: fretboardSizeFrets.width + 1 }, (_, i) => {
+          showFretNumbers && Array.from({ length: fretboardSizeFrets.height + 1 }, (_, i) => {
             const fretNumber = visibleFretSpan.lowerEndpoint! + i;
             const x = lowerEndpointOrigin.x + fretboardSize.width + 0.5 * fretSize.width;
             const y = lowerEndpointOrigin.y + fretSize.height * i;
@@ -435,8 +452,8 @@ function VerticalFretboard({ fretSpan, children, showFretNumbers = false, showDo
               const radius = 0.1 * fretSize.width;
               return (
                 <g key={fret}>
-                  <circle cx={x} cy={y - 0.15 * fretSize.height} r={radius} fill="#2a2a2a" />
-                  <circle cx={x} cy={y + 0.15 * fretSize.height} r={radius} fill="#2a2a2a" />
+                  <circle cx={x} cy={y - 0.15 * fretSize.height} r={radius} fill="black" />
+                  <circle cx={x} cy={y + 0.15 * fretSize.height} r={radius} fill="black" />
                 </g>
               );
             }

@@ -35,6 +35,10 @@ export class ModalScale implements DiatonicScale, IEquiv {
     this.pattern = Pattern.modePatterns.get(mode)!;
   }
 
+  public toString(): string {
+    return this.name;
+  }
+
   public static fromTonic(tonic: Spelling, mode: Mode, tuning: Tuning): ModalScale | undefined {
     const standardTonics: Spelling[] = [
       Spelling.c(),

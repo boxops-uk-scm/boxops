@@ -5,6 +5,7 @@ import type { Spelling } from "./Spelling";
 import type { RelativePitch } from "./RelativePitch";
 import type { SortedMap, SortedSet } from "@thi.ng/sorted-map";
 import type { Pattern } from "./Fingering";
+import { Arbitrary } from "./Arbitrary";
 
 type ScaleDegreeName
   = 'Tonic'
@@ -13,7 +14,7 @@ type ScaleDegreeName
   | 'Subdominant'
   | 'Dominant'
   | 'Submediant'
-  | 'LeadingTone';
+  | 'Leading Tone';
 
 export class ScaleDegree implements ICompare<ScaleDegree>, IEquiv {
   public readonly name: ScaleDegreeName;
@@ -38,7 +39,7 @@ export class ScaleDegree implements ICompare<ScaleDegree>, IEquiv {
       case 'Subdominant': return 4;
       case 'Dominant': return 5;
       case 'Submediant': return 6;
-      case 'LeadingTone': return 7;
+      case 'Leading Tone': return 7;
     }
   }
 
@@ -92,13 +93,7 @@ export class ScaleDegree implements ICompare<ScaleDegree>, IEquiv {
   }
 
   public static random(not?: SortedSet<ScaleDegree>): ScaleDegree {
-    const degrees = ScaleDegree.all();
-    while (true) {
-      const degree = degrees[Math.floor(Math.random() * degrees.length)];
-      if (!not || !not.has(degree)) {
-        return degree;
-      }
-    }
+    return Arbitrary.choice(ScaleDegree.all(), not);
   }
   
   public static tonic(): ScaleDegree {
@@ -126,11 +121,11 @@ export class ScaleDegree implements ICompare<ScaleDegree>, IEquiv {
   }
 
   public static leadingTone(): ScaleDegree {
-    return new ScaleDegree('LeadingTone');
+    return new ScaleDegree('Leading Tone');
   }
 
   public static subtonic(): ScaleDegree {
-    return new ScaleDegree('LeadingTone');
+    return new ScaleDegree('Leading Tone');
   }
 }
 
@@ -143,6 +138,13 @@ export class Note implements ICompare<Note>, IEquiv {
     this.tuning = tuning;
     this.fretboardPosition = fretboardPosition;
     this.spelling = spelling;
+  }
+
+  public toString(): string {
+    return JSON.stringify({
+      fretboardPosition: this.fretboardPosition,
+      spelling: this.spelling?.toString(),
+    })
   }
 
   public spellings(): Spelling[] {
