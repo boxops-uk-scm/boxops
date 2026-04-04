@@ -1,0 +1,57 @@
+// https://www.typescriptlang.org/tsconfig
+{
+  "compilerOptions": {
+    // Changes which JS features are downleveled and which are left intact.
+    "target": "ES2023",
+    // Sets the module system for the program.
+    "module": "ESNext",
+    // Specify the module resolution strategy to use.
+    "moduleResolution": "bundler",
+    // Controls how TypeScript determines whether a file is a script or a module.
+    "moduleDetection": "force", // Ensures that every non-declaration file is treated as a module.
+    // Enables a wide range of type checking behavior that results in stronger guarantees of program correctness.
+    "strict": true, // Equivalent to enabling all of the strict mode family options
+    // Skip type checking of declaration files.
+    "skipLibCheck": true,
+    // Tells TypeScript to warn you if you write code that can’t be correctly interpreted by a single-file transpilation process.
+    "isolatedModules": true,
+    // Do not emit compiler output files like JavaScript source code, source-maps or declarations.
+    "noEmit": true,
+    // Controls how JSX constructs are emitted in JavaScript files. This only affects output of JS files that started in .tsx files.
+    "jsx": "react-jsx", // Emit .js files with the JSX changed to _jsx calls optimized for production
+    // Allow JavaScript files to be imported inside your project
+    "allowJs": true,
+    // When checkJs is enabled then errors are reported in JavaScript files.
+    "checkJs": true,
+    // Switches class fields to the upcoming ECMA runtime behavior
+    "useDefineForClassFields": true,
+    // Allows TypeScript files to import each other with a TypeScript-specific extension like .ts, .mts, or .tsx.
+    "allowImportingTsExtensions": true,
+    // Simplifies import elision rules - any imports/exports without a type modifier are left untouched; imports/exports with a type modifier are always dropped.
+    "verbatimModuleSyntax": true,
+    // Report errors on unused local variables.
+    "noUnusedLocals": false, // Defferred to eslint
+    // Report errors on unused parameters.
+    "noUnusedParameters": false, // Defferred to eslint
+    // Report errors for fallthrough cases in switch statements.
+    "noFallthroughCasesInSwitch": true,
+    // When enabled, TypeScript will error if it can’t find a source file for a side effect import.
+    "noUncheckedSideEffectImports": true,
+    // Raises compiler errors about unreachable code.
+    "allowUnreachableCode": false,
+    // Raises compiler errors about unused labels.
+    "allowUnusedLabels": false,
+    // Raise error on ‘this’ expressions with an implied ‘any’ type.
+    "noImplicitThis": true,
+    // Ensures consistency between accessing a field via index and via dot syntax.
+    "noPropertyAccessFromIndexSignature": true,
+    // Ensures that overriding members in derived classes are marked with an override modifier.
+    "noImplicitOverride": true,
+    // Raise error on expressions and declarations with an implied ‘any’ type.
+    "noImplicitAny": true,
+    // Ensures that all code paths in a function return a value.
+    "noImplicitReturns": true,
+    // Use `unknown` type for catch clause variables instead of `any`.
+    "useUnknownInCatchVariables": true
+  }
+}

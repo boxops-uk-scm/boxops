@@ -1,0 +1,24 @@
+{
+  "name": "@boxops/components",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*/index.ts"
+  },
+  "dependencies": {
+    "@stylexjs/stylex": "^0.18.1"
+  },
+  "devDependencies": {
+    "@repo/tsconfig": "workspace:*",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.4",
+    "react-relay": "^20.1.1"
+  },
+  "peerDependencies": {
+    "react": "^19.2.4",
+    "react-relay": "^20.1.1"
+  }
+}

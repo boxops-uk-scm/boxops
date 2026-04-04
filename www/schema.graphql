@@ -1,0 +1,12 @@
+interface Node {
+  id: ID!
+}
+
+type Query {
+  viewer: User
+}
+
+type EntUser implements Node {
+  id: ID!
+  fullName: String!
+}
