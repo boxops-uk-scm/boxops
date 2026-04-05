@@ -38,12 +38,15 @@ type Pages = {
   "/tooltip": {
     params: {};
   };
+  "/copy-button": {
+    params: {};
+  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/button" | "/text" | "/heading" | "/badge" | "/flexbox" | "/icon" | "/button-group" | "/tooltip";
+    page: "/" | "/button" | "/text" | "/heading" | "/badge" | "/flexbox" | "/icon" | "/button-group" | "/tooltip" | "/copy-button";
   };
   "routes/button.tsx": {
     id: "routes/button";
@@ -77,6 +80,10 @@ type RouteFiles = {
     id: "routes/tooltip";
     page: "/tooltip";
   };
+  "routes/copyButton.tsx": {
+    id: "routes/copyButton";
+    page: "/copy-button";
+  };
 };
 
 type RouteModules = {
@@ -89,4 +96,5 @@ type RouteModules = {
   "routes/icon": typeof import("./app/routes/icon.tsx");
   "routes/buttonGroup": typeof import("./app/routes/buttonGroup.tsx");
   "routes/tooltip": typeof import("./app/routes/tooltip.tsx");
+  "routes/copyButton": typeof import("./app/routes/copyButton.tsx");
 };

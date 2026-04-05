@@ -9,4 +9,5 @@ export default [
   route('icon', 'routes/icon.tsx'),
   route('button-group', 'routes/buttonGroup.tsx'),
   route('tooltip', 'routes/tooltip.tsx'),
+  route('copy-button', 'routes/copyButton.tsx'),
 ] satisfies RouteConfig;

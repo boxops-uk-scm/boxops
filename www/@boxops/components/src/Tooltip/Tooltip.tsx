@@ -11,11 +11,20 @@ export interface Props {
   label: React.ReactNode;
   trigger: React.ReactElement;
   'aria-label': string;
+  closeOnClick?: boolean;
+  onOpenChangeComplete?: (open: boolean) => void;
 }
 
-const Tooltip: React.FC<Props> = ({ label, trigger, xstyle, 'aria-label': ariaLabel }) => (
-  <BaseTooltip.Root>
-    <BaseTooltip.Trigger aria-label={ariaLabel} render={trigger}></BaseTooltip.Trigger>
+const Tooltip: React.FC<Props> = ({
+  label,
+  trigger,
+  xstyle,
+  'aria-label': ariaLabel,
+  closeOnClick,
+  onOpenChangeComplete,
+}) => (
+  <BaseTooltip.Root onOpenChangeComplete={onOpenChangeComplete}>
+    <BaseTooltip.Trigger aria-label={ariaLabel} render={trigger} closeOnClick={closeOnClick}></BaseTooltip.Trigger>
     <BaseTooltip.Portal>
       <BaseTooltip.Positioner sideOffset={5}>
         <BaseTooltip.Popup {...stylex.props(styles.base, xstyle)}>
