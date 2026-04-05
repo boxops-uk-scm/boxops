@@ -8,7 +8,7 @@ import type React from 'react';
 
 export interface Props extends React.HTMLAttributes<HTMLDivElement> {
   size?: keyof typeof variants.size;
-  variant?: 'outline' | 'solid';
+  variant?: Variant;
   xstyle?: stylex.StyleXStyles;
 }
 
@@ -41,3 +41,4 @@ Icon.displayName = 'Icon';
 export default Icon;
 
 export type Size = keyof typeof variants.size;
+export type Variant = 'outline' | 'solid';

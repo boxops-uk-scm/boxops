@@ -11,6 +11,7 @@ const Badge = Object.assign(internal.default, {
 
 namespace Badge {
   export type Props = internal.Props;
+  export type Color = keyof typeof variants.color;
 }
 
 export default Badge;

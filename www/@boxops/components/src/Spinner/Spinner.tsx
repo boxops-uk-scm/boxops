@@ -10,7 +10,7 @@ import { variants } from './variants';
 
 export interface Props extends HTMLAttributes<HTMLDivElement> {
   size?: Icon.Size;
-  variant?: 'on-light-media' | 'on-dark-media' | 'accent';
+  variant?: Variant;
   xstyle?: stylex.StyleXStyles;
 }
 
@@ -47,3 +47,5 @@ const Spinner = forwardRef<HTMLDivElement, Props>(
 Spinner.displayName = 'Spinner';
 
 export default Spinner;
+
+export type Variant = 'on-light-media' | 'on-dark-media' | 'accent';

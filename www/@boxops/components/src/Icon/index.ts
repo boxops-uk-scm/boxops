@@ -164,6 +164,7 @@ const Icon = Object.assign(internal.default, {
 namespace Icon {
   export type Props = internal.Props;
   export type Size = internal.Size;
+  export type Variant = internal.Variant;
 }
 
 export default Icon;
