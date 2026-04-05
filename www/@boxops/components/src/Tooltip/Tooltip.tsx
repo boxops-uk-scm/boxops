@@ -7,17 +7,18 @@ import Text from '../Text';
 import { styles } from './styles';
 
 export interface Props {
-  style?: stylex.StyleXStyles;
+  xstyle?: stylex.StyleXStyles;
   label: React.ReactNode;
   trigger: React.ReactElement;
+  'aria-label': string;
 }
 
-const Tooltip: React.FC<Props> = ({ label, trigger, style }) => (
+const Tooltip: React.FC<Props> = ({ label, trigger, xstyle, 'aria-label': ariaLabel }) => (
   <BaseTooltip.Root>
-    <BaseTooltip.Trigger render={trigger}></BaseTooltip.Trigger>
+    <BaseTooltip.Trigger aria-label={ariaLabel} render={trigger}></BaseTooltip.Trigger>
     <BaseTooltip.Portal>
       <BaseTooltip.Positioner sideOffset={5}>
-        <BaseTooltip.Popup {...stylex.props(styles.base, style)}>
+        <BaseTooltip.Popup {...stylex.props(styles.base, xstyle)}>
           <Text xstyle={styles.label}>{label}</Text>
         </BaseTooltip.Popup>
       </BaseTooltip.Positioner>

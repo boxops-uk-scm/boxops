@@ -11,7 +11,11 @@ export default function TooltipRoute() {
   return (
     <main {...stylex.props(styles.main)}>
       <section {...stylex.props(styles.section)}>
-        <Tooltip label="This is a tooltip" trigger={<Icon.Info variant="solid" xstyle={styles.icon} />} />
+        <Tooltip
+          aria-label="This is a tooltip"
+          label="This is a tooltip"
+          trigger={<Icon.Info variant="solid" xstyle={styles.icon} />}
+        />
       </section>
     </main>
   );
