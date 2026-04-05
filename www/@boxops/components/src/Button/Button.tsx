@@ -48,12 +48,12 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
         {typeof startContent === 'function' ? startContent({ iconProps }) : startContent}
         {(loading || label) &&
           (onLightMedia ? (
-            <Text data-text={label} style={labelStyle}>
+            <Text data-text={label} xstyle={labelStyle}>
               {loading ? <Spinner /> : label}
             </Text>
           ) : (
             <Text>
-              <Text as="b" data-text={label} style={labelStyle}>
+              <Text as="b" data-text={label} xstyle={labelStyle}>
                 {loading ? <Spinner /> : label}
               </Text>
             </Text>
