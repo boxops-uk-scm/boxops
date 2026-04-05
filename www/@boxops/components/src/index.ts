@@ -3,3 +3,5 @@ export { default as Text } from './Text';
 export { default as Heading } from './Heading';
 export { default as Badge } from './Badge';
 export { default as Flexbox } from './Flexbox';
+export { default as Icon } from './Icon';
+export { default as Spinner } from './Spinner';

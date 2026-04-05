@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 24">
+  <defs>
+    <style>
+      .cls-1 {
+      opacity: .2;
+      }
+      .cls-1 {
+      fill: black;
+      }
+    </style>
+  </defs>
+  <g>
+    <g id="Layer_1">
+      <g>
+        <path class="cls-2"
+          d="M12,19c-3.87,0-7-3.13-7-7s3.13-7,7-7v-3C6.48,2,2,6.48,2,12s4.48,10,10,10c2.38,0,4.57-.84,6.29-2.23l-2.14-2.14c-1.16.86-2.59,1.37-4.15,1.37Z" />
+        <path class="cls-1"
+          d="M22,12c0-5.52-4.48-10-10-10v3c3.87,0,7,3.13,7,7,0,2.31-1.13,4.36-2.85,5.63l2.14,2.14c2.26-1.83,3.71-4.63,3.71-7.77Z" />
+      </g>
+      <animateTransform attributeName="transform" dur="0.75s" repeatCount="indefinite" type="rotate"
+        values="0 12 12;360 12 12" />
+    </g>
+  </g>
+</svg>

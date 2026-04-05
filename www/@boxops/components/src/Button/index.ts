@@ -9,6 +9,7 @@ const Button = Object.assign(internal.default, {
 
 namespace Button {
   export type Props = internal.Props;
+  export type RenderProps = internal.RenderProps;
 }
 
 export default Button;

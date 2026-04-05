@@ -29,12 +29,15 @@ type Pages = {
   "/flexbox": {
     params: {};
   };
+  "/icon": {
+    params: {};
+  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/button" | "/text" | "/heading" | "/badge" | "/flexbox";
+    page: "/" | "/button" | "/text" | "/heading" | "/badge" | "/flexbox" | "/icon";
   };
   "routes/button.tsx": {
     id: "routes/button";
@@ -56,6 +59,10 @@ type RouteFiles = {
     id: "routes/flexbox";
     page: "/flexbox";
   };
+  "routes/icon.tsx": {
+    id: "routes/icon";
+    page: "/icon";
+  };
 };
 
 type RouteModules = {
@@ -65,4 +72,5 @@ type RouteModules = {
   "routes/heading": typeof import("./app/routes/heading.tsx");
   "routes/badge": typeof import("./app/routes/badge.tsx");
   "routes/flexbox": typeof import("./app/routes/flexbox.tsx");
+  "routes/icon": typeof import("./app/routes/icon.tsx");
 };

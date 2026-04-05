@@ -6,4 +6,5 @@ export default [
   route('heading', 'routes/heading.tsx'),
   route('badge', 'routes/badge.tsx'),
   route('flexbox', 'routes/flexbox.tsx'),
+  route('icon', 'routes/icon.tsx'),
 ] satisfies RouteConfig;

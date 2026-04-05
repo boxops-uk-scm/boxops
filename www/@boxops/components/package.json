@@ -8,7 +8,7 @@
     "./*": "./src/*/index.ts"
   },
   "scripts": {
-    "build:icons": "svgr --typescript --out-dir src/Icon src/Icon"
+    "build:icons": "sh -c 'dir=${1:-src/Icon}; svgr --typescript --out-dir \"$dir\" \"$dir\"' --"
   },
   "dependencies": {
     "@stylexjs/stylex": "^0.18.1",

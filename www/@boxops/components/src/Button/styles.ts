@@ -1,7 +1,8 @@
 import * as stylex from '@stylexjs/stylex';
 
 import { vars as badgeVars } from '../Badge/vars.stylex';
-import { gap, outlineColor, padding, textColor } from '../tokens.stylex';
+import { vars as spinnerVars } from '../Spinner/vars.stylex';
+import { gap, outlineColor, padding, semanticColor, textColor } from '../tokens.stylex';
 
 import { vars } from './vars.stylex';
 
@@ -39,11 +40,18 @@ export const styles = stylex.create({
     },
     [badgeVars.fill]: badgeVars.color,
     [vars.color]: badgeVars.color,
+    [spinnerVars.fill]: badgeVars.color,
   },
   onLightMedia: {
     [vars.color]: {
       default: textColor.onLightMedia,
       ':disabled': `color-mix(in srgb, white 50%, ${textColor.subtle} 50%)`,
+    },
+    [spinnerVars.fill]: {
+      default: semanticColor.accent,
+      ':disabled': `color-mix(in srgb, white 50%, ${semanticColor.accent} 50%)`,
+      ':enabled:hover': `color-mix(in srgb, black 5%, ${semanticColor.accent} 95%)`,
+      ':enabled:active': `color-mix(in srgb, black 10%, ${semanticColor.accent} 90%)`,
     },
   },
   label: {
