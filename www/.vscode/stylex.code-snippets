@@ -62,4 +62,23 @@
       "export default $TM_FILENAME_BASE;",
     ],
   },
+  "Icon": {
+    "prefix": "icon",
+    "body": [
+      "import { forwardRef } from 'react';",
+      "",
+      "import Icon, { type Props } from '../Icon';",
+      "",
+      "import Outline from './Outline';",
+      "import Solid from './Solid';",
+      "",
+      "const ${1:${TM_DIRECTORY/.*[\\\\\\/]([^\\\\\\/]+)$/${1:/pascalcase}/}} = forwardRef<HTMLDivElement, Props>((props, ref) => (",
+      "  <Icon outline={Outline} solid={Solid} ref={ref} {...props} />",
+      "));",
+      "",
+      "$1.displayName = '$1';",
+      "",
+      "export default $1;",
+    ],
+  },
 }

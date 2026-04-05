@@ -7,12 +7,16 @@
     ".": "./src/index.ts",
     "./*": "./src/*/index.ts"
   },
+  "scripts": {
+    "build:icons": "svgr --typescript --out-dir src/Icon src/Icon"
+  },
   "dependencies": {
     "@stylexjs/stylex": "^0.18.1",
     "react-polymorphed": "^2.2.2"
   },
   "devDependencies": {
     "@repo/tsconfig": "workspace:*",
+    "@svgr/cli": "^8.1.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "react": "^19.2.4",

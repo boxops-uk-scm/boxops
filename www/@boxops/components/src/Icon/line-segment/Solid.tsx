@@ -1,0 +1,8 @@
+import * as React from 'react';
+import type { SVGProps } from 'react';
+const SvgSolid = (props: SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={20} height={20} viewBox="0 0 256 256" {...props}>
+    <path d="M211.81 83.79a28 28 0 0 1-33.12 4.83l-90.07 90.07a28 28 0 1 1-44.43-6.48 28 28 0 0 1 33.12-4.83l90.07-90.07a28 28 0 1 1 44.43 6.48" />
+  </svg>
+);
+export default SvgSolid;
