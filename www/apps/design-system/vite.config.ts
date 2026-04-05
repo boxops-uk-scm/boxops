@@ -1,11 +1,12 @@
-import { defineConfig } from 'vite';
 import { reactRouter } from '@react-router/dev/vite';
 import stylex from '@stylexjs/unplugin';
+import { defineConfig } from 'vite';
 import relay from 'vite-plugin-relay';
 
 export default defineConfig({
-  base: '/design-system/',
+  // base: '/design-system/',
   plugins: [
+     
     stylex.vite({
       useCSSLayers: true,
     }),

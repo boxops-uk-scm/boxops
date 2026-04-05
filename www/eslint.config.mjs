@@ -4,11 +4,13 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 import { defineConfig, globalIgnores } from 'eslint/config';
+import importPlugin from 'eslint-plugin-import';
 
 export default defineConfig([
   globalIgnores([
     '.pnp.cjs',
     '.pnp.loader.mjs',
+    '**/.react-router/**',
     '**/.yarn/**',
     '**/node_modules/**',
     '**/dist/**',
@@ -18,6 +20,9 @@ export default defineConfig([
   ]),
   {
     files: ['**/*.{ts,tsx}'],
+    plugins: {
+      import: importPlugin,
+    },
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
@@ -57,6 +62,35 @@ export default defineConfig([
           ],
         },
       ],
+      'import/order': [
+        'error',
+        {
+          groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index', 'object', 'type'],
+          'newlines-between': 'always',
+          alphabetize: {
+            order: 'asc',
+            caseInsensitive: true,
+          },
+        },
+      ],
+      'import/extensions': [
+        'error',
+        'ignorePackages',
+        {
+          js: 'never',
+          jsx: 'never',
+          ts: 'never',
+          tsx: 'never',
+        },
+      ],
+    },
+    settings: {
+      'import/resolver': {
+        typescript: {
+          alwaysTryTypes: true,
+        },
+        node: true,
+      },
     },
   },
 ]);

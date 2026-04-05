@@ -17,20 +17,52 @@ type Pages = {
   "/button": {
     params: {};
   };
+  "/text": {
+    params: {};
+  };
+  "/heading": {
+    params: {};
+  };
+  "/badge": {
+    params: {};
+  };
+  "/flexbox": {
+    params: {};
+  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/button";
+    page: "/" | "/button" | "/text" | "/heading" | "/badge" | "/flexbox";
   };
   "routes/button.tsx": {
     id: "routes/button";
     page: "/button";
+  };
+  "routes/text.tsx": {
+    id: "routes/text";
+    page: "/text";
+  };
+  "routes/heading.tsx": {
+    id: "routes/heading";
+    page: "/heading";
+  };
+  "routes/badge.tsx": {
+    id: "routes/badge";
+    page: "/badge";
+  };
+  "routes/flexbox.tsx": {
+    id: "routes/flexbox";
+    page: "/flexbox";
   };
 };
 
 type RouteModules = {
   "root": typeof import("./app/root.tsx");
   "routes/button": typeof import("./app/routes/button.tsx");
+  "routes/text": typeof import("./app/routes/text.tsx");
+  "routes/heading": typeof import("./app/routes/heading.tsx");
+  "routes/badge": typeof import("./app/routes/badge.tsx");
+  "routes/flexbox": typeof import("./app/routes/flexbox.tsx");
 };

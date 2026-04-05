@@ -1,14 +1,14 @@
-import * as internal from './Button';
+import * as internal from './Heading';
 import { styles } from './styles';
 import { variants } from './variants';
 
-const Button = Object.assign(internal.default, {
+const Heading = Object.assign(internal.default, {
   styles,
   variants,
 });
 
-namespace Button {
+namespace Heading {
   export type Props = internal.Props;
 }
 
-export default Button;
+export default Heading;

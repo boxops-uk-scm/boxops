@@ -1,14 +1,15 @@
-import * as internal from './Button';
+
+import * as internal from './Flexbox';
 import { styles } from './styles';
 import { variants } from './variants';
 
-const Button = Object.assign(internal.default, {
+const Flexbox = Object.assign(internal.default, {
   styles,
   variants,
 });
 
-namespace Button {
+namespace Flexbox {
   export type Props = internal.Props;
 }
 
-export default Button;
+export default Flexbox;

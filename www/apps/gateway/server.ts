@@ -1,14 +1,16 @@
-import { createRequestHandler } from '@react-router/express';
-import express from 'express';
 import http from 'http';
 import path from 'path';
-import type { ServerBuild } from 'react-router';
+
+import { createRequestHandler } from '@react-router/express';
+import express from 'express';
 import * as vite from 'vite';
+
+import type { ServerBuild } from 'react-router';
 
 const app = express();
 const server = http.createServer(app);
 
-const designSystemRoot = path.resolve(import.meta.dirname, '../../design-system');
+const designSystemRoot = path.resolve(import.meta.dirname, '../design-system');
 const designSystem = await vite.createServer({
   server: {
     middlewareMode: true,
@@ -23,10 +25,10 @@ const designSystem = await vite.createServer({
   configFile: path.resolve(designSystemRoot, 'vite.config.ts'),
 });
 
-app.use('/design-system', designSystem.middlewares);
+app.use(designSystem.middlewares);
 
-app.use(
-  '/design-system/*splat',
+app.all(
+  /.*/,
   createRequestHandler({
     build: async () => {
       return (await designSystem.ssrLoadModule('virtual:react-router/server-build')) as ServerBuild;
