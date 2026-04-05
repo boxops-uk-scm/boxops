@@ -22,13 +22,13 @@ const Icon = forwardRef<HTMLDivElement, Props & InternalProps>(
     switch (variant) {
       case 'outline':
         return (
-          <div ref={ref} {...props}>
+          <div ref={ref} {...props} {...stylex.props(styles.container)}>
             <Outline {...stylex.props(styles.base, size && variants.size[size], xstyle)} />
           </div>
         );
       case 'solid':
         return (
-          <div ref={ref} {...props}>
+          <div ref={ref} {...props} {...stylex.props(styles.container)}>
             <Solid {...stylex.props(styles.base, size && variants.size[size], xstyle)} />
           </div>
         );

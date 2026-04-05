@@ -7,4 +7,5 @@ export default [
   route('badge', 'routes/badge.tsx'),
   route('flexbox', 'routes/flexbox.tsx'),
   route('icon', 'routes/icon.tsx'),
+  route('button-group', 'routes/buttonGroup.tsx'),
 ] satisfies RouteConfig;

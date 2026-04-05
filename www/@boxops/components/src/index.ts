@@ -5,3 +5,4 @@ export { default as Badge } from './Badge';
 export { default as Flexbox } from './Flexbox';
 export { default as Icon } from './Icon';
 export { default as Spinner } from './Spinner';
+export { default as ButtonGroup } from './ButtonGroup';

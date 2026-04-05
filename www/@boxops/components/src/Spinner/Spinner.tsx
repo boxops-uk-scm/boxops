@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
-import { forwardRef, type SVGProps } from 'react';
+import { forwardRef, type HTMLAttributes } from 'react';
 
 import Icon from '../Icon';
 
@@ -8,35 +8,35 @@ import OnLightMedia from './OnLightMedia';
 import { styles } from './styles';
 import { variants } from './variants';
 
-export interface Props extends SVGProps<SVGSVGElement> {
+export interface Props extends HTMLAttributes<HTMLDivElement> {
   size?: Icon.Size;
   variant?: 'on-light-media' | 'on-dark-media' | 'accent';
   xstyle?: stylex.StyleXStyles;
 }
 
-const Spinner = forwardRef<SVGSVGElement, Props>(
+const Spinner = forwardRef<HTMLDivElement, Props>(
   ({ size = 'M', xstyle, variant = 'on-light-media', ...props }: Props, ref) => {
     switch (variant) {
       case 'on-light-media':
       case 'accent':
         return (
-          <OnLightMedia
+          <Icon
             ref={ref}
-            {...stylex.props(
-              Icon.styles.base,
-              Icon.variants.size[size],
-              styles.base,
-              variant === 'accent' && variants.accent,
-              xstyle,
-            )}
+            solid={OnLightMedia}
+            outline={OnLightMedia}
+            size={size}
+            xstyle={[styles.base, variant === 'accent' && variants.accent, xstyle]}
             {...props}
           />
         );
       case 'on-dark-media':
         return (
-          <OnDarkMedia
+          <Icon
             ref={ref}
-            {...stylex.props(Icon.styles.base, Icon.variants.size[size], styles.base, xstyle)}
+            solid={OnDarkMedia}
+            outline={OnDarkMedia}
+            size={size}
+            xstyle={[styles.base, xstyle]}
             {...props}
           />
         );

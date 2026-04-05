@@ -5,4 +5,9 @@ export const styles = stylex.create({
     fill: 'inherit',
     color: 'inherit',
   },
+  container: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

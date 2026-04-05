@@ -5,16 +5,12 @@
     box-sizing: border-box;
   }
 
-  html {
-    scrollbar-gutter: stable;
-  }
-
   body {
-    margin: 0;
-    min-block-size: 100dvb;
+    isolation: isolate;
   }
 }
 
 body {
-  isolation: isolate;
+  margin: 0;
+  min-block-size: 100dvb;
 }
