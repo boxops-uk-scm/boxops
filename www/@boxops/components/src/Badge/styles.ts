@@ -8,7 +8,7 @@ export const styles = stylex.create({
   base: {
     height: '20px',
     borderRadius: '10px',
-    padding: `0px 6px 0 6px`,
+    padding: `0 6px 0 6px`,
     minWidth: 'fit-content',
     backgroundColor: vars.backgroundColor,
     fill: vars.fill,
@@ -18,7 +18,7 @@ export const styles = stylex.create({
     overflow: 'hidden',
     fontWeight: 600,
     fontSize: '12px',
-    lineHeight: '12px',
+    lineHeight: '16px',
     letterSpacing: -0.24,
     color: vars.color,
   },
