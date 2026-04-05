@@ -12,6 +12,9 @@ export default function TextRoute() {
       <Text as="p">Lorem ipsum doler sit amet</Text>
       <Text as="small">Lorem ipsum doler sit amet</Text>
       <Text as="b">Lorem ipsum doler sit amet</Text>
+      <Text>
+        <Text as="b">Lorem ipsum doler sit amet</Text>
+      </Text>
       <Text as="i">Lorem ipsum doler sit amet</Text>
       <Text as="u">Lorem ipsum doler sit amet</Text>
       <Text as="s">Lorem ipsum doler sit amet</Text>

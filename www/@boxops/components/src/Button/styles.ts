@@ -16,7 +16,7 @@ export const styles = stylex.create({
     borderTopRightRadius: vars.borderRadiusRight,
     borderBottomRightRadius: vars.borderRadiusRight,
     borderWidth: 0,
-    display: 'inline-flex',
+    display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -58,6 +58,16 @@ export const styles = stylex.create({
     whiteSpace: 'nowrap',
     color: vars.color,
     userSelect: 'none',
+    '::before': {
+      content: 'attr(data-text)',
+      fontWeight: 'bold',
+      letterSpacing: '-0.24px',
+      display: 'block',
+      height: '0px',
+      overflow: 'hidden',
+      visibility: 'hidden',
+      pointerEvents: 'none',
+    },
   },
   placeholder: {
     '::before': {
@@ -66,6 +76,8 @@ export const styles = stylex.create({
       height: '0px',
       overflow: 'hidden',
       visibility: 'hidden',
+      fontWeight: 'bold',
+      letterSpacing: '-0.24px',
     },
   },
   compact: {

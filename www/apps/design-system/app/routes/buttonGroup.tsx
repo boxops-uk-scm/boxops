@@ -8,6 +8,7 @@ export function meta() {
 
 export default function ButtonGroupRoute() {
   const [isDownloading, setIsDownloading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   const onClick = () => {
     setIsDownloading(true);
@@ -21,6 +22,8 @@ export default function ButtonGroupRoute() {
       <section {...stylex.props(styles.section)}>
         <ButtonGroup>
           <Button
+            variant={editMode ? 'primary' : 'default'}
+            onClick={() => setEditMode((em) => !em)}
             startContent={({ iconProps }) => <Icon.PencilSimple {...iconProps} />}
             endContent={<Icon.CaretDown variant="solid" size="S" />}
             label="Edit"
@@ -37,17 +40,28 @@ export default function ButtonGroupRoute() {
       <section {...stylex.props(styles.section)}>
         <ButtonGroup>
           <Button
-            variant="flat"
+            variant={editMode ? 'primary' : 'default'}
+            onClick={() => setEditMode((em) => !em)}
             startContent={({ iconProps }) => <Icon.PencilSimple {...iconProps} />}
             endContent={<Icon.CaretDown variant="solid" size="S" />}
             label="Edit"
           />
-          <Button variant="flat" startContent={({ iconProps }) => <Icon.Copy {...iconProps} />} label="Duplicate" />
           <Button
-            variant="flat"
-            loading={true}
+            onClick={onClick}
+            loading={isDownloading}
             startContent={({ iconProps }) => <Icon.Download {...iconProps} />}
             label="Download"
+          />
+        </ButtonGroup>
+      </section>
+      <section {...stylex.props(styles.section)}>
+        <ButtonGroup>
+          <Button
+            variant={editMode ? 'primary' : 'default'}
+            onClick={() => setEditMode((em) => !em)}
+            startContent={({ iconProps }) => <Icon.PencilSimple {...iconProps} />}
+            endContent={<Icon.CaretDown variant="solid" size="S" />}
+            label="Edit"
           />
         </ButtonGroup>
       </section>
