@@ -1,5 +1,6 @@
+import { Button as ButtonBase } from '@base-ui/react';
 import * as stylex from '@stylexjs/stylex';
-import { forwardRef, type ReactNode } from 'react';
+import { forwardRef } from 'react';
 import React from 'react';
 
 import Spinner from '../Spinner';
@@ -11,7 +12,7 @@ import { variants } from './variants';
 import type Icon from '../Icon';
 
 export interface Props extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
-  label?: ReactNode;
+  label?: string;
   loading?: boolean;
   compact?: boolean;
   variant?: keyof typeof variants;
@@ -25,7 +26,21 @@ export interface RenderProps {
 }
 
 export const Button = forwardRef<HTMLButtonElement, Props>(
-  ({ label, disabled, loading, variant = 'default', compact, xstyle, startContent, endContent, ...rest }, ref) => {
+  (
+    {
+      label,
+      'aria-label': ariaLabel,
+      disabled,
+      loading,
+      variant = 'default',
+      compact,
+      xstyle,
+      startContent,
+      endContent,
+      ...rest
+    },
+    ref,
+  ) => {
     const onLightMedia = variant === 'default' || variant === 'flat';
     const labelStyle = loading ? styles.placeholder : styles.label;
     const iconProps: Partial<Icon.Props> = {
@@ -33,7 +48,8 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
     };
 
     return (
-      <button
+      <ButtonBase
+        aria-label={ariaLabel ?? label}
         ref={ref}
         disabled={disabled || loading}
         {...rest}
@@ -52,7 +68,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
           </Text>
         )}
         {typeof endContent === 'function' ? endContent({ iconProps }) : endContent}
-      </button>
+      </ButtonBase>
     );
   },
 );

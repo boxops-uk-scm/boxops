@@ -28,6 +28,7 @@ export const styles = stylex.create({
     ':focus-visible': {
       outline: `2px solid ${outlineColor.focus}`,
       outlineOffset: '2px',
+      zIndex: 1,
     },
     [badgeVars.color]: {
       default: 'white',
