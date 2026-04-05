@@ -63,9 +63,19 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
       >
         {typeof startContent === 'function' ? startContent({ iconProps }) : startContent}
         {(loading || label) && (
-          <Text data-text={label} xstyle={labelStyle}>
-            {loading ? <Spinner /> : onLightMedia ? label : <Text as="b">{label}</Text>}
-          </Text>
+          <>
+            {!loading && (
+              <Text data-text={label} xstyle={labelStyle}>
+                {onLightMedia ? label : <Text as="b">{label}</Text>}
+              </Text>
+            )}
+            {loading && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <Text data-text={label} xstyle={labelStyle} />
+                <Spinner />
+              </div>
+            )}
+          </>
         )}
         {typeof endContent === 'function' ? endContent({ iconProps }) : endContent}
       </ButtonBase>

@@ -8,4 +8,5 @@ export default [
   route('flexbox', 'routes/flexbox.tsx'),
   route('icon', 'routes/icon.tsx'),
   route('button-group', 'routes/buttonGroup.tsx'),
+  route('tooltip', 'routes/tooltip.tsx'),
 ] satisfies RouteConfig;

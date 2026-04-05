@@ -7,7 +7,7 @@ export const styles = stylex.create({
   },
   container: {
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 'fit-content',
+    height: 'fit-content',
   },
 });
