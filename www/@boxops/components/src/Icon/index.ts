@@ -33,6 +33,7 @@ import DotsThree from './dots-three/DotsThree';
 import Download from './download/Download';
 import Envelope from './envelope/Envelope';
 import FileText from './file-text/FileText';
+import FlagBanner from './flag-banner/FlagBanner';
 import Flame from './flame/Flame';
 import Flask from './flask/Flask';
 import Gear from './gear/Gear';
@@ -46,6 +47,8 @@ import ListNumbers from './list-numbers/ListNumbers';
 import MagnifyingGlass from './magnifying-glass/MagnifyingGlass';
 import MapPin from './map-pin/MapPin';
 import Megaphone from './megaphone/Megaphone';
+import Microphone from './microphone/Microphone';
+import MicrophoneSlash from './microphone-slash/MicrophoneSlash';
 import Moon from './moon/Moon';
 import Package from './package/Package';
 import PauseCircle from './pause-circle/PauseCircle';
@@ -53,6 +56,7 @@ import PencilSimple from './pencil-simple/PencilSimple';
 import Phone from './phone/Phone';
 import Polygon from './polygon/Polygon';
 import ProhibitInset from './prohibit-inset/ProhibitInset';
+import PushPin from './push-pin/PushPin';
 import PuzzlePiece from './puzzle-piece/PuzzlePiece';
 import Rectangle from './rectangle/Rectangle';
 import Robot from './robot/Robot';
@@ -117,6 +121,7 @@ const Icon = Object.assign(internal.default, {
   Download,
   Envelope,
   FileText,
+  FlagBanner,
   Flame,
   Flask,
   Gear,
@@ -129,6 +134,8 @@ const Icon = Object.assign(internal.default, {
   MagnifyingGlass,
   MapPin,
   Megaphone,
+  Microphone,
+  MicrophoneSlash,
   Moon,
   Package,
   PauseCircle,
@@ -136,6 +143,7 @@ const Icon = Object.assign(internal.default, {
   Phone,
   Polygon,
   ProhibitInset,
+  PushPin,
   PuzzlePiece,
   Rectangle,
   Robot,
