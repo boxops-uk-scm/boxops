@@ -41,12 +41,18 @@ type Pages = {
   "/copy-button": {
     params: {};
   };
+  "/toggle": {
+    params: {};
+  };
+  "/color": {
+    params: {};
+  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/button" | "/text" | "/heading" | "/badge" | "/flexbox" | "/icon" | "/button-group" | "/tooltip" | "/copy-button";
+    page: "/" | "/button" | "/text" | "/heading" | "/badge" | "/flexbox" | "/icon" | "/button-group" | "/tooltip" | "/copy-button" | "/toggle" | "/color";
   };
   "routes/button.tsx": {
     id: "routes/button";
@@ -84,6 +90,14 @@ type RouteFiles = {
     id: "routes/copyButton";
     page: "/copy-button";
   };
+  "routes/toggle.tsx": {
+    id: "routes/toggle";
+    page: "/toggle";
+  };
+  "routes/color.tsx": {
+    id: "routes/color";
+    page: "/color";
+  };
 };
 
 type RouteModules = {
@@ -97,4 +111,6 @@ type RouteModules = {
   "routes/buttonGroup": typeof import("./app/routes/buttonGroup.tsx");
   "routes/tooltip": typeof import("./app/routes/tooltip.tsx");
   "routes/copyButton": typeof import("./app/routes/copyButton.tsx");
+  "routes/toggle": typeof import("./app/routes/toggle.tsx");
+  "routes/color": typeof import("./app/routes/color.tsx");
 };

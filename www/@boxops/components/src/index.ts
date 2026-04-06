@@ -8,3 +8,4 @@ export { default as Spinner } from './Spinner';
 export { default as ButtonGroup } from './ButtonGroup';
 export { default as Tooltip } from './Tooltip';
 export { default as CopyButton } from './CopyButton';
+export { default as Toggle } from './Toggle';

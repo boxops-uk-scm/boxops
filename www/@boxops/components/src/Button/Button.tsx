@@ -17,13 +17,11 @@ export interface Props extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement
   compact?: boolean;
   variant?: keyof typeof variants;
   xstyle?: stylex.StyleXStyles;
-  startContent?: React.ReactNode | ((props: RenderProps) => React.ReactNode);
-  endContent?: React.ReactNode | ((props: RenderProps) => React.ReactNode);
+  startContent?: React.ReactNode | ((props: IconRenderProps) => React.ReactNode);
+  endContent?: React.ReactNode | ((props: IconRenderProps) => React.ReactNode);
 }
 
-export interface RenderProps {
-  iconProps: Partial<Icon.Props>;
-}
+export type IconRenderProps = Partial<Icon.Props>;
 
 export const Button = forwardRef<HTMLButtonElement, Props>(
   (
@@ -61,7 +59,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
           xstyle,
         )}
       >
-        {typeof startContent === 'function' ? startContent({ iconProps }) : startContent}
+        {typeof startContent === 'function' ? startContent(iconProps) : startContent}
         {(loading || label) && (
           <>
             {!loading && (
@@ -77,7 +75,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(
             )}
           </>
         )}
-        {typeof endContent === 'function' ? endContent({ iconProps }) : endContent}
+        {typeof endContent === 'function' ? endContent(iconProps) : endContent}
       </ButtonBase>
     );
   },
