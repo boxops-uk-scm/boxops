@@ -1,4 +1,4 @@
-import { Text } from '@boxops/components';
+import { Text } from '@boxops/ui';
 import * as stylex from '@stylexjs/stylex';
 
 export function meta() {
@@ -8,13 +8,12 @@ export function meta() {
 export default function TextRoute() {
   return (
     <main {...stylex.props(styles.main)}>
-      <Text as="span">Lorem ipsum doler sit amet</Text>
+      <Text as="span" xstyle={(_state: Text.State) => styles.red}>
+        Lorem ipsum doler sit amet
+      </Text>
       <Text as="p">Lorem ipsum doler sit amet</Text>
       <Text as="small">Lorem ipsum doler sit amet</Text>
       <Text as="b">Lorem ipsum doler sit amet</Text>
-      <Text>
-        <Text as="b">Lorem ipsum doler sit amet</Text>
-      </Text>
       <Text as="i">Lorem ipsum doler sit amet</Text>
       <Text as="u">Lorem ipsum doler sit amet</Text>
       <Text as="s">Lorem ipsum doler sit amet</Text>
@@ -35,5 +34,8 @@ const styles = stylex.create({
     display: 'flex',
     flexDirection: 'column',
     gap: '1rem',
+  },
+  red: {
+    color: 'red',
   },
 });

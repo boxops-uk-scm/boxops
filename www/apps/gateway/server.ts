@@ -18,6 +18,7 @@ const designSystem = await vite.createServer({
     allowedHosts: true,
     hmr: {
       server,
+      clientPort: 3000,
     },
   },
   appType: 'custom',
@@ -41,6 +42,6 @@ app.all(
   }),
 );
 
-app.listen(3000, '0.0.0.0', () => {
+server.listen(3000, '0.0.0.0', () => {
   console.log('Server listening on http://localhost:3000');
 });

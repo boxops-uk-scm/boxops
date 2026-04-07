@@ -8,6 +8,7 @@
   "dependencies": {
     "@babel/runtime": "^7.29.2",
     "@boxops/components": "workspace:*",
+    "@boxops/ui": "workspace:*",
     "@react-router/node": "^7.13.1",
     "@repo/relay-artifacts": "workspace:*",
     "@stylexjs/stylex": "^0.18.1",
