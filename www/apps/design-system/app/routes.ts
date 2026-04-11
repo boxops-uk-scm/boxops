@@ -1,15 +1,3 @@
-import { type RouteConfig, route } from '@react-router/dev/routes';
+import { type RouteConfig, index } from '@react-router/dev/routes';
 
-export default [
-  route('button', 'routes/button.tsx'),
-  route('text', 'routes/text.tsx'),
-  route('heading', 'routes/heading.tsx'),
-  route('badge', 'routes/badge.tsx'),
-  route('flexbox', 'routes/flexbox.tsx'),
-  route('icon', 'routes/icon.tsx'),
-  route('button-group', 'routes/buttonGroup.tsx'),
-  route('tooltip', 'routes/tooltip.tsx'),
-  route('copy-button', 'routes/copyButton.tsx'),
-  route('toggle', 'routes/toggle.tsx'),
-  route('color', 'routes/color.tsx'),
-] satisfies RouteConfig;
+export default [index('routes/_index.tsx')] satisfies RouteConfig;

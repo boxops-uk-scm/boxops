@@ -7,8 +7,8 @@
   },
   "dependencies": {
     "@babel/runtime": "^7.29.2",
-    "@boxops/components": "workspace:*",
     "@boxops/ui": "workspace:*",
+    "@phosphor-icons/react": "^2.1.10",
     "@react-router/node": "^7.13.1",
     "@repo/relay-artifacts": "workspace:*",
     "@stylexjs/stylex": "^0.18.1",

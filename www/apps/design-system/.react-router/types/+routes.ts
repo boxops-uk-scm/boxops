@@ -14,103 +14,20 @@ type Pages = {
   "/": {
     params: {};
   };
-  "/button": {
-    params: {};
-  };
-  "/text": {
-    params: {};
-  };
-  "/heading": {
-    params: {};
-  };
-  "/badge": {
-    params: {};
-  };
-  "/flexbox": {
-    params: {};
-  };
-  "/icon": {
-    params: {};
-  };
-  "/button-group": {
-    params: {};
-  };
-  "/tooltip": {
-    params: {};
-  };
-  "/copy-button": {
-    params: {};
-  };
-  "/toggle": {
-    params: {};
-  };
-  "/color": {
-    params: {};
-  };
 };
 
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/button" | "/text" | "/heading" | "/badge" | "/flexbox" | "/icon" | "/button-group" | "/tooltip" | "/copy-button" | "/toggle" | "/color";
+    page: "/";
   };
-  "routes/button.tsx": {
-    id: "routes/button";
-    page: "/button";
-  };
-  "routes/text.tsx": {
-    id: "routes/text";
-    page: "/text";
-  };
-  "routes/heading.tsx": {
-    id: "routes/heading";
-    page: "/heading";
-  };
-  "routes/badge.tsx": {
-    id: "routes/badge";
-    page: "/badge";
-  };
-  "routes/flexbox.tsx": {
-    id: "routes/flexbox";
-    page: "/flexbox";
-  };
-  "routes/icon.tsx": {
-    id: "routes/icon";
-    page: "/icon";
-  };
-  "routes/buttonGroup.tsx": {
-    id: "routes/buttonGroup";
-    page: "/button-group";
-  };
-  "routes/tooltip.tsx": {
-    id: "routes/tooltip";
-    page: "/tooltip";
-  };
-  "routes/copyButton.tsx": {
-    id: "routes/copyButton";
-    page: "/copy-button";
-  };
-  "routes/toggle.tsx": {
-    id: "routes/toggle";
-    page: "/toggle";
-  };
-  "routes/color.tsx": {
-    id: "routes/color";
-    page: "/color";
+  "routes/_index.tsx": {
+    id: "routes/_index";
+    page: "/";
   };
 };
 
 type RouteModules = {
   "root": typeof import("./app/root.tsx");
-  "routes/button": typeof import("./app/routes/button.tsx");
-  "routes/text": typeof import("./app/routes/text.tsx");
-  "routes/heading": typeof import("./app/routes/heading.tsx");
-  "routes/badge": typeof import("./app/routes/badge.tsx");
-  "routes/flexbox": typeof import("./app/routes/flexbox.tsx");
-  "routes/icon": typeof import("./app/routes/icon.tsx");
-  "routes/buttonGroup": typeof import("./app/routes/buttonGroup.tsx");
-  "routes/tooltip": typeof import("./app/routes/tooltip.tsx");
-  "routes/copyButton": typeof import("./app/routes/copyButton.tsx");
-  "routes/toggle": typeof import("./app/routes/toggle.tsx");
-  "routes/color": typeof import("./app/routes/color.tsx");
+  "routes/_index": typeof import("./app/routes/_index.tsx");
 };

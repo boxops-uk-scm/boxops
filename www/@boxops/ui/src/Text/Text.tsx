@@ -1,23 +1,22 @@
 import * as stylex from '@stylexjs/stylex';
-import React from 'react';
+import * as React from 'react';
 
-import { usePolyComponentStyles } from '../hooks';
 import { textColor } from '../tokens.stylex';
+import * as bx from '../types';
 
-import type { PolyBaseProps, PolyComponentProps, PolyComponentState, VariantDefs } from '../types';
 import type { PolyRefFunction } from 'react-polymorphed';
 
-const polyRef = React.forwardRef as PolyRefFunction;
+const forwardRef = React.forwardRef as PolyRefFunction;
 
-const variants = {
+const variantStyles = {
   color: stylex.create({
     subtle: { color: textColor.subtle },
     onLightMedia: { color: textColor.onLightMedia },
     onDarkMedia: { color: textColor.onDarkMedia },
   }),
-} as const satisfies VariantDefs;
+} as const satisfies bx.VariantStyles;
 
-const styles = stylex.create({
+const baseStyles = stylex.create({
   base: {
     fontFamily: "'Open Sans', sans-serif",
     WebkitFontSmoothing: 'antialiased',
@@ -57,65 +56,57 @@ const styles = stylex.create({
   },
 });
 
-type Default = 'span';
-
-type OnlyAs = 'span' | 'p' | 'b' | 'strong' | 'small' | 'code' | 'i' | 'em' | 'u' | 's' | 'del';
-
-type OwnProps = Record<never, never>;
-
-type ExtraState = Record<never, never>;
-
-type Props = PolyBaseProps<typeof variants, ExtraState, OwnProps, OnlyAs>;
-
 const Text = Object.assign(
   React.memo(
-    polyRef<Default, Props, OnlyAs>(function Text({ as: As = 'span', variantSelection = {}, xstyle, ...rest }, ref) {
-      const state: PolyComponentState<typeof variants, ExtraState> = {
-        as: As,
-        variantSelection,
-      };
+    forwardRef<Text.Default, Text.BaseProps, Text.OnlyAs>(function Text({ as: As = 'span', xstyle, variants, ...rest }, ref) {
+      const state: Text.State = { variants, as: As };
 
-      let elementStyle: stylex.StyleXStyles = undefined;
-      switch (As) {
-        case 'b':
-        case 'strong':
-          elementStyle = styles.bold;
-          break;
-        case 'small':
-          elementStyle = styles.small;
-          break;
-        case 'code':
-          elementStyle = styles.code;
-          break;
-        case 'i':
-        case 'em':
-          elementStyle = styles.italic;
-          break;
-        case 'u':
-          elementStyle = styles.underline;
-          break;
-        case 's':
-        case 'del':
-          elementStyle = styles.strikethrough;
-          break;
-      }
+      const styles = [
+        bx.usePolyComponentStyle<Text.Default, Text.State, Text.OnlyAs>(state, baseStyles.base, xstyle, (as) => {
+          switch (as) {
+            case 'b':
+            case 'strong':
+              return baseStyles.bold;
+            case 'small':
+              return baseStyles.small;
+            case 'code':
+              return baseStyles.code;
+            case 'i':
+            case 'em':
+              return baseStyles.italic;
+            case 'u':
+              return baseStyles.underline;
+            case 's':
+            case 'del':
+              return baseStyles.strikethrough;
+            default:
+              return undefined;
+          }
+        }),
+        bx.useVariantStyle(variantStyles, variants),
+      ];
 
-      const userStyle = usePolyComponentStyles<typeof variants, ExtraState>(variants, state, xstyle);
-
-      return <As ref={ref} {...rest} {...stylex.props(styles.base, elementStyle, userStyle)} />;
+      return <As ref={ref} {...stylex.props(styles)} {...rest} />;
     }),
   ),
   {
-    styles,
-    variants,
+    variants: variantStyles,
+    styles: baseStyles,
   },
 );
 
 namespace Text {
-  export type Props = PolyComponentProps<'span', typeof variants, ExtraState, OwnProps, OnlyAs>;
-  export type State = PolyComponentState<typeof variants, ExtraState>;
-  export type VariantAxis = keyof typeof variants;
-  export type Variant<Axis extends VariantAxis> = keyof (typeof variants)[Axis];
+  export type Variants = bx.Variants<typeof variantStyles>;
+
+  export type State = bx.VariantPolyComponentState<Variants>;
+
+  export type BaseProps = bx.BaseVariantPolyComponentProps<Variants, State>;
+
+  export type Default = 'span';
+
+  export type OnlyAs = 'span' | 'p' | 'b' | 'strong' | 'small' | 'code' | 'i' | 'em' | 'u' | 's' | 'del';
+
+  export type Props<E extends React.ElementType = Default> = bx.VariantPolyComponentProps<E, Variants, State, BaseProps>;
 }
 
 export default Text;
