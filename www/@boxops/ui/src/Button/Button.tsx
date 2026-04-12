@@ -3,6 +3,7 @@ import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 
 import { vars as badgeVars } from '../Badge/vars.stylex';
+import { IconContextProvider } from '../Icon';
 import { vars as iconVars } from '../Icon/vars.stylex';
 import { Spinner } from '../Spinner';
 import { vars as spinnerVars } from '../Spinner/vars.stylex';
@@ -11,8 +12,6 @@ import { backgroundColor, gap, iconColor, outlineColor, padding, semanticColor, 
 import * as bx from '../types';
 
 import { vars } from './vars.stylex';
-
-import type { Icon } from '../Icon';
 
 const variantStyles = {
   appearance: stylex.create({
@@ -187,12 +186,8 @@ const Button = Object.assign(
       const labelBaseStyle = loading ? baseStyles.placeholder : baseStyles.label;
       const state: Button.State = { variants, disabled: !!disabled, loading: !!loading };
 
-      const iconRenderProps: Partial<Icon.Props> = {
-        weight: 'fill',
-      };
-
-      const startContent = bx.useRenderFunctionWithState(startContentRenderProp, iconRenderProps, state);
-      const endContent = bx.useRenderFunctionWithState(endContentRenderProp, iconRenderProps, state);
+      const startContent = bx.useRenderFunction(startContentRenderProp, state);
+      const endContent = bx.useRenderFunction(endContentRenderProp, state);
 
       const styles = [
         baseStyles.base,
@@ -202,25 +197,27 @@ const Button = Object.assign(
       ];
 
       return (
-        <ButtonBase aria-label={ariaLabel ?? label} ref={ref} disabled={state.disabled} {...rest} {...stylex.props(styles)}>
-          {startContent}
-          {(state.loading || label) && (
-            <>
-              {!state.loading && (
-                <Text data-text={label} xstyle={labelBaseStyle}>
-                  {onLightMedia ? label : <Text as="b">{label}</Text>}
-                </Text>
-              )}
-              {state.loading && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text data-text={label} xstyle={labelBaseStyle} />
-                  <Spinner variants={{ color: onLightMedia ? 'onLightMedia' : 'onDarkMedia' }} xstyle={baseStyles.spinner} />
-                </div>
-              )}
-            </>
-          )}
-          {endContent}
-        </ButtonBase>
+        <IconContextProvider weight="fill">
+          <ButtonBase aria-label={ariaLabel ?? label} ref={ref} disabled={state.disabled} {...rest} {...stylex.props(styles)}>
+            {startContent}
+            {(state.loading || label) && (
+              <>
+                {!state.loading && (
+                  <Text data-text={label} xstyle={labelBaseStyle}>
+                    {onLightMedia ? label : <Text as="b">{label}</Text>}
+                  </Text>
+                )}
+                {state.loading && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text data-text={label} xstyle={labelBaseStyle} />
+                    <Spinner variants={{ color: onLightMedia ? 'onLightMedia' : 'onDarkMedia' }} xstyle={baseStyles.spinner} />
+                  </div>
+                )}
+              </>
+            )}
+            {endContent}
+          </ButtonBase>
+        </IconContextProvider>
       );
     }),
   ),
@@ -241,8 +238,8 @@ namespace Button {
   export interface Props extends bx.VariantComponentPropsWithState<'button', Variants, State> {
     label?: string;
     loading?: boolean;
-    startContent?: bx.RenderFunctionWithState<State, Partial<Icon.Props>>;
-    endContent?: bx.RenderFunctionWithState<State, Partial<Icon.Props>>;
+    startContent?: bx.RenderFunction<State>;
+    endContent?: bx.RenderFunction<State>;
   }
 }
 

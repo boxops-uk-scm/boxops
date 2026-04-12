@@ -1,20 +1,17 @@
 import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 
-import { ButtonGroup } from '../ButtonGroup';
 import { Heading } from '../Heading';
 import { Text } from '../Text';
 import { gap } from '../tokens.stylex';
 import * as bx from '../types';
-
-import type { Icon } from '../Icon';
 
 const baseStyles = stylex.create({
   base: {
     display: 'flex',
     alignItems: 'center',
     flexDirection: 'row',
-    gap: gap.XS,
+    gap: gap.S,
   },
   title: {
     width: '100%',
@@ -22,7 +19,10 @@ const baseStyles = stylex.create({
     flexDirection: 'column',
     justifyContent: 'center',
   },
-  buttons: {
+  startContent: {
+    justifySelf: 'flex-start',
+  },
+  endContent: {
     justifySelf: 'flex-end',
   },
 });
@@ -30,20 +30,17 @@ const baseStyles = stylex.create({
 const CardHeader = Object.assign(
   React.memo(
     React.forwardRef<React.ComponentRef<'div'>, CardHeader.Props>(function CardHeader(
-      { icon: iconRenderProp, title, subtitle, buttons, xstyle, ...rest },
+      { startContent, title, subtitle, endContent, xstyle, ...rest },
       ref,
     ) {
       const styles = [bx.useComponentStyle(baseStyles.base, xstyle)];
 
-      const renderPros: Partial<Icon.Props> = {
-        weight: 'regular',
-        variants: { size: 'L' },
-      };
-
       return (
         <div ref={ref} {...stylex.props(styles)} {...rest}>
-          {iconRenderProp && bx.useRenderFunction(iconRenderProp, renderPros)}
-          <div {...stylex.props(baseStyles.title)}>
+          <div aria-hidden {...stylex.props(baseStyles.startContent)}>
+            {startContent}
+          </div>
+          <div aria-hidden {...stylex.props(baseStyles.title)}>
             <Heading as="h3">{title}</Heading>
             {subtitle && (
               <Text as="small" variants={{ color: 'subtle' }}>
@@ -51,11 +48,9 @@ const CardHeader = Object.assign(
               </Text>
             )}
           </div>
-          {buttons && (
-            <div {...stylex.props(baseStyles.buttons)}>
-              <ButtonGroup>{buttons}</ButtonGroup>
-            </div>
-          )}
+          <div aria-hidden {...stylex.props(baseStyles.endContent)}>
+            {endContent}
+          </div>
         </div>
       );
     }),
@@ -69,8 +64,8 @@ namespace CardHeader {
   export interface Props extends bx.ComponentProps<'div'> {
     title: string;
     subtitle?: string;
-    icon?: bx.RenderFunction<Partial<Icon.Props>>;
-    buttons?: React.ReactNode;
+    startContent?: React.ReactNode;
+    endContent?: React.ReactNode;
   }
 }
 

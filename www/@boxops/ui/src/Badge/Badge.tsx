@@ -101,7 +101,7 @@ const Badge = Object.assign(
         bx.useComponentStyleWithState<Badge.State>(state, xstyle),
       ];
 
-      const startContent = bx.useRenderFunctionWithState(startContentRenderFunction, rest, state);
+      const startContent = bx.useRenderFunction(startContentRenderFunction, state);
 
       return (
         <div ref={ref} {...stylex.props(styles)} {...rest}>
@@ -126,7 +126,7 @@ namespace Badge {
 
   export interface Props extends bx.VariantComponentPropsWithState<'div', Variants, State> {
     label?: string;
-    startContent?: bx.RenderFunctionWithState<State>;
+    startContent?: bx.RenderFunction<State>;
   }
 }
 

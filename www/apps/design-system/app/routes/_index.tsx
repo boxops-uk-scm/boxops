@@ -12,6 +12,7 @@ import {
   Toggle,
   Card,
   CardHeader,
+  CardFooter,
 } from '@boxops/ui';
 import {
   backgroundColor,
@@ -451,77 +452,25 @@ export default function IndexRoute() {
         <Button label="Button" disabled variants={{ appearance: 'positive' }} />
       </section>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          variants={{ appearance: 'default' }}
-        />
-        <Button startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} variants={{ appearance: 'flat' }} />
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          variants={{ appearance: 'primary' }}
-        />
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          variants={{ appearance: 'negative' }}
-        />
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          variants={{ appearance: 'positive' }}
-        />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} variants={{ appearance: 'default' }} />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} variants={{ appearance: 'flat' }} />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} variants={{ appearance: 'primary' }} />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} variants={{ appearance: 'negative' }} />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} variants={{ appearance: 'positive' }} />
       </section>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'default' }}
-        />
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'flat' }}
-        />
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'primary' }}
-        />
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'negative' }}
-        />
-        <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'positive' }}
-        />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'default' }} />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'flat' }} />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'primary' }} />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'negative' }} />
+        <Button startContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'positive' }} />
       </section>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
-        <Button
-          endContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'default' }}
-        />
-        <Button
-          endContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'flat' }}
-        />
-        <Button
-          endContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'primary' }}
-        />
-        <Button
-          endContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'negative' }}
-        />
-        <Button
-          endContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-          label="Button"
-          variants={{ appearance: 'positive' }}
-        />
+        <Button endContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'default' }} />
+        <Button endContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'flat' }} />
+        <Button endContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'primary' }} />
+        <Button endContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'negative' }} />
+        <Button endContent={<Icon as={Phosphor.PencilSimpleIcon} />} label="Button" variants={{ appearance: 'positive' }} />
       </section>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
         <Button endContent={<Badge label="99" />} label="Button" variants={{ appearance: 'default' }} />
@@ -553,35 +502,35 @@ export default function IndexRoute() {
       </section>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
         <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
+          startContent={<Icon as={Phosphor.PencilSimpleIcon} />}
           endContent={<Badge label="99" />}
           label="Button"
           disabled
           variants={{ appearance: 'default' }}
         />
         <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
+          startContent={<Icon as={Phosphor.PencilSimpleIcon} />}
           endContent={<Badge label="99" />}
           label="Button"
           disabled
           variants={{ appearance: 'flat' }}
         />
         <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
+          startContent={<Icon as={Phosphor.PencilSimpleIcon} />}
           endContent={<Badge label="99" />}
           label="Button"
           disabled
           variants={{ appearance: 'primary' }}
         />
         <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
+          startContent={<Icon as={Phosphor.PencilSimpleIcon} />}
           endContent={<Badge label="99" />}
           label="Button"
           disabled
           variants={{ appearance: 'negative' }}
         />
         <Button
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
+          startContent={<Icon as={Phosphor.PencilSimpleIcon} />}
           endContent={<Badge label="99" />}
           label="Button"
           disabled
@@ -598,9 +547,7 @@ export default function IndexRoute() {
             trigger={
               <Button
                 variants={{ appearance: 'flat' }}
-                startContent={({ variants, ...props }) => (
-                  <Icon as={Phosphor.InfoIcon} {...props} weight="fill" variants={{ ...variants, color: 'secondary' }} />
-                )}
+                startContent={<Icon as={Phosphor.InfoIcon} weight="fill" variants={{ color: 'secondary' }} />}
               />
             }
           />
@@ -611,9 +558,7 @@ export default function IndexRoute() {
             trigger={
               <Button
                 variants={{ appearance: 'flat' }}
-                startContent={({ variants, ...props }) => (
-                  <Icon as={Phosphor.InfoIcon} {...props} weight="fill" variants={{ ...variants, color: 'secondary' }} />
-                )}
+                startContent={<Icon as={Phosphor.InfoIcon} weight="fill" variants={{ color: 'secondary' }} />}
               />
             }
           />
@@ -624,9 +569,7 @@ export default function IndexRoute() {
             trigger={
               <Button
                 variants={{ appearance: 'flat' }}
-                startContent={({ variants, ...props }) => (
-                  <Icon as={Phosphor.InfoIcon} {...props} weight="fill" variants={{ ...variants, color: 'secondary' }} />
-                )}
+                startContent={<Icon as={Phosphor.InfoIcon} weight="fill" variants={{ color: 'secondary' }} />}
               />
             }
           />
@@ -637,9 +580,7 @@ export default function IndexRoute() {
             trigger={
               <Button
                 variants={{ appearance: 'flat' }}
-                startContent={({ variants, ...props }) => (
-                  <Icon as={Phosphor.InfoIcon} {...props} weight="fill" variants={{ ...variants, color: 'secondary' }} />
-                )}
+                startContent={<Icon as={Phosphor.InfoIcon} weight="fill" variants={{ color: 'secondary' }} />}
               />
             }
           />
@@ -652,42 +593,33 @@ export default function IndexRoute() {
       </section>
       <Heading isContent>Toggle</Heading>
       <section {...stylex.props(styles.grid, styles.alignCenter, styles.componentStage)}>
-        <Toggle label="Edit" startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} />
-        <Toggle defaultPressed label="Edit" startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} />
-        <Toggle
-          variants={{ appearance: 'flat' }}
-          label="Edit"
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-        />
+        <Toggle label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
+        <Toggle defaultPressed label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
+        <Toggle variants={{ appearance: 'flat' }} label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
         <Toggle
           variants={{ appearance: 'flat' }}
           defaultPressed
           label="Edit"
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
+          startContent={<Icon as={Phosphor.PencilSimpleIcon} />}
         />
-        <Toggle disabled label="Edit" startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} />
-        <Toggle
-          defaultPressed
-          disabled
-          label="Edit"
-          startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />}
-        />
-        <Toggle loading label="Edit" startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} />
-        <Toggle loading disabled label="Edit" startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} />
+        <Toggle disabled label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
+        <Toggle defaultPressed disabled label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
+        <Toggle loading label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
+        <Toggle loading disabled label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
       </section>
       <Heading isContent>Button Group</Heading>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
         <ButtonGroup>
-          <Button label="Edit" startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} />
-          <Button label="Duplicate" startContent={(props) => <Icon as={Phosphor.CopyIcon} {...props} />} />
-          <Button label="Download" startContent={(props) => <Icon as={Phosphor.DownloadSimpleIcon} {...props} />} />
+          <Button label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
+          <Button label="Duplicate" startContent={<Icon as={Phosphor.CopyIcon} />} />
+          <Button label="Download" startContent={<Icon as={Phosphor.DownloadSimpleIcon} />} />
         </ButtonGroup>
       </section>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
         <ButtonGroup>
-          <Toggle label="Edit" startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} />
-          <Toggle label="Duplicate" startContent={(props) => <Icon as={Phosphor.CopyIcon} {...props} />} />
-          <Toggle label="Download" startContent={(props) => <Icon as={Phosphor.DownloadSimpleIcon} {...props} />} />
+          <Toggle label="Edit" startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
+          <Toggle label="Duplicate" startContent={<Icon as={Phosphor.CopyIcon} />} />
+          <Toggle label="Download" startContent={<Icon as={Phosphor.DownloadSimpleIcon} />} />
         </ButtonGroup>
       </section>
       <Heading isContent>Card</Heading>
@@ -704,26 +636,62 @@ export default function IndexRoute() {
           <div {...stylex.props(styles.slot)} />
         </Card>
         <Card>
-          <CardHeader icon={(props) => <Icon {...props} as={Phosphor.GitDiffIcon} />} title="Title" subtitle="Subtitle" />
+          <CardHeader
+            startContent={<Icon as={Phosphor.GitDiffIcon} variants={{ size: 'XL' }} />}
+            title="Title"
+            subtitle="Subtitle"
+          />
           <div {...stylex.props(styles.slot)} />
         </Card>
         <Card>
           <CardHeader
-            icon={(props) => <Icon {...props} as={Phosphor.GitDiffIcon} />}
+            startContent={<Icon as={Phosphor.GitDiffIcon} variants={{ size: 'XL' }} />}
             title="Title"
             subtitle="Subtitle"
-            buttons={[
-              <Button
-                startContent={({ weight: _, ...props }) => <Icon as={Phosphor.LinkSimpleIcon} {...props} weight="bold" />}
-              />,
-              <Button startContent={(props) => <Icon as={Phosphor.CopyIcon} {...props} />} />,
-              <Button startContent={(props) => <Icon as={Phosphor.PencilSimpleIcon} {...props} />} />,
-              <Button
-                startContent={({ weight: _, ...props }) => <Icon as={Phosphor.DotsThreeIcon} {...props} weight="bold" />}
-              />,
-            ]}
+            endContent={
+              <ButtonGroup>
+                <Button variants={{ size: 'compact' }} startContent={<Icon as={Phosphor.LinkSimpleIcon} weight="bold" />} />
+                <Button variants={{ size: 'compact' }} startContent={<Icon as={Phosphor.CopyIcon} />} />
+                <Button variants={{ size: 'compact' }} startContent={<Icon as={Phosphor.PencilSimpleIcon} />} />
+                <Button variants={{ size: 'compact' }} startContent={<Icon as={Phosphor.DotsThreeIcon} weight="bold" />} />
+              </ButtonGroup>
+            }
           />
           <div {...stylex.props(styles.slot)} />
+        </Card>
+        <Card>
+          <div {...stylex.props(styles.slot)} />
+          <CardFooter primaryButton={({ buttonProps }) => <Button label="Done" {...buttonProps} />} />
+        </Card>
+        <Card>
+          <div {...stylex.props(styles.slot)} />
+          <CardFooter
+            primaryButton={({ buttonProps }) => <Button label="Confirm" {...buttonProps} />}
+            secondaryButton={({ buttonProps }) => <Button label="Cancel" {...buttonProps} />}
+          />
+        </Card>
+        <Card>
+          <div {...stylex.props(styles.slot)} />
+          <CardFooter
+            startContent={<Button variants={{ size: 'compact' }} label="Undo" />}
+            primaryButton={({ buttonProps }) => <Button label="Confirm" {...buttonProps} />}
+            secondaryButton={({ buttonProps }) => <Button label="Cancel" {...buttonProps} />}
+          />
+        </Card>
+        <Card>
+          <div {...stylex.props(styles.slot)} />
+          <CardFooter
+            variants={{ layout: 'stretch' }}
+            primaryButton={({ buttonProps }) => <Button label="Done" {...buttonProps} />}
+          />
+        </Card>
+        <Card>
+          <div {...stylex.props(styles.slot)} />
+          <CardFooter
+            variants={{ layout: 'stretch' }}
+            primaryButton={({ buttonProps }) => <Button label="Confirm" {...buttonProps} />}
+            secondaryButton={({ buttonProps }) => <Button label="Cancel" {...buttonProps} />}
+          />
         </Card>
       </section>
     </main>

@@ -60,7 +60,7 @@ const Component = React.memo(
         trigger={
           <Button
             ref={ref}
-            startContent={(props) => <Icon as={Phosphor.CopyIcon} {...props} />}
+            startContent={<Icon as={Phosphor.CopyIcon} />}
             onClick={handleClick}
             variants={variants}
             xstyle={xstyle}

@@ -80,24 +80,11 @@ export type VariantPolyComponentProps<
   BaseProps extends BaseVariantPolyComponentProps<V, S>,
 > = AsProps<E, BaseProps, Omit<FastComponentPropsWithRef<E>, OmittedKeys>>;
 
-export type RenderFunction<P = unknown> = React.ReactNode | ((props: P) => React.ReactNode);
+export type RenderFunction<S> = React.ReactNode | ((state: S) => React.ReactNode);
 
-export type RenderFunctionWithState<S, P = unknown> = React.ReactNode | ((props: P, state: S) => React.ReactNode);
-
-export function useRenderFunction<P>(renderProp: RenderFunction<P>, props: P): React.ReactNode {
+export function useRenderFunction<S>(renderProp: RenderFunction<S>, state: S): React.ReactNode {
   if (typeof renderProp === 'function') {
-    return renderProp(props);
-  }
-  return renderProp;
-}
-
-export function useRenderFunctionWithState<S, P = unknown>(
-  renderProp: RenderFunctionWithState<S, P>,
-  props: P,
-  state: S,
-): React.ReactNode {
-  if (typeof renderProp === 'function') {
-    return renderProp(props, state);
+    return renderProp(state);
   }
   return renderProp;
 }

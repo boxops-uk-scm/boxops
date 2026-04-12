@@ -4,11 +4,10 @@ import * as React from 'react';
 
 import { Button } from '../Button';
 import { vars as buttonVars } from '../Button/vars.stylex';
+import { IconContextProvider } from '../Icon';
 import { vars as iconVars } from '../Icon/vars.stylex';
 import { semanticColor } from '../tokens.stylex';
 import * as bx from '../types';
-
-import type { Icon } from '../Icon';
 
 const variantStyles = {
   appearance: {
@@ -55,28 +54,28 @@ const Toggle = Object.assign(
                 {...props}
                 label={label}
                 loading={loading}
-                startContent={(iconProps, { variants: _, ...buttonState }) => {
+                startContent={({ variants: _, ...buttonState }) => {
                   const state: Toggle.State = {
                     ...buttonState,
                     variants,
                     pressed: toggleState.pressed,
                   };
-                  return bx.useRenderFunctionWithState(
-                    startContent,
-                    { ...iconProps, weight: state.pressed ? 'fill' : 'regular' },
-                    state,
+                  return (
+                    <IconContextProvider weight={state.pressed ? 'fill' : 'regular'}>
+                      {bx.useRenderFunction(startContent, state)}
+                    </IconContextProvider>
                   );
                 }}
-                endContent={(iconProps, { variants: _, ...buttonState }) => {
+                endContent={({ variants: _, ...buttonState }) => {
                   const state: Toggle.State = {
                     ...buttonState,
                     variants,
                     pressed: toggleState.pressed,
                   };
-                  return bx.useRenderFunctionWithState(
-                    endContent,
-                    { ...iconProps, weight: state.pressed ? 'fill' : 'regular' },
-                    state,
+                  return (
+                    <IconContextProvider weight={state.pressed ? 'fill' : 'regular'}>
+                      {bx.useRenderFunction(endContent, state)}
+                    </IconContextProvider>
                   );
                 }}
                 variants={variants}
@@ -113,8 +112,8 @@ namespace Toggle {
   export interface Props extends Omit<bx.VariantComponentPropsWithState<'button', Variants, State>, 'value'> {
     label?: string;
     loading?: boolean;
-    startContent?: bx.RenderFunctionWithState<State, Partial<Icon.Props>>;
-    endContent?: bx.RenderFunctionWithState<State, Partial<Icon.Props>>;
+    startContent?: bx.RenderFunction<State>;
+    endContent?: bx.RenderFunction<State>;
     defaultPressed?: boolean;
     pressed?: boolean;
     onPressedChange?: (pressed: boolean) => void;

@@ -5,6 +5,7 @@ import * as React from 'react';
 import { iconColor } from '../tokens.stylex';
 import * as bx from '../types';
 
+import { useIconContext } from './useIconContext';
 import { vars } from './vars.stylex';
 
 const variantStyles = {
@@ -55,8 +56,10 @@ const baseStyles = stylex.create({
 
 const Icon = Object.assign(
   React.memo(
-    React.forwardRef<SVGSVGElement, Icon.Props>(function Icon({ as: As, alt, weight = 'light', xstyle, variants, ...rest }, ref) {
-      const state: Icon.State = { variants, weight };
+    React.forwardRef<SVGSVGElement, Icon.Props>(function Icon({ as: As, alt, weight, xstyle, variants, ...rest }, ref) {
+      const iconContext = useIconContext();
+
+      const state: Icon.State = { variants, weight: weight ?? iconContext.weight ?? 'regular' };
 
       const styles = [
         bx.useVariantStyle<Icon.Variants>(variantStyles, variants, {
@@ -67,7 +70,7 @@ const Icon = Object.assign(
 
       return (
         <div aria-hidden {...stylex.props(baseStyles.base)}>
-          <As alt={alt} ref={ref} weight={weight} {...stylex.props(styles)} {...rest} />
+          <As alt={alt} ref={ref} weight={state.weight} {...stylex.props(styles)} {...rest} />
         </div>
       );
     }),
