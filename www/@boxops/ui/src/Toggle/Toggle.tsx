@@ -10,6 +10,14 @@ import * as bx from '../types';
 
 import type { Icon } from '../Icon';
 
+const variantStyles = {
+  appearance: {
+    default: Button.variants.appearance.default,
+    flat: Button.variants.appearance.flat,
+  },
+  size: Button.variants.size,
+} as const satisfies bx.VariantStyles;
+
 const baseStyles = stylex.create({
   selected: {
     [buttonVars.fill]: buttonVars.color,
@@ -27,68 +35,78 @@ const baseStyles = stylex.create({
   },
 });
 
-const Toggle = React.memo(
-  React.forwardRef<React.ComponentRef<'button'>, Toggle.Props>(function Toggle(
-    { pressed, defaultPressed, onPressedChange, xstyle, variants, label, loading, startContent, endContent, ...rest },
-    ref,
-  ) {
-    return (
-      <ToggleBase
-        value=""
-        ref={ref}
-        pressed={pressed}
-        defaultPressed={defaultPressed}
-        onPressedChange={onPressedChange}
-        {...rest}
-        render={(props, toggleState) => {
-          return (
-            <Button
-              {...props}
-              label={label}
-              loading={loading}
-              startContent={(iconProps, buttonState) => {
-                const state: Toggle.State = {
-                  ...buttonState,
-                  pressed: toggleState.pressed,
-                };
-                return bx.useRenderFunctionWithState(
-                  startContent,
-                  { ...iconProps, weight: state.pressed ? 'fill' : 'regular' },
-                  state,
-                );
-              }}
-              endContent={(iconProps, buttonState) => {
-                const state: Toggle.State = {
-                  ...buttonState,
-                  pressed: toggleState.pressed,
-                };
-                return bx.useRenderFunctionWithState(
-                  endContent,
-                  { ...iconProps, weight: state.pressed ? 'fill' : 'regular' },
-                  state,
-                );
-              }}
-              variants={variants}
-              xstyle={(buttonState) => {
-                const state: Toggle.State = {
-                  ...buttonState,
-                  pressed: toggleState.pressed,
-                };
-                return [state.pressed && baseStyles.selected, bx.useComponentStyleWithState<Toggle.State>(state, xstyle)];
-              }}
-            />
-          );
-        }}
-        {...rest}
-      />
-    );
-  }),
+const Toggle = Object.assign(
+  React.memo(
+    React.forwardRef<React.ComponentRef<'button'>, Toggle.Props>(function Toggle(
+      { pressed, defaultPressed, onPressedChange, xstyle, variants, label, loading, startContent, endContent, ...rest },
+      ref,
+    ) {
+      return (
+        <ToggleBase
+          value=""
+          ref={ref}
+          pressed={pressed}
+          defaultPressed={defaultPressed}
+          onPressedChange={onPressedChange}
+          {...rest}
+          render={(props, toggleState) => {
+            return (
+              <Button
+                {...props}
+                label={label}
+                loading={loading}
+                startContent={(iconProps, { variants: _, ...buttonState }) => {
+                  const state: Toggle.State = {
+                    ...buttonState,
+                    variants,
+                    pressed: toggleState.pressed,
+                  };
+                  return bx.useRenderFunctionWithState(
+                    startContent,
+                    { ...iconProps, weight: state.pressed ? 'fill' : 'regular' },
+                    state,
+                  );
+                }}
+                endContent={(iconProps, { variants: _, ...buttonState }) => {
+                  const state: Toggle.State = {
+                    ...buttonState,
+                    variants,
+                    pressed: toggleState.pressed,
+                  };
+                  return bx.useRenderFunctionWithState(
+                    endContent,
+                    { ...iconProps, weight: state.pressed ? 'fill' : 'regular' },
+                    state,
+                  );
+                }}
+                variants={variants}
+                xstyle={({ variants: _, ...buttonState }) => {
+                  const state: Toggle.State = {
+                    ...buttonState,
+                    variants,
+                    pressed: toggleState.pressed,
+                  };
+                  return [state.pressed && baseStyles.selected, bx.useComponentStyleWithState<Toggle.State>(state, xstyle)];
+                }}
+              />
+            );
+          }}
+          {...rest}
+        />
+      );
+    }),
+  ),
+  {
+    variants: variantStyles,
+  },
 );
 
 namespace Toggle {
-  export type Variants = bx.Variants<typeof Button.variants>;
+  export type Variants = bx.Variants<typeof variantStyles>;
 
-  export interface State extends Button.State {
+  export interface State extends bx.VariantComponentState<Variants> {
+    disabled: boolean;
+    loading: boolean;
     pressed: boolean;
   }
 

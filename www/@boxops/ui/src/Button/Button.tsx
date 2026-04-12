@@ -170,12 +170,18 @@ const Button = Object.assign(
         variants = {
           appearance: 'default',
         },
-        startContent: startContentRenderFunction,
-        endContent: endContentRenderFunction,
+        startContent: startContentRenderProp,
+        endContent: endContentRenderProp,
         ...rest
       },
       ref,
     ) {
+      variants = {
+        size: 'default',
+        appearance: 'default',
+        ...variants,
+      };
+
       const appearance = variants.appearance;
       const onLightMedia = appearance === 'default' || appearance === 'flat';
       const labelBaseStyle = loading ? baseStyles.placeholder : baseStyles.label;
@@ -185,15 +191,12 @@ const Button = Object.assign(
         weight: 'fill',
       };
 
-      const startContent = bx.useRenderFunctionWithState(startContentRenderFunction, iconRenderProps, state);
-      const endContent = bx.useRenderFunctionWithState(endContentRenderFunction, iconRenderProps, state);
+      const startContent = bx.useRenderFunctionWithState(startContentRenderProp, iconRenderProps, state);
+      const endContent = bx.useRenderFunctionWithState(endContentRenderProp, iconRenderProps, state);
 
       const styles = [
         baseStyles.base,
-        bx.useVariantStyle<Button.Variants>(variantStyles, variants, {
-          size: 'default',
-          appearance: 'default',
-        }),
+        bx.useVariantStyle<Button.Variants>(variantStyles, variants),
         onLightMedia && baseStyles.onLightMedia,
         bx.useComponentStyleWithState<Button.State>(state, xstyle),
       ];
