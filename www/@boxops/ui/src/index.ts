@@ -10,3 +10,4 @@ export { Tooltip } from './Tooltip';
 export { CopyButton } from './CopyButton';
 export { Toggle } from './Toggle';
 export { Card, CardHeader, CardFooter } from './Card';
+export { MetadataLabel } from './MetadataList';

@@ -62,7 +62,9 @@ const Text = Object.assign(
       const state: Text.State = { variants, as: As };
 
       const styles = [
-        bx.usePolyComponentStyle<Text.Default, Text.State, Text.OnlyAs>(state, baseStyles.base, xstyle, (as) => {
+        baseStyles.base,
+        bx.useVariantStyle(variantStyles, variants),
+        bx.usePolyComponentStyle<Text.Default, Text.State, Text.OnlyAs>(state, undefined, xstyle, (as) => {
           switch (as) {
             case 'b':
             case 'strong':
@@ -83,7 +85,6 @@ const Text = Object.assign(
               return undefined;
           }
         }),
-        bx.useVariantStyle(variantStyles, variants),
       ];
 
       return <As ref={ref} {...stylex.props(styles)} {...rest} />;

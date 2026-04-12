@@ -13,6 +13,7 @@ import {
   Card,
   CardHeader,
   CardFooter,
+  MetadataLabel,
 } from '@boxops/ui';
 import {
   backgroundColor,
@@ -693,6 +694,10 @@ export default function IndexRoute() {
             secondaryButton={({ buttonProps }) => <Button label="Cancel" {...buttonProps} />}
           />
         </Card>
+      </section>
+      <Heading isContent>Metadata List</Heading>
+      <section {...stylex.props(styles.componentStage)}>
+        <MetadataLabel helpMessage="Help message">Metadata label</MetadataLabel>
       </section>
     </main>
   );
