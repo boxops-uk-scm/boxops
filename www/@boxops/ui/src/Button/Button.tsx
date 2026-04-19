@@ -182,7 +182,7 @@ const Button = Object.assign(
       };
 
       const appearance = variants.appearance;
-      const onLightMedia = appearance === 'default' || appearance === 'flat';
+      const onLightMedia = appearance === undefined || appearance === 'default' || appearance === 'flat';
       const labelBaseStyle = loading ? baseStyles.placeholder : baseStyles.label;
       const state: Button.State = { variants, disabled: !!disabled, loading: !!loading };
 

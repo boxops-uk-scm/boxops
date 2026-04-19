@@ -6,24 +6,41 @@ import { Button } from '../Button';
 import { vars as buttonVars } from '../Button/vars.stylex';
 import { IconContextProvider } from '../Icon';
 import { vars as iconVars } from '../Icon/vars.stylex';
-import { semanticColor } from '../tokens.stylex';
+import { backgroundColor, semanticColor, textColor } from '../tokens.stylex';
 import * as bx from '../types';
 
 const variantStyles = {
-  appearance: {
-    default: Button.variants.appearance.default,
-    flat: Button.variants.appearance.flat,
-  },
+  appearance: stylex.create({
+    default: {
+      [buttonVars.backgroundColor]: {
+        default: backgroundColor.button,
+        ':disabled': `color-mix(in srgb, white 50%, ${backgroundColor.button} 50%)`,
+        ':enabled:hover': `color-mix(in srgb, black 5%, ${backgroundColor.button} 95%)`,
+      },
+    },
+    flat: {
+      [buttonVars.backgroundColor]: {
+        default: 'transparent',
+        ':disabled': 'rgba(255,255,255,0.5)',
+        ':enabled:hover': 'rgba(0,0,0,0.05)',
+      },
+    },
+  }),
   size: Button.variants.size,
 } as const satisfies bx.VariantStyles;
 
 const baseStyles = stylex.create({
+  base: {
+    [buttonVars.color]: {
+      default: textColor.onLightMedia,
+      ':disabled': `color-mix(in srgb, white 50%, ${textColor.subtle} 50%)`,
+    },
+  },
   selected: {
     [buttonVars.fill]: buttonVars.color,
     [buttonVars.color]: {
       default: semanticColor.accent,
       ':enabled:hover': `color-mix(in srgb, black 5%, ${semanticColor.accent} 95%)`,
-      ':enabled:active': `color-mix(in srgb, black 10%, ${semanticColor.accent} 90%)`,
       ':disabled': `color-mix(in srgb, white 50%, ${semanticColor.accent} 50%)`,
     },
     [buttonVars.backgroundColor]: {
@@ -78,14 +95,24 @@ const Toggle = Object.assign(
                     </IconContextProvider>
                   );
                 }}
-                variants={variants}
+                variants={
+                  variants?.size === undefined ? { appearance: undefined } : { size: variants.size, appearance: undefined }
+                }
                 xstyle={({ variants: _, ...buttonState }) => {
                   const state: Toggle.State = {
                     ...buttonState,
                     variants,
                     pressed: toggleState.pressed,
                   };
-                  return [state.pressed && baseStyles.selected, bx.useComponentStyleWithState<Toggle.State>(state, xstyle)];
+
+                  return [
+                    baseStyles.base,
+                    bx.useVariantStyle<Toggle.Variants>(variantStyles, variants, {
+                      appearance: 'default',
+                    }),
+                    state.pressed && baseStyles.selected,
+                    bx.useComponentStyleWithState<Toggle.State>(state, xstyle),
+                  ];
                 }}
               />
             );
