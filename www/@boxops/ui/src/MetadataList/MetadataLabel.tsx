@@ -4,7 +4,7 @@ import * as React from 'react';
 
 import { Icon } from '../Icon';
 import { Text } from '../Text';
-import { gap, textColor } from '../tokens.stylex';
+import { gap, outlineColor, textColor } from '../tokens.stylex';
 import { Tooltip } from '../Tooltip';
 
 const baseStyles = stylex.create({
@@ -19,6 +19,14 @@ const baseStyles = stylex.create({
     fontWeight: 500,
     whiteSpace: 'nowrap',
   },
+  tooltipIcon: {
+    borderRadius: '50%',
+    ':focus-visible': {
+      outline: `2px solid ${outlineColor.focus}`,
+      outlineOffset: '2px',
+      zIndex: 1,
+    },
+  },
 });
 
 function MetadataLabel({ children, helpMessage }: MetadataLabel.Props) {
@@ -27,7 +35,17 @@ function MetadataLabel({ children, helpMessage }: MetadataLabel.Props) {
       <Text xstyle={baseStyles.label}>{children}</Text>
       {helpMessage && (
         <Tooltip
-          trigger={<Icon weight="fill" variants={{ color: 'secondary', size: 'S' }} as={Phosphor.InfoIcon} />}
+          aria-label={helpMessage}
+          trigger={
+            <Icon
+              aria-label={helpMessage}
+              tabIndex={0}
+              weight="fill"
+              variants={{ color: 'secondary', size: 'S' }}
+              as={Phosphor.InfoIcon}
+              xstyle={baseStyles.tooltipIcon}
+            />
+          }
           label={helpMessage}
         />
       )}
