@@ -14,10 +14,12 @@ import {
   CardHeader,
   CardFooter,
   MetadataLabel,
+  MetadataList,
 } from '@boxops/ui';
 import {
   backgroundColor,
   dividerColor,
+  gap,
   iconColor,
   nonsemanticBackgroundColor,
   nonsemanticTextColor,
@@ -697,7 +699,16 @@ export default function IndexRoute() {
       </section>
       <Heading isContent>Metadata List</Heading>
       <section {...stylex.props(styles.componentStage)}>
-        <MetadataLabel helpMessage="Help message">Metadata label</MetadataLabel>
+        <MetadataList title="H4 heading text" subtitle="Description text">
+          <MetadataLabel helpMessage="Help message">Metadata label</MetadataLabel>
+          <Text>Text value</Text>
+          <MetadataLabel>Metadata label</MetadataLabel>
+          <div style={{ display: 'flex', gap: gap.S }}>
+            <Badge label="Label" />
+            <Badge label="Label" />
+            <Badge label="Label" />
+          </div>
+        </MetadataList>
       </section>
     </main>
   );
