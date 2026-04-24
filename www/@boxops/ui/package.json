@@ -7,8 +7,7 @@
     ".": "./src/index.ts",
     "./*": "./src/*/index.ts",
     "./tokens.stylex": "./src/tokens.stylex.ts",
-    "./types": "./src/types.ts",
-    "./Icon/vars.stylex": "./src/Icon/vars.stylex.ts"
+    "./MetadataList/vars.stylex": "./src/MetadataList/vars.stylex.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

@@ -6,6 +6,8 @@ import { Text } from '../Text';
 import { gap } from '../tokens.stylex';
 import * as bx from '../types';
 
+import { vars } from './vars.stylex';
+
 const variantStyles = {
   size: stylex.create({
     default: {
@@ -27,18 +29,19 @@ const baseStyles = stylex.create({
     display: 'flex',
     flexDirection: 'column',
   },
-  grid: (columns: number) => ({
+  grid: {
     display: 'grid',
-    gridTemplateColumns: Array.from({ length: columns }, () => 'auto 1fr').join(' '),
+    gridTemplateColumns: `repeat(${vars.columns}, max-content 1fr)`,
     rowGap: gap.S,
     justifyItems: 'start',
-  }),
+    alignItems: 'center',
+  },
 });
 
 const MetadataList = Object.assign(
   React.memo(
     React.forwardRef<React.ComponentRef<'div'>, MetadataList.Props>(function MetadataList(
-      { title, subtitle, xstyle, variants, children, columns = 2, ...rest },
+      { title, subtitle, xstyle, variants, children, ...rest },
       ref,
     ) {
       const state: MetadataList.State = { variants: { size: 'default', ...variants } };
@@ -59,9 +62,7 @@ const MetadataList = Object.assign(
               </Text>
             )}
           </div>
-          <div
-            {...stylex.props(baseStyles.grid(columns), bx.useVariantStyle<MetadataList.Variants>(variantStyles, state.variants))}
-          >
+          <div {...stylex.props(baseStyles.grid, bx.useVariantStyle<MetadataList.Variants>(variantStyles, state.variants))}>
             {children}
           </div>
         </div>
@@ -82,7 +83,6 @@ namespace MetadataList {
   export interface Props extends Omit<bx.VariantComponentPropsWithState<'div', Variants, State>, 'title'> {
     title?: React.ReactNode;
     subtitle?: React.ReactNode;
-    columns?: number;
   }
 }
 

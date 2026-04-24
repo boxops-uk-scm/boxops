@@ -16,6 +16,7 @@ import {
   MetadataLabel,
   MetadataList,
 } from '@boxops/ui';
+import { vars as metadataListVars } from '@boxops/ui/MetadataList/vars.stylex';
 import {
   backgroundColor,
   dividerColor,
@@ -128,6 +129,12 @@ const styles = stylex.create({
       "url('data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBzdGFuZGFsb25lPSJubyI/PjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiPjxkZWZzPjxwYXR0ZXJuIGlkPSJwYXR0ZXJuXzk1dG14IiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIiB3aWR0aD0iOS41IiBoZWlnaHQ9IjkuNSIgcGF0dGVyblRyYW5zZm9ybT0icm90YXRlKDQ1KSI+PGxpbmUgeDE9IjAiIHk9IjAiIHgyPSIwIiB5Mj0iOS41IiBzdHJva2U9IiMwMDAwMDAiIHN0cm9rZS13aWR0aD0iMSIvPjwvcGF0dGVybj48L2RlZnM+IDxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjcGF0dGVybl85NXRteCkiIG9wYWNpdHk9IjAuMyIvPjwvc3ZnPg==')",
     width: '100%',
     height: '300px',
+  },
+  metadataList: {
+    [metadataListVars.columns]: {
+      default: 2,
+      '@media (max-width: 800px)': 1,
+    },
   },
 });
 
@@ -699,15 +706,23 @@ export default function IndexRoute() {
       </section>
       <Heading isContent>Metadata List</Heading>
       <section {...stylex.props(styles.componentStage)}>
-        <MetadataList title="H4 heading text" subtitle="Description text">
+        <MetadataList title="H4 heading text" subtitle="Description text" xstyle={styles.metadataList}>
           <MetadataLabel helpMessage="Help message">Metadata label</MetadataLabel>
           <Text>Text value</Text>
           <MetadataLabel>Metadata label</MetadataLabel>
           <div style={{ display: 'flex', gap: gap.S }}>
-            <Badge label="Label" />
-            <Badge label="Label" />
-            <Badge label="Label" />
+            <Badge variants={{ color: 'red' }} label="Label" />
+            <Badge variants={{ color: 'green' }} label="Label" />
+            <Badge variants={{ color: 'cyan' }} label="Label" />
           </div>
+          <MetadataLabel>Metadata label</MetadataLabel>
+          <Text>Text value</Text>
+          <MetadataLabel>Metadata label</MetadataLabel>
+          <Text>Text value</Text>
+          <MetadataLabel>Metadata label</MetadataLabel>
+          <Text>Text value</Text>
+          <MetadataLabel>Metadata label</MetadataLabel>
+          <Text>Text value</Text>
         </MetadataList>
       </section>
     </main>

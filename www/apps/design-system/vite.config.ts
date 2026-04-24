@@ -23,7 +23,7 @@ export default defineConfig({
       },
       aliases: {
         '@boxops/ui/tokens.stylex': path.join(wwwRoot, '@boxops/ui/src/tokens.stylex.ts'),
-        '@boxops/components/tokens.stylex': path.join(wwwRoot, '@boxops/components/src/tokens.stylex.ts'),
+        '@boxops/ui/MetadataList/vars.stylex': path.join(wwwRoot, '@boxops/ui/src/MetadataList/vars.stylex.ts'),
       },
     }),
     relay,
