@@ -14,6 +14,8 @@
     "@base-ui/utils": "^0.2.6",
     "@phosphor-icons/react": "^2.1.10",
     "@stylexjs/stylex": "^0.18.1",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "react-dom": "^19.2.4",
     "react-polymorphed": "^2.2.2"
   },

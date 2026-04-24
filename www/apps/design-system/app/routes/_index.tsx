@@ -141,161 +141,163 @@ const styles = stylex.create({
 export default function IndexRoute() {
   return (
     <main {...stylex.props(styles.main)}>
-      <Heading isContent as="h1">
-        Colors
-      </Heading>
-      <section {...stylex.props(styles.twoColumnGridSection)}>
-        <div {...stylex.props(styles.subgridHeading)}>
-          <Heading isContent as="h2">
-            Semantic Colors
-          </Heading>
-        </div>
-        <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
-          {
-            Object.entries(semanticColor)
-              .filter(([_, value]) => typeof value === 'string')
-              .filter(([key, _]) => key !== '__varGroupHash__')
-              .flatMap(([key, value]) => [
-                <Text key={`${key}-label`} as="small">
-                  {key}
-                </Text>,
-                <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
-              ]) as React.ReactNode
-          }
-        </div>
-        <div {...stylex.props(styles.subgridHeading)}>
-          <Heading isContent as="h2">
-            Outline Colors
-          </Heading>
-        </div>
-        <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
-          {
-            Object.entries(outlineColor)
-              .filter(([_, value]) => typeof value === 'string')
-              .filter(([key, _]) => key !== '__varGroupHash__')
-              .flatMap(([key, value]) => [
-                <Text key={`${key}-label`} as="small">
-                  {key}
-                </Text>,
-                <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
-              ]) as React.ReactNode
-          }
-        </div>
-        <div {...stylex.props(styles.subgridHeading)}>
-          <Heading isContent as="h2">
-            Background Colors
-          </Heading>
-        </div>
-        <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
-          {
-            Object.entries(backgroundColor)
-              .filter(([_, value]) => typeof value === 'string')
-              .filter(([key, _]) => key !== '__varGroupHash__')
-              .flatMap(([key, value]) => [
-                <Text key={`${key}-label`} as="small">
-                  {key}
-                </Text>,
-                <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
-              ]) as React.ReactNode
-          }
-        </div>
-        <div {...stylex.props(styles.subgridHeading)}>
-          <Heading isContent as="h2">
-            Non-semantic Background Colors
-          </Heading>
-        </div>
-        <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
-          {
-            Object.entries(nonsemanticBackgroundColor)
-              .filter(([_, value]) => typeof value === 'string')
-              .filter(([key, _]) => key !== '__varGroupHash__')
-              .flatMap(([key, value]) => [
-                <Text key={`${key}-label`} as="small">
-                  {key}
-                </Text>,
-                <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
-              ]) as React.ReactNode
-          }
-        </div>
-        <div {...stylex.props(styles.subgridHeading)}>
-          <Heading isContent as="h2">
-            Text Colors
-          </Heading>
-        </div>
-        <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
-          {
-            Object.entries(textColor)
-              .filter(([_, value]) => typeof value === 'string')
-              .filter(([key, _]) => key !== '__varGroupHash__')
-              .flatMap(([key, value]) => [
-                <Text key={`${key}-label`} as="small">
-                  {key}
-                </Text>,
-                <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
-              ]) as React.ReactNode
-          }
-        </div>
-        <div {...stylex.props(styles.subgridHeading)}>
-          <Heading isContent as="h2">
-            Non-semantic Text Colors
-          </Heading>
-        </div>
-        <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
-          {
-            Object.entries(nonsemanticTextColor)
-              .filter(([_, value]) => typeof value === 'string')
-              .filter(([key, _]) => key !== '__varGroupHash__')
-              .flatMap(([key, value]) => [
-                <Text key={`${key}-label`} as="small">
-                  {key}
-                </Text>,
-                <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
-              ]) as React.ReactNode
-          }
-        </div>
-        <div {...stylex.props(styles.subgridHeading)}>
-          <Heading isContent as="h2">
-            Divider Colors
-          </Heading>
-        </div>
-        <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
-          {
-            Object.entries(dividerColor)
-              .filter(([_, value]) => typeof value === 'string')
-              .filter(([key, _]) => key !== '__varGroupHash__')
-              .flatMap(([key, value]) => [
-                <Text key={`${key}-label`} as="small">
-                  {key}
-                </Text>,
-                <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
-              ]) as React.ReactNode
-          }
-        </div>
-        <div {...stylex.props(styles.subgridHeading)}>
-          <Heading isContent as="h2">
-            Icon Colors
-          </Heading>
-        </div>
-        <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
-          {
-            Object.entries(iconColor)
-              .filter(([_, value]) => typeof value === 'string')
-              .filter(([key, _]) => key !== '__varGroupHash__')
-              .flatMap(([key, value]) => [
-                <Text key={`${key}-label`} as="small">
-                  {key}
-                </Text>,
-                <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
-              ]) as React.ReactNode
-          }
-        </div>
+      <section aria-labelledby="colors-heading">
+        <Heading id="colors-heading" isContent as="h1">
+          Colors
+        </Heading>
+        <section {...stylex.props(styles.twoColumnGridSection)}>
+          <div {...stylex.props(styles.subgridHeading)}>
+            <Heading id="semantic-colors-heading" isContent as="h2">
+              Semantic Colors
+            </Heading>
+          </div>
+          <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+            {
+              Object.entries(semanticColor)
+                .filter(([_, value]) => typeof value === 'string')
+                .filter(([key, _]) => key !== '__varGroupHash__')
+                .flatMap(([key, value]) => [
+                  <Text key={`${key}-label`} as="small">
+                    {key}
+                  </Text>,
+                  <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
+                ]) as React.ReactNode
+            }
+          </div>
+          <div {...stylex.props(styles.subgridHeading)}>
+            <Heading id="outline-colors-heading" isContent as="h2">
+              Outline Colors
+            </Heading>
+          </div>
+          <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+            {
+              Object.entries(outlineColor)
+                .filter(([_, value]) => typeof value === 'string')
+                .filter(([key, _]) => key !== '__varGroupHash__')
+                .flatMap(([key, value]) => [
+                  <Text key={`${key}-label`} as="small">
+                    {key}
+                  </Text>,
+                  <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
+                ]) as React.ReactNode
+            }
+          </div>
+          <div {...stylex.props(styles.subgridHeading)}>
+            <Heading id="background-colors-heading" isContent as="h2">
+              Background Colors
+            </Heading>
+          </div>
+          <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+            {
+              Object.entries(backgroundColor)
+                .filter(([_, value]) => typeof value === 'string')
+                .filter(([key, _]) => key !== '__varGroupHash__')
+                .flatMap(([key, value]) => [
+                  <Text key={`${key}-label`} as="small">
+                    {key}
+                  </Text>,
+                  <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
+                ]) as React.ReactNode
+            }
+          </div>
+          <div {...stylex.props(styles.subgridHeading)}>
+            <Heading id="nonsemantic-background-colors-heading" isContent as="h2">
+              Non-semantic Background Colors
+            </Heading>
+          </div>
+          <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+            {
+              Object.entries(nonsemanticBackgroundColor)
+                .filter(([_, value]) => typeof value === 'string')
+                .filter(([key, _]) => key !== '__varGroupHash__')
+                .flatMap(([key, value]) => [
+                  <Text key={`${key}-label`} as="small">
+                    {key}
+                  </Text>,
+                  <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
+                ]) as React.ReactNode
+            }
+          </div>
+          <div {...stylex.props(styles.subgridHeading)}>
+            <Heading id="text-colors-heading" isContent as="h2">
+              Text Colors
+            </Heading>
+          </div>
+          <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+            {
+              Object.entries(textColor)
+                .filter(([_, value]) => typeof value === 'string')
+                .filter(([key, _]) => key !== '__varGroupHash__')
+                .flatMap(([key, value]) => [
+                  <Text key={`${key}-label`} as="small">
+                    {key}
+                  </Text>,
+                  <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
+                ]) as React.ReactNode
+            }
+          </div>
+          <div {...stylex.props(styles.subgridHeading)}>
+            <Heading id="nonsemantic-text-colors-heading" isContent as="h2">
+              Non-semantic Text Colors
+            </Heading>
+          </div>
+          <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+            {
+              Object.entries(nonsemanticTextColor)
+                .filter(([_, value]) => typeof value === 'string')
+                .filter(([key, _]) => key !== '__varGroupHash__')
+                .flatMap(([key, value]) => [
+                  <Text key={`${key}-label`} as="small">
+                    {key}
+                  </Text>,
+                  <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
+                ]) as React.ReactNode
+            }
+          </div>
+          <div {...stylex.props(styles.subgridHeading)}>
+            <Heading id="divider-colors-heading" isContent as="h2">
+              Divider Colors
+            </Heading>
+          </div>
+          <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+            {
+              Object.entries(dividerColor)
+                .filter(([_, value]) => typeof value === 'string')
+                .filter(([key, _]) => key !== '__varGroupHash__')
+                .flatMap(([key, value]) => [
+                  <Text key={`${key}-label`} as="small">
+                    {key}
+                  </Text>,
+                  <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
+                ]) as React.ReactNode
+            }
+          </div>
+          <div {...stylex.props(styles.subgridHeading)}>
+            <Heading id="icon-colors-heading" isContent as="h2">
+              Icon Colors
+            </Heading>
+          </div>
+          <div {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+            {
+              Object.entries(iconColor)
+                .filter(([_, value]) => typeof value === 'string')
+                .filter(([key, _]) => key !== '__varGroupHash__')
+                .flatMap(([key, value]) => [
+                  <Text key={`${key}-label`} as="small">
+                    {key}
+                  </Text>,
+                  <div key={`${key}-swatch`} {...stylex.props(styles.swatch(value as string))} />,
+                ]) as React.ReactNode
+            }
+          </div>
+        </section>
       </section>
-      <Heading isContent as="h1">
+      <Heading id="typography-heading" isContent as="h1">
         Typography
       </Heading>
       <section {...stylex.props(styles.twoColumnGridSection)}>
         <div {...stylex.props(styles.subgridHeading)}>
-          <Heading as="h2" isContent>
+          <Heading id="text-heading" as="h2" isContent>
             Text
           </Heading>
         </div>
@@ -318,7 +320,7 @@ export default function IndexRoute() {
           <Text as="code">Lorem ipsum doler sit amet</Text>
         </section>
         <div {...stylex.props(styles.subgridHeading)}>
-          <Heading as="h2" isContent>
+          <Heading id="headings-heading" as="h2" isContent>
             Headings
           </Heading>
         </div>
@@ -332,24 +334,26 @@ export default function IndexRoute() {
           <Text>H4</Text>
           <Heading as="h4">Lorem ipsum doler sit amet</Heading>
           <Text>Title</Text>
-          <Heading isContent as="h1">
+          <Heading id="title-heading" isContent as="h1">
             Lorem ipsum doler sit amet
           </Heading>
           <Text>Section heading</Text>
-          <Heading isContent as="h2">
+          <Heading id="section-heading" isContent as="h2">
             Lorem ipsum doler sit amet
           </Heading>
           <Text>Content heading</Text>
-          <Heading isContent as="h3">
+          <Heading id="content-heading" isContent as="h3">
             Lorem ipsum doler sit amet
           </Heading>
           <Text>Group heading</Text>
-          <Heading isContent as="h4">
+          <Heading id="group-heading" isContent as="h4">
             Lorem ipsum doler sit amet
           </Heading>
         </section>
       </section>
-      <Heading isContent>Icon</Heading>
+      <Heading id="icon-heading" isContent>
+        Icon
+      </Heading>
       <section {...stylex.props(styles.componentStage)}>
         <div {...stylex.props(styles.iconGrid)}>
           <Icon as={Phosphor.FlagBannerFoldIcon} weight="thin" variants={{ size: 'inline' }} />
@@ -408,7 +412,9 @@ export default function IndexRoute() {
           <Icon as={Phosphor.FlagBannerFoldIcon} weight="fill" variants={{ size: 'XL', color: 'disabled' }} />
         </div>
       </section>
-      <Heading isContent>Badge</Heading>
+      <Heading id="badge-heading" isContent>
+        Badge
+      </Heading>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
         <Badge label="gray" variants={{ color: 'gray' }} />
         <Badge label="blue" variants={{ color: 'blue' }} />
@@ -446,7 +452,9 @@ export default function IndexRoute() {
         <Spinner variants={{ size: 'L', color: 'onDarkMedia' }} />
         <Spinner variants={{ size: 'XL', color: 'onDarkMedia' }} />
       </section>
-      <Heading isContent>Button</Heading>
+      <Heading id="button-heading" isContent>
+        Button
+      </Heading>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
         <Button label="Button" variants={{ size: 'compact', appearance: 'default' }} />
         <Button label="Button" variants={{ size: 'compact', appearance: 'flat' }} />
