@@ -50,7 +50,9 @@ const Tooltip = Object.assign(
           <BaseTooltip.Portal>
             <BaseTooltip.Positioner sideOffset={5} side={side}>
               <BaseTooltip.Popup {...stylex.props(styles)}>
-                <Text xstyle={baseStyles.label}>{label}</Text>
+                <Text xstyle={baseStyles.label} aria-live="polite">
+                  {label}
+                </Text>
               </BaseTooltip.Popup>
             </BaseTooltip.Positioner>
           </BaseTooltip.Portal>
