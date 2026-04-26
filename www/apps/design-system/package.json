@@ -2,9 +2,6 @@
   "name": "design-system",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "react-router build"
-  },
   "dependencies": {
     "@babel/runtime": "^7.29.2",
     "@boxops/ui": "workspace:*",
