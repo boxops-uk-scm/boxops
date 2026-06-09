@@ -1,0 +1,59 @@
+{
+  "assets/entry.client-l0sNRNKZ.js": {
+    "name": "entry.client",
+    "isEntry": true,
+    "isDynamicEntry": false,
+    "imports": [],
+    "dynamicImports": [],
+    "modules": [
+      "app/entry.client.tsx"
+    ]
+  },
+  "assets/root-WyHBBE5h.js": {
+    "name": "root",
+    "isEntry": true,
+    "isDynamicEntry": false,
+    "imports": [
+      "react-router",
+      "react/jsx-runtime"
+    ],
+    "dynamicImports": [],
+    "modules": [
+      "app/root.css",
+      "app/root.tsx",
+      "app/root.tsx?__react-router-build-client-route"
+    ]
+  },
+  "assets/Home-DS1-dee1.js": {
+    "name": "Home",
+    "isEntry": true,
+    "isDynamicEntry": false,
+    "imports": [
+      "react-router",
+      "react/jsx-runtime"
+    ],
+    "dynamicImports": [],
+    "modules": [
+      "app/routes/Home.tsx",
+      "app/routes/Home.tsx?__react-router-build-client-route",
+      "app/routes/home.css"
+    ]
+  },
+  "assets/_index-CLv9wHZy.js": {
+    "name": "_index",
+    "isEntry": true,
+    "isDynamicEntry": false,
+    "imports": [
+      "react-router",
+      "react/jsx-runtime",
+      "react",
+      "@phosphor-icons/react",
+      "react-dom"
+    ],
+    "dynamicImports": [],
+    "modules": [
+      "app/routes/_index.tsx",
+      "app/routes/_index.tsx?__react-router-build-client-route"
+    ]
+  }
+}
