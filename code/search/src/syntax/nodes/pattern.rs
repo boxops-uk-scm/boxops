@@ -8,6 +8,14 @@ use super::{ProductPatternSyntax, VariablePatternSyntax};
 pub enum PatternSyntax<'s, F: NodeTypeFamily<'s>> {
     Product(ProductPatternSyntax<'s, F>),
     Variable(VariablePatternSyntax<'s>),
+    FieldAccess(FieldAccessPatternSyntax<'s, F>),
+    Integer(IntegerPatternSyntax<'s, F>),
+    String(StringPatternSyntax<'s, F>),
+    StringPrefix(StringPrefixPatternSyntax<'s, F>),
+    Wildcard(WildcardPatternSyntax<'s, F>),
+    Fact(FactPatternSyntax<'s, F>),
+    AnonRecord(AnonRecordPatternSyntax<'s, F>),
+    Subquery(SubqueryPatternSyntax<'s, F>),
 }
 
 impl<'s> SyntaxNode<'s, KindPattern> {

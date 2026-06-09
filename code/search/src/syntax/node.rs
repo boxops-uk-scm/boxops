@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::parser::{Cst, NodeRef};
+use crate::syntax::KindToken;
 
 use super::family::{ConstNodes, EraseNodeTypeMap, ErasedNodes};
 use super::kind::{Kind, KindAny, KindRoot};
@@ -19,10 +20,10 @@ impl<'s, K: Kind> fmt::Debug for SyntaxNode<'s, K> {
 
         match self.cst.get(self.node_ref) {
             crate::parser::Node::Rule(rule, _) => {
-                debug.field("kind", &rule);
+                debug.field("rule", &rule);
             }
             crate::parser::Node::Token(token, _) => {
-                debug.field("kind", &token);
+                debug.field("token", &token);
             }
         }
 
@@ -58,6 +59,11 @@ impl<'s, K: Kind> SyntaxNode<'s, K> {
         self.cst
             .children(self.node_ref)
             .map(|node_ref| SyntaxNode::from_raw(self.cst, node_ref))
+            .filter(|n| {
+                n.cast::<KindToken>()
+                    .map(|t| t.token() != crate::lexer::Token::Whitespace)
+                    .unwrap_or(true)
+            })
     }
 
     pub fn kind_any(&self) -> SyntaxKind<'s, ErasedNodes<'s>> {
@@ -80,5 +86,15 @@ impl<'s> SyntaxNode<'s, KindAny> {
 
     pub fn reduce<A: 's>(&self, alg: &impl Fn(SyntaxKind<'s, ConstNodes<A>>) -> A) -> A {
         alg(self.kind_any().map(|child| child.reduce(alg)))
+    }
+}
+
+impl<'s> SyntaxNode<'s, KindToken> {
+    pub fn token(&self) -> crate::lexer::Token {
+        let SyntaxKind::Token { token, .. } = self.kind_any() else {
+            unreachable!()
+        };
+
+        token
     }
 }

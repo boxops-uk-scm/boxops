@@ -11,7 +11,10 @@ fn main() {
 
         println!("{cst}");
 
-        let syntax = SyntaxNode::root(&cst);
-        println!("{syntax:#?}");
+        let root = SyntaxNode::root(&cst);
+        println!("{root:#?}");
+
+        let query = root.query();
+        println!("{query:#?}");
     }
 }

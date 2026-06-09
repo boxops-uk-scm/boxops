@@ -1,4 +1,4 @@
-use crate::syntax::{KindAny, KindRule};
+use crate::syntax::{KindAny, KindRule, KindToken};
 
 use super::family::{ConstNodeTypeMap, ConstNodes, ErasedNodes, NodeTypeFamily, NodeTypeMap};
 use super::node::SyntaxNode;
@@ -10,8 +10,14 @@ pub enum SyntaxKind<'s, F: NodeTypeFamily<'s>> {
     Root(RootSyntax<'s, F>),
     Query(QuerySyntax<'s, F>),
     Pattern(PatternSyntax<'s, F>),
-    Rule(F::NodeType<KindRule>),
-    Token(F::NodeType<KindAny>),
+    Rule {
+        rule: crate::parser::Rule,
+        node: F::NodeType<KindRule>,
+    },
+    Token {
+        token: crate::lexer::Token,
+        node: F::NodeType<KindToken>,
+    },
 }
 
 impl<'s, From: NodeTypeFamily<'s>> SyntaxKind<'s, From> {
@@ -51,9 +57,15 @@ impl<'s, From: NodeTypeFamily<'s>> SyntaxKind<'s, From> {
                 }
             }),
 
-            SyntaxKind::Rule(r) => SyntaxKind::Rule(f.type_map(r)),
+            SyntaxKind::Rule { rule, node } => SyntaxKind::Rule {
+                rule,
+                node: f.type_map(node),
+            },
 
-            SyntaxKind::Token(t) => SyntaxKind::Token(f.type_map(t)),
+            SyntaxKind::Token { token, node } => SyntaxKind::Token {
+                token,
+                node: f.type_map(node),
+            },
         }
     }
 }

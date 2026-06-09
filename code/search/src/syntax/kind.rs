@@ -71,10 +71,22 @@ impl Kind for KindPattern {
     const NAME: &'static str = "Pattern";
 
     fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
-        matches!(
-            cst.get(node_ref),
-            crate::parser::Node::Rule(crate::parser::Rule::Pattern, _)
-        )
+        match cst.get(node_ref) {
+            crate::parser::Node::Rule(rule, _) => matches!(
+                rule,
+                crate::parser::Rule::Pattern
+                    | crate::parser::Rule::Ppath
+                    | crate::parser::Rule::VarApattern
+                    | crate::parser::Rule::IntApattern
+                    | crate::parser::Rule::StringApattern
+                    | crate::parser::Rule::NatApattern
+                    | crate::parser::Rule::FactApattern
+                    | crate::parser::Rule::SubqueryApattern
+                    | crate::parser::Rule::WildcardApattern
+                    | crate::parser::Rule::AnonRecordApattern
+            ),
+            _ => false,
+        }
     }
 }
 
