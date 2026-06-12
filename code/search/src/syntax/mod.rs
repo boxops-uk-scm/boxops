@@ -15,5 +15,8 @@ pub use family::{ConstNodes, ErasedNodes, NodeTypeFamily, NodeTypeMap, TypedNode
 pub use view::SyntaxKind;
 
 pub use nodes::{
-    PatternSyntax, ProductPatternSyntax, QuerySyntax, RootSyntax, VariablePatternSyntax,
+    AnonRecordPatternSyntax, BangPatternSyntax, FactPatternSyntax, FieldAccessPatternSyntax,
+    FieldChain, FieldSyntax, IntegerPatternSyntax, PatternSyntax, ProductPatternSyntax,
+    QuerySyntax, RootSyntax, StringPatternSyntax, StringPrefixPatternSyntax,
+    SubqueryPatternSyntax, VariablePatternSyntax, WildcardPatternSyntax,
 };

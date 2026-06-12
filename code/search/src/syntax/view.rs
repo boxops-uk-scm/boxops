@@ -3,7 +3,10 @@ use crate::syntax::{KindAny, KindRule, KindToken};
 use super::family::{ConstNodeTypeMap, ConstNodes, ErasedNodes, NodeTypeFamily, NodeTypeMap};
 use super::node::SyntaxNode;
 use super::nodes::{
-    PatternSyntax, ProductPatternSyntax, QuerySyntax, RootSyntax, VariablePatternSyntax,
+    AnonRecordPatternSyntax, BangPatternSyntax, FactPatternSyntax, FieldAccessPatternSyntax,
+    FieldSyntax, IntegerPatternSyntax, PatternSyntax, ProductPatternSyntax, QuerySyntax,
+    RootSyntax, StringPatternSyntax, StringPrefixPatternSyntax, SubqueryPatternSyntax,
+    VariablePatternSyntax, WildcardPatternSyntax,
 };
 
 pub enum SyntaxKind<'s, F: NodeTypeFamily<'s>> {
@@ -40,22 +43,7 @@ impl<'s, From: NodeTypeFamily<'s>> SyntaxKind<'s, From> {
                     .into_boxed_slice(),
             }),
 
-            SyntaxKind::Pattern(p) => SyntaxKind::Pattern(match p {
-                PatternSyntax::Product(product) => PatternSyntax::Product(ProductPatternSyntax {
-                    alternatives: product
-                        .alternatives
-                        .into_iter()
-                        .map(|n| f.type_map(n))
-                        .collect::<Vec<_>>()
-                        .into_boxed_slice(),
-                }),
-
-                PatternSyntax::Variable(variable) => {
-                    PatternSyntax::Variable(VariablePatternSyntax {
-                        name: variable.name,
-                    })
-                }
-            }),
+            SyntaxKind::Pattern(p) => SyntaxKind::Pattern(hoist_pattern(p, f)),
 
             SyntaxKind::Rule { rule, node } => SyntaxKind::Rule {
                 rule,
@@ -67,6 +55,77 @@ impl<'s, From: NodeTypeFamily<'s>> SyntaxKind<'s, From> {
                 node: f.type_map(node),
             },
         }
+    }
+}
+
+fn hoist_pattern<'s, From: NodeTypeFamily<'s>, To: NodeTypeFamily<'s>>(
+    p: PatternSyntax<'s, From>,
+    f: &impl NodeTypeMap<'s, From, To>,
+) -> PatternSyntax<'s, To> {
+    match p {
+        PatternSyntax::Product(product) => PatternSyntax::Product(ProductPatternSyntax {
+            alternatives: product
+                .alternatives
+                .into_iter()
+                .map(|n| f.type_map(n))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        }),
+
+        PatternSyntax::Variable(v) => PatternSyntax::Variable(VariablePatternSyntax {
+            name: v.name,
+        }),
+
+        PatternSyntax::FieldAccess(fa) => PatternSyntax::FieldAccess(FieldAccessPatternSyntax {
+            base: f.type_map(fa.base),
+            fields: fa.fields,
+        }),
+
+        PatternSyntax::Integer(i) => PatternSyntax::Integer(IntegerPatternSyntax {
+            value: i.value,
+        }),
+
+        PatternSyntax::String(s) => PatternSyntax::String(StringPatternSyntax { value: s.value }),
+
+        PatternSyntax::StringPrefix(sp) => {
+            PatternSyntax::StringPrefix(StringPrefixPatternSyntax { prefix: sp.prefix })
+        }
+
+        PatternSyntax::Wildcard(_) => PatternSyntax::Wildcard(WildcardPatternSyntax),
+
+        PatternSyntax::Fact(fact) => PatternSyntax::Fact(FactPatternSyntax {
+            path: fact.path,
+            name: fact.name,
+            fields: fact
+                .fields
+                .into_iter()
+                .map(|field| FieldSyntax {
+                    name: field.name,
+                    value: f.type_map(field.value),
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        }),
+
+        PatternSyntax::AnonRecord(ar) => PatternSyntax::AnonRecord(AnonRecordPatternSyntax {
+            fields: ar
+                .fields
+                .into_iter()
+                .map(|field| FieldSyntax {
+                    name: field.name,
+                    value: f.type_map(field.value),
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        }),
+
+        PatternSyntax::Subquery(sq) => PatternSyntax::Subquery(SubqueryPatternSyntax {
+            query: f.type_map(sq.query),
+        }),
+
+        PatternSyntax::Bang(b) => PatternSyntax::Bang(BangPatternSyntax {
+            inner: f.type_map(b.inner),
+        }),
     }
 }
 

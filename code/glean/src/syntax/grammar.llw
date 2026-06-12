@@ -1,0 +1,67 @@
+token Whitespace;
+token Where='where' If='if' Then='then' Else='else' Never='never';
+token UId='<uid>' LId='<lid>';
+token Wildcard='_';
+token Nat='<nat>';
+token String='<string>';
+token DotDot='..' EqEq='==' Neq='!=' Lte='<=' Gte='>=' Arrow='->' PipePipe='||' AndAnd='&&';
+token Dot='.' Eq='=' Lt='<' Gt='>' Plus='+' Minus='-' Semi=';' Comma=','
+      LPar='(' RPar=')' LBrace='{' RBrace='}' LBrack='[' RBrack=']'
+      Pipe='|' Bang='!' Colon=':' And='&';
+
+skip Whitespace;
+start compilation;
+
+compilation: query;
+
+query: pattern 'where' stmt_list;
+
+stmt_list: stmt (';' [stmt])*;
+
+stmt:
+  ?1 filter @filter_stmt
+| pattern ('=' pattern @bind_stmt | @implicit_bind_stmt)
+;
+
+pattern: ppath ('|' ppath)*;
+
+ppath: apattern ('.' LId)*;
+
+apattern:
+  '_' @wildcard_apattern
+| UId @var_apattern
+| Nat @nat_apattern
+| '-' Nat @int_apattern
+| String ('..' @string_prefix_apattern | @string_apattern)
+| '{' [field_list] '}' @anon_record_apattern
+| fact_pattern @fact_apattern
+| '(' query ')' @subquery_apattern
+| '!' apattern @bang_pattern
+;
+
+fact_pattern: (LId '.')+ UId ['{' field_list '}'];
+
+field_list: field (',' field)*;
+
+field: LId '=' pattern;
+
+filter: filter_conj ('||' filter_conj)*;
+
+filter_conj: filter_atom ('&&' filter_atom)*;
+
+filter_atom:
+  expr cmp expr @cmp_filter
+| '!' filter_atom @bang_filter
+;
+
+cmp: '==' | '!=' | '<=' | '>=' | '<' | '>';
+
+expr: expr_atom (('+' | '-') expr_atom)*;
+
+expr_atom:
+  '-' expr_atom @negate_expr
+| UId ('.' LId)* @var_expr
+| Nat @nat_expr
+| String @string_expr
+| '(' expr ')' @group_expr
+;

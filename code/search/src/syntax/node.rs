@@ -55,7 +55,11 @@ impl<'s, K: Kind> SyntaxNode<'s, K> {
         SyntaxNode::from_raw(self.cst, self.node_ref)
     }
 
-    pub fn children(&self) -> impl Iterator<Item = SyntaxNode<'s, KindAny>> {
+    pub fn kind_any(&self) -> SyntaxKind<'s, ErasedNodes<'s>> {
+        self.kind_typed().hoist(&EraseNodeTypeMap)
+    }
+
+    pub(crate) fn children(&self) -> impl Iterator<Item = SyntaxNode<'s, KindAny>> {
         self.cst
             .children(self.node_ref)
             .map(|node_ref| SyntaxNode::from_raw(self.cst, node_ref))
@@ -64,10 +68,6 @@ impl<'s, K: Kind> SyntaxNode<'s, K> {
                     .map(|t| t.token() != crate::lexer::Token::Whitespace)
                     .unwrap_or(true)
             })
-    }
-
-    pub fn kind_any(&self) -> SyntaxKind<'s, ErasedNodes<'s>> {
-        self.kind_typed().hoist(&EraseNodeTypeMap)
     }
 }
 

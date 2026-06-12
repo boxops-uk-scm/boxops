@@ -1,4 +1,7 @@
-use search::{parser::Parser, syntax::SyntaxNode};
+use search::{
+    parser::Parser,
+    syntax::{SyntaxKind, SyntaxNode},
+};
 
 fn main() {
     loop {
@@ -10,11 +13,5 @@ fn main() {
         let cst = parser.parse(&mut diagnostics);
 
         println!("{cst}");
-
-        let root = SyntaxNode::root(&cst);
-        println!("{root:#?}");
-
-        let query = root.query();
-        println!("{query:#?}");
     }
 }

@@ -76,14 +76,17 @@ impl Kind for KindPattern {
                 rule,
                 crate::parser::Rule::Pattern
                     | crate::parser::Rule::Ppath
+                    | crate::parser::Rule::Apattern
                     | crate::parser::Rule::VarApattern
                     | crate::parser::Rule::IntApattern
                     | crate::parser::Rule::StringApattern
+                    | crate::parser::Rule::StringPrefixApattern
                     | crate::parser::Rule::NatApattern
                     | crate::parser::Rule::FactApattern
                     | crate::parser::Rule::SubqueryApattern
                     | crate::parser::Rule::WildcardApattern
                     | crate::parser::Rule::AnonRecordApattern
+                    | crate::parser::Rule::BangPattern
             ),
             _ => false,
         }
@@ -96,8 +99,22 @@ pub struct KindProductPattern;
 impl Kind for KindProductPattern {
     const NAME: &'static str = "ProductPattern";
 
-    fn is(_cst: &Cst<'_>, _node_ref: NodeRef) -> bool {
-        todo!()
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        if !matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::Pattern, _)
+        ) {
+            return false;
+        }
+        cst.children(node_ref)
+            .filter(|&c| {
+                matches!(
+                    cst.get(c),
+                    crate::parser::Node::Rule(crate::parser::Rule::Ppath, _)
+                )
+            })
+            .count()
+            > 1
     }
 }
 
@@ -111,6 +128,154 @@ impl Kind for KindVariablePattern {
         matches!(
             cst.get(node_ref),
             crate::parser::Node::Rule(crate::parser::Rule::VarApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindFieldAccessPattern;
+
+impl Kind for KindFieldAccessPattern {
+    const NAME: &'static str = "FieldAccessPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        if !matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::Ppath, _)
+        ) {
+            return false;
+        }
+        cst.children(node_ref).any(|c| {
+            matches!(
+                cst.get(c),
+                crate::parser::Node::Token(crate::lexer::Token::Dot, _)
+            )
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindWildcardPattern;
+
+impl Kind for KindWildcardPattern {
+    const NAME: &'static str = "WildcardPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::WildcardApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindNatPattern;
+
+impl Kind for KindNatPattern {
+    const NAME: &'static str = "NatPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::NatApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindIntegerPattern;
+
+impl Kind for KindIntegerPattern {
+    const NAME: &'static str = "IntegerPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::IntApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindStringPattern;
+
+impl Kind for KindStringPattern {
+    const NAME: &'static str = "StringPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::StringApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindStringPrefixPattern;
+
+impl Kind for KindStringPrefixPattern {
+    const NAME: &'static str = "StringPrefixPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::StringPrefixApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindFactPattern;
+
+impl Kind for KindFactPattern {
+    const NAME: &'static str = "FactPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::FactApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindAnonRecordPattern;
+
+impl Kind for KindAnonRecordPattern {
+    const NAME: &'static str = "AnonRecordPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::AnonRecordApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindSubqueryPattern;
+
+impl Kind for KindSubqueryPattern {
+    const NAME: &'static str = "SubqueryPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::SubqueryApattern, _)
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KindBangPattern;
+
+impl Kind for KindBangPattern {
+    const NAME: &'static str = "BangPattern";
+
+    fn is(cst: &Cst<'_>, node_ref: NodeRef) -> bool {
+        matches!(
+            cst.get(node_ref),
+            crate::parser::Node::Rule(crate::parser::Rule::BangPattern, _)
         )
     }
 }
