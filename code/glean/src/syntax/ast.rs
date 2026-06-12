@@ -37,11 +37,21 @@ impl<T> Spanned<T> {
     }
 }
 
-#[derive(Debug)]
 pub struct Query {
     pub span: Span,
     pub head: Pattern,
     pub body: Box<[Spanned<Statement>]>,
+}
+
+impl fmt::Debug for Query {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Query")
+            .field("head", &self.head)
+            .field("body", &self.body)
+            .finish()?;
+
+        write!(f, " @ {:?}", self.span)
+    }
 }
 
 #[derive(Debug)]
