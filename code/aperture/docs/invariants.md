@@ -14,24 +14,30 @@ Each invariant names a **guard test**: the test that pins it. Guards are written
 coverage ledger. A phase is done only when the invariants it touches are un-ignored and
 green. See [testing](testing.md).
 
+> **Reading a guard name.** The prefix is the *subsystem* as this book names it, not a Rust
+> path: `codec::` is `src/focus/tuple.rs`, `exec::` is `src/focus/iter.rs`, `store::` is
+> `src/focus/store.rs`, `schema::` is `src/focus/schema.rs`. The part after `::` is the test
+> function — every one of them is greppable, and the real module path is
+> `focus::<file>::tests::<name>`.
+
 ---
 
 ## Engine invariants — quick table
 
 | ID | Statement | Guard | Where | Status |
 |----|-----------|-------|-------|--------|
-| [I1](#i1) | Key encoding is order-preserving. | `codec::order_preservation` + round-trip | [ch2](02-tuple-codec.md) | ✅ green |
-| [I2](#i2) | Encoding is self-delimiting; `skip` needs no schema. | `codec::skip_exactness` | [ch2](02-tuple-codec.md) | ✅ green |
+| [I1](#i1) | Key encoding is order-preserving. | `codec::test_typed_value_order_matches_encoded_order` + round-trip | [ch2](02-tuple-codec.md) | ✅ green |
+| [I2](#i2) | Encoding is self-delimiting; `skip` needs no schema. | the `codec::test_skip_*` family | [ch2](02-tuple-codec.md) | ✅ green |
 | [I3](#i3) | The marker table is frozen on disk. | `codec::marker_table_golden` | [ch2](02-tuple-codec.md) | ✅ green |
-| [I4](#i4) | Resume == uninterrupted run. | `exec::resume_equals_uninterrupted` | [ch5](05-resume.md) | ✅ green on `MemStore` → fjall re-run in Phase 1 |
+| [I4](#i4) | Resume == uninterrupted run. | `exec::resume_equals_uninterrupted` + `…_on_fjall` | [ch5](05-resume.md) | ✅ green on `MemStore` **and** fjall |
 | [I5](#i5) | Register holds the whole row; fields decode lazily. | `exec::bind_is_refcount_not_decode` | [ch4](04-executor.md) | ✅ green |
 | [I6](#i6) | Values never enter the scan hot loop. | `exec::no_value_fetch_in_scan` | [ch3](03-storage-model.md)/[ch4](04-executor.md) | ✅ green |
 | [I7](#i7) | The executor is a defunctionalised state machine. | structural + resume battery | [ch4](04-executor.md) | ✅ green — resume battery in place |
-| [I8](#i8) | Immutable snapshot per query; released at suspend. | `store::snapshot_released_at_suspend` | [ch5](05-resume.md) | Phase 1 (needs fjall) |
+| [I8](#i8) | Immutable snapshot per query; released at suspend. | `store::snapshot_released_at_suspend` | [ch5](05-resume.md) | ✅ green |
 | [I9](#i9) | Hot path is allocation-free per row. | `exec::scan_is_alloc_free_per_row` | [ch4](04-executor.md) | ✅ green |
 | [I10](#i10) | Union discriminants are stable and append-only. | `schema::discriminants_append_only` | [ch6](06-types-and-schema.md) | Phase 8 (with unions) |
-| [I11](#i11) | `FactId` is stable, unique, never reused within a DB. | `store::factid_unique_monotonic` | [ch3](03-storage-model.md) | Phase 1 |
-| [I12](#i12) | A fact is written to both column families atomically. | `store::no_half_present_facts` | [ch3](03-storage-model.md) | Phase 1 |
+| [I11](#i11) | `FactId` is stable, unique, never reused within a DB. | `store::factid_unique_monotonic` + `exhausted_sequence_space_is_an_error` | [ch3](03-storage-model.md) | ✅ green |
+| [I12](#i12) | A fact is written to both column families atomically. | `store::no_half_present_facts_after_writes` + `no_half_present_facts` (crash) | [ch3](03-storage-model.md) | ✅ green |
 | [I13](#i13) | The DB's schema is embedded and frozen at create. | `schema::ingest_rejects_incompatible_schema` + `fingerprint_is_order_independent` | [ch6](06-types-and-schema.md) | Phase 8 |
 
 ---
@@ -43,15 +49,21 @@ green. See [testing](testing.md).
 `memcmp(encode(a), encode(b)) == semantic_compare(a, b)`. Prefix scans over sorted bytes
 *are* range/predicate queries — the whole storage model rests on this. **The gate for any
 codec change.** *Why & how:* [chapter 2](02-tuple-codec.md#property-1--order-preserving-i1).
-*Guard:* `codec::order_preservation` (tier-2 vs an independent comparator) + round-trip.
+*Guard:* `codec::test_typed_value_order_matches_encoded_order` (tier-2: encoded-byte order vs
+`cmp_typed`, an independent comparator that walks the type rather than reusing the code under
+test) + `test_roundtrip_preserves_value_and_ordering` + the scalar properties
+`test_{i64,u64,str}_preserves_order`.
 
 <a id="i2"></a>
 ### I2 — Encoding is self-delimiting; `skip` needs no schema
 The marker byte alone says how to advance past a value (three skip families). Lets the scan
 hot loop walk fields with no type info; a full decode consumes exactly to end-of-input.
 Record nesting is bounded (`MAX_RECORD_DEPTH`) → errors, never stack overflow. *Why & how:*
-[chapter 2](02-tuple-codec.md#property-2--self-delimiting-i2). *Guard:* `codec::skip_exactness`
-+ trailing-bytes-rejected + max-depth-errors.
+[chapter 2](02-tuple-codec.md#property-2--self-delimiting-i2). *Guard:* the
+`codec::test_skip_*` family — `test_skip_{string,i64,u64}` are the exactness properties (skip
+lands exactly where decode ends), the rest are the record/terminator/escape edge cases — plus
+`decode_typed` rejecting trailing bytes and `MAX_RECORD_DEPTH` erroring rather than
+overflowing.
 
 <a id="i3"></a>
 ### I3 — The marker table is frozen on disk
@@ -93,9 +105,15 @@ the resume battery is impossible to pass under a recursive rewrite; plus review.
 <a id="i8"></a>
 ### I8 — Immutable snapshot per query; released at suspend
 fjall iterators pin a read snapshot; drop the executor at suspend to release it. A held
-`Iter`/`Slice` keeps LSM blocks and a whole superseded generation alive. *Why & how:*
+`Iter`/`Slice` keeps LSM blocks and a whole superseded generation alive. **Structural, not a
+discipline:** `Executor::enumerate` takes `self` by value, so every exit path — done,
+suspend, cancel, error unwind — drops the frame stack and the store handle, and no shape of
+caller can park a live iterator across a suspend. *Why & how:*
 [chapter 5](05-resume.md#the-two-invariants-at-stake). *Guard:*
-`store::snapshot_released_at_suspend` (drop-probe) — **untestable on `MemStore`**, needs fjall.
+`store::snapshot_released_at_suspend` — all four stops, against two independent witnesses: a
+drop probe over the store handle and every scan it opened, and fjall's own open-snapshot
+count (`FjallDb::open_snapshots`), with a mid-run positive control so it cannot pass
+vacuously. **Untestable on `MemStore`**, whose scan pins nothing; needs fjall.
 
 <a id="i9"></a>
 ### I9 — Hot path is allocation-free per row
@@ -114,18 +132,26 @@ how:* [chapter 6](06-types-and-schema.md#unions-and-stable-discriminants-i10). *
 
 <a id="i11"></a>
 ### I11 — `FactId` is stable, unique, never reused within a DB
-Assigned once from a monotonic counter; unique, never reused (no deletion), stable for the
-DB's lifetime. The scan→point map and resume's integrity check depend on it. It is a
+Assigned once as a **snowflake** — predicate id in the high 24 bits, a per-predicate sequence
+in the low 40 — so uniqueness across predicates is structural and each predicate allocates
+independently. Monotonic within a predicate, never reused (no deletion), stable for the DB's
+lifetime; sequence 0 is reserved, so `FactId(0)` is never a fact. The high-water mark is
+recovered from the last `entities` key rather than a sidecar counter, which cannot go stale
+across a crash. The scan→point map and resume's integrity check depend on it. It is a
 *physical* row id, **not** cross-DB identity (that's the content hash, [ops-I4](#ops-i4)).
-*Why & how:* [chapter 3](03-storage-model.md#factid-allocation-i11). *Guard:*
-`store::factid_unique_monotonic` (pending ingestion).
+Constrains the schema: a predicate id must fit 24 bits.
+*Why & how:* [chapter 3](03-storage-model.md#factid-allocation-i11). *Guards:*
+`store::factid_unique_monotonic` + `store::exhausted_sequence_space_is_an_error` +
+`store::untaggable_predicate_is_rejected`.
 
 <a id="i12"></a>
 ### I12 — A fact is written to both column families atomically
 `keys` and `entities` are written in one fjall batch — a fact is never half-present. A
-dangling half is silent corruption at projection. *Why & how:*
-[chapter 3](03-storage-model.md#the-atomic-two-cf-write-i12). *Guard:*
-`store::no_half_present_facts` (no danglers; crash-injection leaves neither — pending ingestion).
+dangling half is silent corruption at projection; a dangling entity is invisible to every
+query. *Why & how:* [chapter 3](03-storage-model.md#the-atomic-two-cf-write-i12). *Guards:*
+`store::no_half_present_facts_after_writes` (the two CFs in exact bijection over generated
+writes) + `store::no_half_present_facts` (a child process aborted mid-write; the bijection
+must survive recovery).
 
 <a id="i13"></a>
 ### I13 — The DB's schema is embedded and frozen at create

@@ -2,14 +2,110 @@ use byteview::ByteView;
 use serde::{Serialize, Serializer};
 
 use crate::focus::{
-    error::ApertureError,
+    error::{ApertureError, StoreError},
     iter::Address,
     schema::{PredicateId, PredicateTy, Symbol},
     tuple::Value,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FactId(pub u64);
+/// Bits of a [`FactId`] holding the predicate tag — the high three bytes.
+///
+/// Byte-aligned on purpose: the tag is a *slice* of the big-endian encoding, not a
+/// shift, so routing a `point()` to a predicate's tree costs nothing.
+pub const FACT_ID_PREDICATE_BITS: u32 = 24;
+
+/// Bits of a [`FactId`] holding the per-predicate sequence — the low five bytes.
+pub const FACT_ID_SEQUENCE_BITS: u32 = u64::BITS - FACT_ID_PREDICATE_BITS;
+
+/// Largest predicate id representable in a [`FactId`] tag (~16.7 M predicates).
+pub const MAX_TAGGABLE_PREDICATE: u32 = (1 << FACT_ID_PREDICATE_BITS) - 1;
+
+/// Largest per-predicate sequence (~1.1 T facts per predicate).
+pub const MAX_FACT_SEQUENCE: u64 = (1 << FACT_ID_SEQUENCE_BITS) - 1;
+
+/// A fact's physical row id: a **snowflake** — the owning predicate in the high
+/// [`FACT_ID_PREDICATE_BITS`] bits, a per-predicate sequence in the low
+/// [`FACT_ID_SEQUENCE_BITS`] ([I11], [chapter 3]).
+///
+/// The tag is what lets `entities` be split per predicate exactly as `keys` is:
+/// [`FactStore::point`] is handed a bare id and no predicate, so an untagged id
+/// would make identity lookup a search across every predicate's tree. Tagged, it
+/// is one lookup in one tree. It also removes the global allocator: each predicate
+/// counts its own facts, so two ingest workers on different predicates share no
+/// counter and write disjoint, ascending id ranges.
+///
+/// **Sequence 0 is reserved**, so no valid id is `FactId(0)` and a zeroed or
+/// corrupt eight bytes is detectably not a fact — worth having on a path where
+/// [I11] is what makes a bytes-only resume cursor safe.
+///
+/// Uniqueness is structural rather than enforced: the tag partitions the id space,
+/// so two predicates cannot collide however their sequences are allocated.
+///
+/// [I11]: ../../../docs/invariants.md#i11
+/// [chapter 3]: ../../../docs/03-storage-model.md
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FactId(u64);
+
+impl FactId {
+    /// The raw eight bytes, for storing or comparing.
+    #[must_use]
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// Wrap an id that is **already known to be valid** — decoded from a stored
+    /// row that the decode boundary has checked, or handed back by a model store
+    /// that got it from [`FactId::new`].
+    ///
+    /// The field is private so that [`FactId::new`]'s checks are the only way to
+    /// *mint* an id: the tag has to fit and sequence 0 is reserved, which is what
+    /// makes a zeroed eight bytes detectably not a fact
+    /// ([I11](../../../docs/invariants.md#i11)). Named rather than a tuple
+    /// constructor so the places that bypass those checks are greppable.
+    #[must_use]
+    pub fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    /// Compose an id from its predicate and sequence.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::PredicateIdTooWide`] if the predicate does not fit the tag,
+    /// [`StoreError::FactIdSequence`] if the sequence is 0 (reserved) or past
+    /// [`MAX_FACT_SEQUENCE`].
+    pub fn new(predicate: PredicateId, sequence: u64) -> Result<Self, StoreError> {
+        if predicate.0 > MAX_TAGGABLE_PREDICATE {
+            return Err(StoreError::PredicateIdTooWide {
+                predicate: predicate.0,
+                max: MAX_TAGGABLE_PREDICATE,
+            });
+        }
+        if sequence == 0 || sequence > MAX_FACT_SEQUENCE {
+            return Err(StoreError::FactIdSequence {
+                sequence,
+                max: MAX_FACT_SEQUENCE,
+            });
+        }
+
+        Ok(Self(
+            (u64::from(predicate.0) << FACT_ID_SEQUENCE_BITS) | sequence,
+        ))
+    }
+
+    /// The predicate that owns this fact.
+    #[must_use]
+    pub fn predicate(self) -> PredicateId {
+        // The shift leaves 24 bits, so the narrowing cannot truncate.
+        PredicateId((self.0 >> FACT_ID_SEQUENCE_BITS) as u32)
+    }
+
+    /// This fact's sequence within its predicate.
+    #[must_use]
+    pub fn sequence(self) -> u64 {
+        self.0 & MAX_FACT_SEQUENCE
+    }
+}
 
 impl Serialize for FactId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -74,6 +170,9 @@ pub enum Project {
     Record(Box<[(Symbol, Project)]>),
 }
 
+/// The compiled query — the fixed contract between the front end and the
+/// executor.
+#[derive(Debug)]
 pub struct Plan {
     pub nvars: usize,
     pub body: Box<[Generator]>,
@@ -89,7 +188,16 @@ pub struct Entity {
 pub trait FactStore {
     type Scan: Iterator<Item = Result<(ByteView, FactId), ApertureError>>;
 
-    fn scan(&self, lo: &[u8], hi: Option<&[u8]>) -> Self::Scan;
+    /// Open a scan of `lo..hi`, bounded to the predicate named by `lo`'s first
+    /// [`PREDICATE_ID_SIZE`](crate::focus::schema::PREDICATE_ID_SIZE) bytes.
+    ///
+    /// Fallible, because opening genuinely can fail: a `lo` too short to name a
+    /// predicate names nothing, and that is a fault in the *call*, not in a row.
+    /// While this returned the iterator directly there was nowhere to say so, and
+    /// each implementation invented an answer — one smuggled the error out as a
+    /// first row, the others scanned across the predicate boundary and reported
+    /// nothing.
+    fn scan(&self, lo: &[u8], hi: Option<&[u8]>) -> Result<Self::Scan, ApertureError>;
 
     fn point(&self, id: FactId) -> Result<Option<Entity>, ApertureError>;
 }
@@ -253,18 +361,31 @@ pub mod proptest {
             (self.build_store(), self.build_plan(interner))
         }
 
-        /// Fact ids come from a monotonic counter walked in a deterministic order,
-        /// so every rebuild yields an identical store — resume's integrity check
-        /// compares a re-read row's `fact_id` against the saved one.
+        /// The spec's facts in insertion order: `(predicate, encoded key, sequence
+        /// within that predicate)`.
+        ///
+        /// One deterministic order, walked by every store this spec seeds. That is
+        /// what makes a rebuilt store identical — resume's integrity check compares
+        /// a re-read row's `fact_id` against the saved one ([I4]) — and what makes
+        /// a fjall store and a `MemStore` built from the same spec agree fact for
+        /// fact, ids included, since the numbering matches what the real
+        /// per-predicate allocator hands out ([I11]).
+        ///
+        /// [I4]: ../../../docs/invariants.md#i4
+        /// [I11]: ../../../docs/invariants.md#i11
+        pub fn facts(&self) -> impl Iterator<Item = (PredicateId, Vec<u8>, u64)> + '_ {
+            self.facts.iter().enumerate().flat_map(|(predicate, keys)| {
+                keys.iter().enumerate().map(move |(i, key)| {
+                    (PredicateId(predicate as u32), encode_key(key), i as u64 + 1)
+                })
+            })
+        }
+
         pub fn build_store(&self) -> MemStore {
             let mut store = MemStore::new();
-            let mut next_id = 1u64;
 
-            for (predicate, keys) in self.facts.iter().enumerate() {
-                for key in keys {
-                    store.insert(PredicateId(predicate as u32), encode_key(key), next_id);
-                    next_id += 1;
-                }
+            for (predicate, key, sequence) in self.facts() {
+                store.insert(predicate, key, sequence);
             }
 
             store

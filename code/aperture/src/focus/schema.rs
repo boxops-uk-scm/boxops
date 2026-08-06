@@ -1,8 +1,13 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
-use itertools::Itertools;
 use lasso::{Rodeo, RodeoReader, Spur};
 
+/// A predicate's position in the schema, which **is** its id.
+///
+/// The field stays public, unlike [`FactId`](crate::focus::plan::FactId)'s, because
+/// there is no invariant here to protect: an id *is* a position, so building one
+/// from an index is the ordinary thing to do. The check that matters — that the id
+/// fits the fact-id tag — belongs where the tag is composed, and lives there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PredicateId(pub u32);
 
@@ -62,11 +67,15 @@ pub struct PredicateRef<'a> {
 }
 
 impl<'a> PredicateRef<'a> {
-    pub fn name(&self) -> &str {
-        self.interner
-            .0
-            .try_resolve(&self.inner.name)
-            .unwrap_or_default()
+    /// This predicate's name, or `None` if the schema's own interner cannot
+    /// resolve it.
+    ///
+    /// `None` is a broken schema, not a predicate without a name — it used to
+    /// come back as `""`, which reads as a valid empty name and travels on into
+    /// diagnostics. Both callers already have a "no such predicate" path to fold
+    /// it into.
+    pub fn name(&self) -> Option<&'a str> {
+        self.interner.resolve(self.inner.name)
     }
 
     pub fn key(&self) -> PredicateTyRef<'a> {
@@ -104,11 +113,16 @@ impl SchemaInterner {
         self.0.get(s)
     }
 
-    pub fn try_resolve(&self, symbol: Symbol) -> Option<&str> {
-        match symbol {
-            Symbol::Schema(spur) => self.0.try_resolve(&spur),
-            Symbol::Local(_) => None,
-        }
+    /// The text of a name interned in the schema.
+    ///
+    /// Takes a [`Spur`] rather than a [`Symbol`]: this tier holds schema names and
+    /// nothing else, so a `Symbol::Local` is not a question it can answer, and a
+    /// signature accepting one has to reply `None` to something it was never
+    /// asked. The two-tier resolve is [`LocalInterner::try_resolve`], which
+    /// delegates here for the schema half instead of reaching past this type into
+    /// the reader it wraps.
+    pub fn resolve(&self, spur: Spur) -> Option<&str> {
+        self.0.try_resolve(&spur)
     }
 }
 
@@ -143,9 +157,10 @@ impl LocalInterner {
         Symbol::Local(self.local.get_or_intern(s))
     }
 
+    /// The text behind a symbol, from whichever tier interned it.
     pub fn try_resolve(&self, symbol: Symbol) -> Option<&str> {
         match symbol {
-            Symbol::Schema(spur) => self.schema.0.try_resolve(&spur),
+            Symbol::Schema(spur) => self.schema.resolve(spur),
             Symbol::Local(spur) => self.local.try_resolve(&spur),
         }
     }
@@ -155,13 +170,32 @@ impl LocalInterner {
 pub struct Schema {
     interner: SchemaInterner,
     predicates: Arc<[Predicate]>,
+    /// `name → id`, built once at construction.
+    ///
+    /// A predicate's *position* is its id, so `predicates` is in id order and
+    /// cannot be searched by name. Lowering resolves a name for every fact
+    /// pattern in a query, and scanning every predicate in the schema for each one
+    /// is the wrong shape for something built once and then queried repeatedly.
+    by_name: Arc<BTreeMap<Spur, PredicateId>>,
 }
 
 impl Schema {
     pub fn new(reader: RodeoReader, predicates: Arc<[Predicate]>) -> Self {
+        let mut by_name = BTreeMap::new();
+
+        for (idx, predicate) in predicates.iter().enumerate() {
+            // First wins, as the linear scan this replaces did. Two predicates
+            // sharing a name is a schema error for Phase 8 to reject; until then,
+            // indexing them must not silently start preferring the other one.
+            by_name
+                .entry(predicate.name)
+                .or_insert(PredicateId(idx as u32));
+        }
+
         Schema {
             interner: SchemaInterner::new(reader),
             predicates,
+            by_name: Arc::new(by_name),
         }
     }
 
@@ -178,16 +212,93 @@ impl Schema {
             })
     }
 
+    /// How many predicates the schema declares. A predicate's position **is** its
+    /// id, so this is also one past the largest valid [`PredicateId`].
+    pub fn len(&self) -> usize {
+        self.predicates.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.predicates.is_empty()
+    }
+
+    /// The predicate called `name`, and its id.
     pub fn find_position(&self, name: &str) -> Option<(PredicateId, PredicateRef<'_>)> {
         let spur = self.interner.get_spur(name)?;
-        let (idx, inner) = self.predicates.iter().find_position(|p| p.name == spur)?;
-        Some((
-            PredicateId(idx as u32),
-            PredicateRef {
-                interner: &self.interner,
-                inner,
-            },
-        ))
+        let id = *self.by_name.get(&spur)?;
+        Some((id, self.get(id)?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn schema_of(names: &[&str]) -> Schema {
+        let mut rodeo = Rodeo::new();
+        let predicates: Vec<Predicate> = names
+            .iter()
+            .map(|name| Predicate {
+                name: rodeo.get_or_intern(name),
+                key: PredicateTy::Int,
+                value: None,
+            })
+            .collect();
+
+        Schema::new(rodeo.into_reader(), Arc::from(predicates))
+    }
+
+    /// The two-tier resolve reaches both tiers, and the schema tier resolves a
+    /// `Spur` rather than being asked about a `Symbol` it cannot own.
+    #[test]
+    fn the_two_tiers_resolve_their_own_names() {
+        let mut rodeo = Rodeo::new();
+        rodeo.get_or_intern("declared");
+        let schema = SchemaInterner::new(rodeo.into_reader());
+
+        let mut interner = LocalInterner::new(schema.clone());
+
+        // A name the schema declares resolves through the schema tier...
+        let declared = interner.get_or_intern("declared");
+        assert!(matches!(declared, Symbol::Schema(_)));
+        assert_eq!(interner.try_resolve(declared), Some("declared"));
+
+        // ...and one it does not resolves through the local tier, which the schema
+        // tier on its own could never have answered.
+        let local = interner.get_or_intern("query-only");
+        assert!(matches!(local, Symbol::Local(_)));
+        assert_eq!(interner.try_resolve(local), Some("query-only"));
+
+        let Symbol::Schema(spur) = declared else {
+            unreachable!("checked above")
+        };
+        assert_eq!(schema.resolve(spur), Some("declared"));
+    }
+
+    /// A name lookup is an index built at construction rather than a scan, and a
+    /// predicate's position is still its id.
+    #[test]
+    fn find_position_returns_the_declared_position() {
+        let schema = schema_of(&["a.One", "b.Two", "c.Three"]);
+
+        for (expected, name) in ["a.One", "b.Two", "c.Three"].iter().enumerate() {
+            let (id, found) = schema.find_position(name).expect(name);
+            assert_eq!(id, PredicateId(expected as u32));
+            assert_eq!(found.name(), Some(*name));
+        }
+
+        assert!(schema.find_position("nosuch.Pred").is_none());
+    }
+
+    /// Two predicates sharing a name resolve to the **first**, as the linear scan
+    /// this index replaced did. A duplicate is a schema error for Phase 8 to
+    /// reject; indexing them must not quietly change which one a query gets.
+    #[test]
+    fn find_position_prefers_the_first_of_a_duplicated_name() {
+        let schema = schema_of(&["a.One", "dup.Pred", "b.Two", "dup.Pred"]);
+
+        let (id, _) = schema.find_position("dup.Pred").expect("dup.Pred");
+        assert_eq!(id, PredicateId(1));
     }
 }
 

@@ -32,17 +32,44 @@ The engine spine exists in `src/focus/`:
   skip are covered, and the golden marker table now pins the on-disk values
   ([I1](docs/invariants.md#i1), [I2](docs/invariants.md#i2), [I3](docs/invariants.md#i3)
   green). Named `arb_*` strategies live in `tuple::proptest`.
-- **Executor + resume** (`iter.rs`, `plan.rs`) — implemented and now guarded: a happy-path
+- **Executor + resume** (`iter.rs`, `plan.rs`) — implemented and guarded: a happy-path
   battery over hand-built plans, mechanical NFR guards, and the tier-3 resume battery
   (`exec::resume_equals_uninterrupted`) over schema-first `(plan, store)` pairs from
-  `plan::proptest`. [I4](docs/invariants.md#i4)–[I7](docs/invariants.md#i7),
-  [I9](docs/invariants.md#i9) green on `MemStore`; [I8](docs/invariants.md#i8) needs fjall
-  (Phase 1), which also re-runs the resume battery against the real store.
-- **Front end** (grammar, typecheck, flatten) — exists only in the disconnected `src/lens/`
-  (not compiled); to be re-implemented into `focus`, then deleted file-by-file.
-- **Unbuilt:** the fjall store impl, ingestion, schema parsing, the wire protocol, and the
-  operational layer. `src/focus/store.rs` and `schema.rs` hold those phases' guards, written
-  up front and `#[ignore]`d.
+  `plan::proptest`, **run against both `MemStore` and fjall** (the fjall arm is also
+  differential — the two stores must agree row for row and id for id).
+  [I4](docs/invariants.md#i4)–[I9](docs/invariants.md#i9) green. `enumerate` consumes the
+  executor, so releasing the snapshot at every stop is structural
+  ([I8](docs/invariants.md#i8)).
+- **Front end** — `lex → parse → lower → typecheck` is live in `src/focus/` (Phase 2 done):
+  the full intended surface parses, lowers to the `SyntaxTree` store, and typechecks, with
+  every construct deferred to a later phase drawing one specific diagnostic naming it. Three
+  acceptance artifacts: `focus::corpus` (the audit table as data, with a parse gate and a
+  diagnostic-code gate over it), **`parse ∘ print == id` on generated trees** (`focus::print`
+  renders a tree back to focus source, so the corpus is worked examples rather than the whole
+  specification), and **a node's span is where the printer emitted it** — the half spans are
+  checkable at all, since a tree comparison is blind to them. **Flatten is not built** —
+  `src/lens/hoist.rs` remains its reference, along with `query.rs` (the boxed AST
+  representation, which nothing needs yet) and the three files those depend on; the other
+  seven `lens` files are deleted.
+- **The compilation driver** (`focus::compile`, Phase 3 done) — one `Compilation` carrying
+  the source, schema, interner, diagnostics sink and the trees the phases produce. A phase
+  reports by pushing into the sink and cannot return diagnostics; codes are a `Code` enum
+  rather than strings; rendering sorts into source order while the sink keeps arrival order.
+- **A focus shell** (`src/main.rs`) — reads a query, highlights it from the compiler's own
+  lexer, and reports what the front end makes of it against a real `FjallDb` seeded at
+  startup; `:facts` runs a hand-built plan through the executor. It compiles only through the
+  driver, and **cannot run a query** (that needs flatten) and says so. Phase 5 scaffold,
+  landed early — see that phase.
+- **Store** (`store.rs`) — the fjall store is complete and guarded (Phase 1 done): a pair of
+  keyspaces per predicate (`keys.<id>`, `entities.<id>`), `scan`/`point`, and an atomic
+  `put_fact` over a snowflake [`FactId`](docs/03-storage-model.md#factid-allocation-i11) with
+  a per-predicate allocator recovered from the data. Held to `MemStore` as a differential
+  oracle. [I8](docs/invariants.md#i8), [I11](docs/invariants.md#i11),
+  [I12](docs/invariants.md#i12) green — the I12 crash case aborts a child process mid-write,
+  and the I8 guard cross-checks a drop probe against fjall's own open-snapshot count.
+- **Unbuilt:** ingestion, schema parsing, the wire protocol, and the operational layer.
+  `schema.rs` holds Phase 8's guards, written up front and `#[ignore]`d — the only pending
+  entries left in the coverage ledger.
 
 Module map: [chapter 1](docs/01-concepts.md). Nothing here contradicts the design docs.
 
@@ -51,9 +78,9 @@ Module map: [chapter 1](docs/01-concepts.md). Nothing here contradicts the desig
 ## Dependency graph
 
 ```
-0  guard matrix & harness ─┬─▶ 1  fjall store   (⇒ I8, I11, I12 green; resume battery re-run on fjall)
+0  guard matrix & harness ─┬─▶ 1  fjall store ✅ (I8, I11, I12 green; resume battery re-run on fjall)
                            │
-                           └─▶ 2  grammar ─▶ 3  driver ─▶ 4  flatten/reorder ─┬─▶ 5  REPL  (→ remote-only later)
+                           └─▶ 2  grammar ✅ ─▶ 3  driver ✅ ─▶ 4  flatten/reorder ─┬─▶ 5  REPL  (→ remote-only later)
                                                                               ├─▶ 6  derived facts  (deliberate machine change; own resume battery)
                                                                               └─▶ 7  ingestion ─▶ 8  schema ─▶ 9  operations
 
@@ -160,18 +187,32 @@ single-fact seeding primitive — the bulk pipeline (Phase 7) builds on the same
 - *upholds:* I1–I3.
 
 **Tasks:**
-- **1a.** fjall `FactStore` impl: one keyspace per predicate; `scan` (prefix range) + `point`.
-- **1b.** Atomic `put_fact`: monotonic `AtomicU64` FactId ([I11](docs/invariants.md#i11));
-  both CFs in one write batch ([I12](docs/invariants.md#i12)); un-ignore + green those guards.
-- **1c.** Snapshot discipline: drop the executor's iterator at suspend; un-ignore + green
-  the [I8](docs/invariants.md#i8) drop-probe.
-- **1d.** Re-run the entire Phase 0c resume battery against fjall.
+- **1a.** ✅ fjall `FactStore` impl: a keyspace pair per predicate; `scan` (prefix range) +
+  `point`; differential oracle against `MemStore`. Two decisions taken here and recorded in
+  [chapter 3](docs/03-storage-model.md#one-keyspace-per-predicate--for-both-column-families):
+  `entities` is split per predicate too, and predicate trees are creatable up front
+  (`create_predicates`) because a keyspace costs ~30 ms to create.
+- **1b.** ✅ Atomic `put_fact`: snowflake `FactId` (predicate tag + per-predicate sequence)
+  with the high-water mark recovered from the last `entities` key
+  ([I11](docs/invariants.md#i11)); both CFs in one write batch
+  ([I12](docs/invariants.md#i12)); both guards un-ignored and green.
+- **1c.** ✅ Snapshot discipline: `enumerate` now takes `self` **by value**, so done,
+  suspend, cancel and error unwind all drop the frame stack and the store handle — I8 is a
+  property of the signature rather than a caller discipline. Guard cross-checks a drop probe
+  (store handle + every scan) against fjall's own open-snapshot count, with a mid-run
+  positive control.
+- **1d.** ✅ The Phase 0c resume battery generalised over `FactStore` and re-run against
+  fjall, plus a differential arm: the same spec must give identical rows and ids on fjall and
+  `MemStore` — which is what licenses every other executor battery to be written against
+  `MemStore` alone.
 
 **Acceptance:**
-- [ ] Resume == uninterrupted run holds against the *real* store (not just `MemStore`).
-- [ ] I8, I11, I12 guards un-ignored and green.
-- [ ] Facts are never half-present; fact-ids are unique and monotonic (tested).
-- [ ] A held iterator does not survive a suspend (drop-probe green).
+- [x] Resume == uninterrupted run holds against the *real* store (not just `MemStore`), and
+      the two agree row for row.
+- [x] I8, I11, I12 guards un-ignored and green.
+- [x] Facts are never half-present (bijection over generated writes, and across a crash);
+      fact-ids are unique, monotonic per predicate, and never reused across a reopen (tested).
+- [x] A held iterator does not survive a suspend — and cannot be held, by construction.
 
 ---
 
@@ -185,34 +226,75 @@ reshape is needed as features land.
 reference to **re-implement into `focus`** (against the `Plan` IR), then delete file-by-file.
 
 **Design of record:** [chapter 7](docs/07-compilation.md) (three tree layers; permissive-
-early principle). **Phase-specific — grammar/lexer conflict resolutions to preserve** (build
-detail, not in the book): `QId` qualified names (leading-lowercase disambiguates from `UId`
-access); dot-tighter-than-application (`test.Foo X.name` == `test.Foo (X.name)`, so
-`fact_pattern` is its own alternative); `..` vs `.` by maximal munch; the `Nat` underscore
-rule (`0|[1-9][0-9]*(_[0-9]+)*`, or lex-permissive-then-validate); the `never` keyword.
+early principle). **Phase-specific — grammar/lexer resolutions, as settled** (build detail,
+not in the book; each pinned by a test in `parse.rs` or `lexer.rs`):
+
+- `QId` qualified names — a leading-lowercase segment plus an uppercase final segment
+  disambiguates `test.Foo` from `E.from` with no parser lookahead.
+- **Dot binds tighter than application** — `test.Foo X.name` == `test.Foo (X.name)`.
+- **`|` is looser than application** — `test.Foo A | test.Bar B` is a disjunction of two
+  applications, so `fact_pattern: QId branch` (not `pattern`). Forced: with `pattern` the
+  grammar is an LL(1) conflict on `|`, since a fact's key would put `|` in its own follow
+  set. A disjunction *inside* a key is `test.Foo (A | B)`.
+- **Disjunction is flat** — `pattern: branch ('|' branch)*`, N branches under one node, which
+  is the shape `FlatDisjunction` wants. Deliberately *not* lelwel's Pratt left-recursion,
+  which would give a right-leaning binary tree for flatten to undo.
+- **Group and subquery are one rule** — `'(' pattern ('where' stmt_list | ) ')'`. Factoring
+  the optional `where` keeps it LL(1) with no ordered choice or backtracking, and makes a
+  subquery the same shape as a query, so lowering reuses the query algebra.
+- **Negation prefixes a statement**, not a pattern — the level [chapter
+  7](docs/07-compilation.md) reorders at. Consequence: `(!A) | B` is not expressible; moving
+  `!` into `branch` is the change if that is wanted.
+- `..` vs `.` by maximal munch; the `never` keyword.
+- **`Nat` is lexed permissively and validated in lowering** (`lexer::parse_nat`) — so `1__0`
+  is one token with a diagnostic pointing at the number, not two tokens with a parse error
+  pointing between them. The sign is applied after the magnitude (`signed_literal`), because
+  `i64::MIN`'s magnitude is one past `i64::MAX`.
+- **A fact pattern's key stays mandatory** — a whole-predicate scan is `test.Foo _`.
+- **`.value` is a reserved access name**, lowering to `FieldRef::Value`.
+- **Diagnostic codes** are `nyi/…` (deferred), `reject/…` (meaningless) and `lit/…`
+  (malformed literal), so tests assert on identity rather than wording. Phase 9 owns the
+  single error taxonomy and may replace them with an enum.
 
 **Invariants in scope:** *upholds:* [I10](docs/invariants.md#i10) (typecheck enforces stable
 discriminants at schema-load). No engine invariant made green here.
 
 **Tasks:**
-- **2a.** Audit the `focus` grammar/lexer vs the target feature list (using `lens` as
-  reference); table of "parses / rejected-where / not-yet-representable." *Done:* table + a
-  failing test per gap.
-- **2b.** Lexer: `QId`, `Nat`-underscore, `..`/`.` munch, `never`. *Done:* unit tests (incl.
-  `E.from` ≠ qualname, `a.B.c` boundaries, `1__0` rejected) pass.
-- **2c.** Grammar: dot-tighter-than-application; postfix `.field` chain; permissive
-  `pattern = pattern`; nested record / union-select (`?`) / disjunction (`|`) *surface*
-  syntax. *Done:* parse tests over a corpus incl. deferred features; parser build clean.
-- **2d.** Façade → `SyntaxTree` store lowering aligned; boxed AST reconciled (sorted-slice
-  record fields). *Done:* round-trip/structure tests; delete subsumed `lens` parse/lower files.
-- **2e.** Typecheck (re-implemented from `lens/ty.rs`) to the backend type model
-  (`PredicateTy` incl. `Fact`/`Record`; union discriminants stable), emitting "not yet
-  implemented" diagnostics for deferred constructs.
+- **2a.** ✅ Audit the `focus` grammar/lexer vs the target feature list. The table is
+  **executable** — `focus::corpus` holds it as data (37 entries, since grown), each classified
+  `Supported` / `Diagnosed(code)` / `ParseError`, so it cannot drift from what the compiler
+  does. Running it before touching the grammar gave the audit empirically: 6 entries did not
+  parse, and they were exactly the six constructs 2c adds.
+- **2b.** ✅ Lexer: token boundaries pinned (`E.from` ≠ qualname, `a.B.c`, `..` munch,
+  keywords) and the literal decoders added — `parse_nat`, `signed_literal`, `unescape_str`,
+  each reporting by code. **Prerequisite discovered:** nothing in the grammar was testable,
+  because `focus` had no parse entry point and no CST façade; those landed first
+  (`focus::cst`, `focus::parse`).
+- **2c.** ✅ Grammar: parens (group + subquery), `never`, union select, flat disjunction,
+  statement negation. Resolutions above.
+- **2d.** ✅ Façade → `SyntaxTree` store lowering (`focus::lower`), with sorted-slice record
+  fields and a duplicate-field rejection. The boxed ergonomic AST (representation 3) is **not**
+  built — nothing needs it yet — so `lens/query.rs` survives.
+- **2e.** ✅ Typecheck (`focus::ty`, re-implemented from `lens/ty.rs`) against `PredicateTy`,
+  emitting one specific diagnostic per deferred construct. No `Ty::Never`: `never` reports as
+  not-yet-implemented, so a type for it would be speculative.
 
 **Acceptance:**
-- [ ] The target-feature corpus parses in `focus` (incl. constructs deferred to later phases).
-- [ ] The implemented subset typechecks; every deferred construct yields a specific, tested diagnostic — never a parse error or panic.
-- [ ] Subsumed `lens` files deleted.
+- [x] The target-feature corpus parses in `focus` (incl. constructs deferred to later phases) —
+      `corpus::every_entry_parses_as_classified`.
+- [x] The implemented subset typechecks; every deferred construct yields a specific, tested
+      diagnostic — never a parse error or panic —
+      `corpus::every_entry_is_diagnosed_as_classified`, which compares the *whole set* of codes
+      so a deferred construct cannot also report a type error about itself.
+- [x] Subsumed `lens` files deleted (7 of 12; `hoist.rs` + `query.rs` and their dependencies
+      remain as the Phase 4 reference).
+
+**Two extras the phase paid for, recorded because they are one-way doors of their own:**
+`parse` bounds nesting *before* parsing (the generated parser is recursive descent and
+`pattern` is mutually recursive through both records and application, so deep input would
+overflow the stack — a panic on a data path); and a record *pattern* may name a subset of a
+key's fields, an omitted field being a wildcard, while two record *types* must still agree
+exactly ([chapter 7](docs/07-compilation.md)).
 
 ---
 
@@ -231,15 +313,44 @@ tables; explicitly no memoization).
 **Invariants in scope:** none made green (plumbing). *upholds:* the record-field-ordering
 convention across tree layers.
 
+**Smaller than it was written, because Phase 2 delivered four of its pieces:** keep-going
+diagnostics in all three phases, single-lex (`aea2003a6`), severity-aware `has_errors`
+(`ef70c8c6d` — added precisely so a pooled sink carrying a warning would not read as a failed
+parse), and a side table of *resolved* types. What was left is the sink, the context, and the
+rendering.
+
 **Tasks:**
-- **3a.** Stand up the context (diagnostics + interners + store/side tables); thread it
-  through parse → typecheck. *Done:* typecheck reports multiple diagnostics in one pass (tested).
-- **3b.** The driver sequencing phases to `plan(query)` (a stub into Phase 4). *Done:*
-  end-to-end "text → typed → (stub) plan" for the implemented subset, all diagnostics through one sink.
+- **3a.** ✅ `focus::diag` — the sink and the code taxonomy. `Code` is an enum (20 variants,
+  `as_str` rendering exactly the strings Phase 2 used, `kind` deriving the prefix); the
+  `Diagnostic` alias moves out of `parser.rs`, which is generated-parser glue; `Diagnostics`
+  reports with either span type and filters `has_errors` by severity.
+- **3b.** ✅ Phases take the sink and cannot return diagnostics — `parse → Option<Cst>`,
+  `lower → Ast`, `check → Typed`. *Done:* the corpus gates pass **unchanged**, which is what
+  proves the signature change altered no behaviour.
+- **3c.** ✅ `focus::compile::Compilation` — source, schema, interner, sink, tree and side
+  tables in one context; `check()` sequences the phases; rendering lives here. The CST is
+  deliberately not stored (it borrows the source; storing it buys a self-referential struct).
+- **3d.** ✅ `plan()` as the Phase 4 seam: type-checks, then reports `nyi/flatten`.
+- **3e.** ✅ `src/main.rs` compiles only through the driver.
 
 **Acceptance:**
-- [ ] One context carries diagnostics + interning + the typed store through the pipeline.
-- [ ] `plan(q)` runs typecheck → flatten in sequence; multi-error diagnostics render via `codespan-reporting` (tested).
+- [x] No front-end function returns diagnostics — the sink is the only path. Structural: the
+      signatures are the check, so there is nothing to test and nothing to remember.
+- [x] One context carries diagnostics + interning + the typed store through the pipeline, and
+      is the only thing the shell calls.
+- [x] `plan(q)` sequences the phases and reports `nyi/flatten` (a query that does not
+      typecheck has no plan to report as missing).
+- [x] Multi-error diagnostics render via `codespan-reporting`, **in source order**, tested
+      against a buffer — `compile::one_sink_holds_every_phase_and_rendering_sorts_it` and the
+      shell's own `a_line_wrong_twice_prints_both_faults_in_source_order`.
+- [x] Determinism and composed-no-panic properties green over generated input; the ledger is
+      still 4 entries, since this phase makes no invariant green and adds no pending guard.
+
+**What the phase discovered:** a sink has **two orders**. Diagnostics arrive in phase order —
+lowering's before typecheck's, whatever part of the query each is about — which is right for a
+log and wrong for a reader. Rendering sorts by where a diagnostic points; the sink does not,
+because that arrival order is what lets a caller ask what one phase reported. Both are pinned
+by one test on the same two diagnostics.
 
 ---
 
@@ -312,6 +423,16 @@ Phase 9; don't build in state a wire shell can't reproduce.
 a store with fixtures; run compiled plans via `enumerate` and print projected `Value`s;
 `:commands` (show flattened plan, show diagnostics). *Done per task:* an integration test
 drives a query string through the REPL path and asserts the printed rows.
+
+**Part of this already exists, from Phase 2** (`src/main.rs`): the loop, line editing, live
+highlighting from the compiler's own lexer, codespan diagnostic rendering, a real `FjallDb`
+seeded at startup, and `:schema` / `:facts` — the latter driving a hand-built plan through
+`enumerate` and printing projected `Value`s, with fact references resolved to the facts they
+name. What is missing is the compile step in the middle: it stops at a type, because flatten
+does not exist. So Phase 5 owes the `plan(query)` call and the `:commands` that show a plan —
+not the shell around it. It earned its place early by finding a double-reported lexer
+diagnostic that only a live front end makes obvious; treat it as the scaffold this phase
+already says it is.
 
 **Acceptance:**
 - [ ] Typing a focus query returns rows (or a well-rendered diagnostic) against a fixture store, end-to-end, through the real compiler and executor.
@@ -413,7 +534,10 @@ resolution, `schema_path` roots, and redeclaration errors are
 - *makes green:* [I13](docs/invariants.md#i13) (`schema::ingest_rejects_incompatible_schema`
   + `schema::fingerprint_is_order_independent`); [I10](docs/invariants.md#i10)
   (`schema::discriminants_append_only`) when unions are represented.
-- *upholds:* [I3](docs/invariants.md#i3) (reject schema changes that would violate on-disk marker ordering).
+- *upholds:* [I3](docs/invariants.md#i3) (reject schema changes that would violate on-disk marker ordering);
+  [I11](docs/invariants.md#i11) — **a predicate id must fit the 24-bit fact-id tag**; the
+  schema loader is where that is validated (the store rejects it today, but only at the point
+  it would create the predicate's trees).
 
 **Tasks:** schema lexer/parser; lower to the schema/type model; canonical form +
 fingerprints; validate the freeze-invariants (stable discriminants, marker ordering); wire

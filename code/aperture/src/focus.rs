@@ -1,13 +1,24 @@
+pub mod compile;
+pub mod cst;
+pub mod diag;
 pub mod error;
 pub mod iter;
+pub mod lower;
+pub mod parse;
 pub mod plan;
+pub mod print;
 pub mod schema;
 pub mod store;
 pub mod syntax;
 pub mod tuple;
+pub mod ty;
 
-pub(crate) mod lexer;
-pub(crate) mod parser;
+// The generated-parser glue and its `logos` lexer. Public because the façade
+// (`cst`) hands out `Rule` and `Token` values, and because later phases — the
+// compilation driver, then the extracted front-end crate — parse from outside
+// this module.
+pub mod lexer;
+pub mod parser;
 
 // Test-support surface: the in-memory store and the hand-built fixtures the
 // executor batteries import. Gated so `--features proptest` exposes them to
@@ -17,6 +28,11 @@ pub mod mem_store;
 
 #[cfg(any(test, feature = "proptest"))]
 pub mod fixtures;
+
+// The target-feature corpus — Phase 2's audit table as data, and the acceptance
+// gate for the grammar surface.
+#[cfg(any(test, feature = "proptest"))]
+pub mod corpus;
 
 // #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // pub struct PredicateId(u32);

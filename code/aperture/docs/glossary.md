@@ -33,6 +33,10 @@ stripped form of a schema; the thing a fingerprint is computed over. [ch6](06-ty
 **Complete** — the sealed, immutable lifecycle state; every open-for-write is then refused
 ([ops-I2](invariants.md#ops-i2)). Opposite: **Writable**. [Operations](aperture-cli-design.md).
 
+**corpus** — `focus::corpus`, the focus language surface as *data*: each snippet classified
+`Supported` / `Diagnosed(code)` / `ParseError`, and the acceptance gate for permissive-early.
+[testing](testing.md).
+
 **CST façade** — the first tree: an untyped, lossless, grammar-shaped concrete syntax tree
 with spans and text. [ch7](07-compilation.md).
 
@@ -63,8 +67,11 @@ backtrack on exhaustion; suspend on `Stream::Suspend`. [ch4](04-executor.md).
 **fact** — a typed record, the unit of data; belongs to a predicate; has a `FactId`.
 [ch1](01-concepts.md).
 
-**FactId** — a `u64` identifying a fact within a DB; unique, stable, never reused
-([I11](invariants.md#i11)); a physical id, not cross-DB identity. [ch3](03-storage-model.md).
+**FactId** — a `u64` identifying a fact within a DB: a **snowflake** — predicate id in the
+high 24 bits, per-predicate sequence in the low 40. Unique, stable, never reused
+([I11](invariants.md#i11)); a physical id, not cross-DB identity. The tag is what lets
+`entities` be split per predicate and `point()` still be one lookup.
+[ch3](03-storage-model.md).
 
 **FactRef** — a fact-reference value; encoded with its own `MARK_FACT_REF` (0x51). Typed
 `PredicateTy::Fact(PredicateId)`. [ch2](02-tuple-codec.md), [ch6](06-types-and-schema.md).
@@ -101,11 +108,14 @@ facts and rejecting same-key-different-value at the frontier. [Operations](apert
 **keys** — the column family `predicate_id ++ encoded_key → fact_id`; the index; prefix scans
 over it *are* predicate queries; the only CF the scan hot loop touches. [ch3](03-storage-model.md).
 
-**keyspace-per-predicate** — each predicate gets its own fjall tree (predicate id = key
-prefix); gives physical isolation and fearless parallel ingest. [ch3](03-storage-model.md).
+**keyspace-per-predicate** — each predicate gets its own pair of fjall trees, `keys.<id>` and
+`entities.<id>` (predicate id also stays the `keys` prefix); gives physical isolation,
+fearless parallel ingest, and an O(1) wholesale drop. Costs ~30 ms per tree to create.
+[ch3](03-storage-model.md).
 
 **lens** — `src/lens/`, the superseded first-attempt front end; not compiled; a reference to
-re-implement into `focus`, then delete. [ch1](01-concepts.md).
+re-implement into `focus`, then delete file-by-file. Down to flatten (`hoist.rs`) and the boxed
+AST (`query.rs`). [ch1](01-concepts.md).
 
 **MachineState** — the register file: `Box<[Option<Register>]>`. [ch4](04-executor.md).
 

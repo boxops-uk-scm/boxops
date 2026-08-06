@@ -9,10 +9,12 @@ only at the `Plan`. Covered here: the three tree representations and why each ex
 distinction, and **derived facts** — the one place a feature is allowed to change the core
 machine.
 
-> **Status.** The front end lives only partly in `src/focus/` today (grammar, lexer, the
-> `SyntaxTree` store); typecheck and flatten are being re-implemented into `focus` from the
-> superseded `src/lens/` prototype. This chapter is the *design*; [`PLAN.md`](../PLAN.md)
-> Phases 1–3 are the build.
+> **Status.** `lex → parse → lower → typecheck` is live in `src/focus/` (`grammar.llw`,
+> `lexer.rs`, `cst.rs`, `parse.rs`, `lower.rs`, `syntax.rs`, `ty.rs`) as of
+> [`PLAN.md`](../PLAN.md) Phase 2, with the boxed ergonomic AST (representation 3 below) not
+> yet built because nothing needs it. **Flatten and reorder are not built** — `src/lens/hoist.rs`
+> is their reference. The compilation driver below is Phase 3; flatten is Phase 4. This chapter
+> is the *design*.
 
 ---
 
@@ -44,6 +46,47 @@ Keep the representation choices **consistent** across all three — most importa
 fields are sorted `[(Symbol, T)]` slices everywhere, never `HashMap` ([chapter
 6](06-types-and-schema.md), [conventions](conventions.md)).
 
+### The typed tree prints back to source
+
+`focus::print` renders the `SyntaxTree` store as focus text, and it is the inverse of
+`parse → lower`: **`parse ∘ print` is the identity on trees.** That is not a convenience — it is
+what lets the front end be *property-tested* rather than only checked against hand-written
+snippets. Generate a tree, print it, parse it, compare; the corpus then says which syntax is
+acceptable, and the round-trip says the pipeline is faithful across all of it
+([testing](testing.md)).
+
+The other direction does not hold, and is not claimed: printing normalises whitespace, drops
+redundant parentheses, and picks its own string escapes. The comparison is therefore between
+*canonical forms* of trees — a separate s-expression rendering, deliberately not focus syntax,
+so the property cannot be satisfied by the printer agreeing with itself.
+
+The whole difficulty is parentheses: printing has to re-insert exactly the ones the grammar's
+three precedence levels require, which makes the printer the place where the precedence
+decisions are stated executably rather than in prose.
+
+### A node's span is the whole text it stands for
+
+Typecheck labels a diagnostic with the node's span whatever the node is (`ty.rs`), so the rule
+has to be uniform: **a node spans all of its own source text.** An application covers
+`test.Foo X`, a record covers `{…}` — and a postfix chain step covers `X.a.b`, not the `b` it
+was written with. A step spanning only its name would underline one identifier where every
+other kind underlines the construct.
+
+Two consequences are worth stating, because both are easy to get subtly wrong:
+
+- **A step's start comes from the chain, not from its base node.** A parenthesised base
+  *excludes* its parens (`paren_primary` lowers as a pass-through to its child, so the child
+  keeps the span it was pushed with), and measuring from there would put
+  `(test.Foo _).value` at `test.Foo _).value` — an underline that opens inside a paren it never
+  closes.
+- **Precedence parens belong to no node.** They are inserted by *printing* to preserve a shape,
+  so they sit outside the span of what they wrap. A subquery's parens are the opposite case:
+  they belong to its own rule, and are inside it.
+
+The printer is what makes this testable. It knows where it emitted each node, so it can
+*predict* every span, and lowering the printed text must recover exactly those ranges
+([testing](testing.md)) — a generated tree has no source of its own to compare against.
+
 ---
 
 ## The pipeline
@@ -65,9 +108,17 @@ narrow later**:
 
 Why: the grammar is the widest one-way door. Reshaping it after downstream code depends on
 its tree shape is expensive, so getting it permissive-and-stable once lets every later phase
-add *meaning* to constructs that already parse. (Known lexer/grammar conflict resolutions —
-`QId` qualified names, `..`/`.` maximal munch, dot-tighter-than-application — are recorded in
-[`PLAN.md`](../PLAN.md) Phase 2.)
+add *meaning* to constructs that already parse. (The settled lexer/grammar resolutions — the
+two precedence rules, flat disjunction, the group/subquery factoring, statement-level
+negation, permissive `Nat` — are recorded in [`PLAN.md`](../PLAN.md) Phase 2, each with the
+test that pins it.)
+
+One consequence worth stating, since it is not a grammar property at all: the generated
+parser is **recursive descent**, and `pattern` is mutually recursive with itself through both
+records and fact application. Deep input would overflow the stack, which on a data path must
+be an error ([conventions](conventions.md)) — so `parse` bounds nesting from the token stream
+*before* parsing, at the codec's `MAX_RECORD_DEPTH`, and returns no tree when the bound is
+exceeded.
 
 ### typecheck — annotate, don't mutate
 
@@ -76,6 +127,25 @@ the `NodeId` side table. It accepts the implemented subset and emits **specific,
 yet implemented" diagnostics** for the deferred constructs the grammar allowed through. It's
 also where one-way-door schema rules are enforced at load (stable discriminants,
 [I10](invariants.md#i10)).
+
+Three properties make "permissive early" actually work rather than merely parse:
+
+- **Diagnostics carry a code** — `nyi/…` for a deferred construct, `reject/…` for a
+  meaningless one, `lit/…` for a malformed literal — so the promise is *testable* by identity
+  rather than by wording. The [corpus](testing.md) asserts the whole set of codes a snippet
+  draws, which is what stops a deferred construct also reporting a type error about itself.
+- **Errors accumulate.** A failed unification rolls its substitution back, so a mistake in one
+  record field cannot poison its siblings, and checking continues — a query the grammar let
+  through can be wrong several ways at once and should say so in one pass.
+- **Poison propagates.** `Ty::Error` unifies with anything *and* binds an unbound variable to
+  itself. Without the second half, `X = nosuch.Pred _` reports the unknown predicate and then
+  reports again at every `X.field` that follows.
+
+**A record pattern may name a subset of the fields; a record type may not.** An omitted field
+in a pattern is a wildcard, so `Edge {from = 1}` means "any edge from 1" — which is exactly
+what sargeability wants, since a mentioned prefix of the key becomes a seek and the rest a
+scan. Unifying two record *types*, by contrast, requires the same field set: a pattern is a
+partial description of a value, a type is not.
 
 ### flatten — the crux
 
@@ -129,8 +199,8 @@ That's the next section, and it's why the reorder interface takes a DAG from day
 
 ## The compilation driver
 
-The phases don't thread their own state; they run through one **compilation context** that
-carries the shared plumbing:
+The phases don't thread their own state; they run through one **compilation context**
+(`focus::compile::Compilation`) that carries the shared plumbing:
 
 - **One diagnostics sink** for the whole pipeline (parse/typecheck/flatten), accumulating
   errors and **continuing** rather than failing fast (permissive-grammar-narrow-later needs
@@ -143,6 +213,37 @@ carries the shared plumbing:
 The driver's terminal product is `plan(query) -> Plan`. Explicitly **not** now: memoization,
 incremental recomputation, a `salsa`-style query engine — the context is a plain threaded
 struct; incrementality must not be designed-in speculatively ([`PLAN.md`](../PLAN.md) Phase 3).
+
+Three things about the sink are load-bearing, and the third was a surprise.
+
+**A phase reports by pushing, and cannot return diagnostics.** `parse`, `lower` and
+`ty::check` take `&mut Diagnostics` and hand back only their artifact. A `Vec` handed back is
+a `Vec` a caller can drop, which made "every diagnostic reaches the user" a property of each
+call site rather than of the code — the same shape of problem as an executor that *could* be
+parked across a suspend, and the same fix ([I8](invariants.md#i8)): make the wrong thing
+unexpressible rather than forbidden.
+
+**A code is an identity, not a string.** `diag::Code` enumerates the taxonomy — `nyi/…`
+deferred to a later phase, `reject/…` meaningless, `lit/…` a malformed literal — so a typo
+cannot make a test pass for the wrong reason, and `Code::kind` answers "is this something
+that will work later?" without parsing the prefix back out. Phase 9 still owns the error
+taxonomy end to end; this is its shape.
+
+**The sink has two orders, and they are not the same.** Diagnostics arrive in *phase* order,
+so a fault at the head of a query found by typecheck lands after one in its body found by
+lowering. That is right for the sink, which is a log — it is what lets a caller ask what a
+single phase reported — and wrong for a person, who reads the query top to bottom. So
+**rendering sorts by where a diagnostic points and the sink does not**: presentation is a
+different question from accumulation, and conflating them means one of the two answers is
+wrong.
+
+### The refusal case
+
+`parse` returns `Option<Cst>`, and `None` means *no tree at all* — a source too long to
+address, or nesting past the cap. It is not "a tree with errors in it": that is the ordinary
+case, comes back as `Some`, and is what lowering's error nodes and typecheck's poison exist
+to handle. Keeping the two distinct in the type is what stops a driver treating a refusal as
+an empty query.
 
 ---
 

@@ -17,11 +17,12 @@ use lasso::Rodeo;
 use tokio_util::sync::CancellationToken;
 
 use crate::focus::{
-    error::ApertureError,
+    error::{ApertureError, StoreError},
     iter::{Cursor, Executor, Iteratee, Stream},
     plan::{Entity, FactId, FactStore, Plan},
     schema::{LocalInterner, PREDICATE_ID_SIZE, PredicateId, SchemaInterner},
-    tuple::{Value, put_i64, put_str},
+    store::predicate_of,
+    tuple::{Value, put_i64, put_str, strinc},
 };
 
 /// Encode a single i64 key field.
@@ -68,11 +69,11 @@ pub fn collect_rows<S: FactStore>(
     interner: &LocalInterner,
 ) -> Result<Vec<Value>, ApertureError> {
     let cancel = CancellationToken::new();
-    let mut ex = Executor::new(store, plan);
+    let ex = Executor::new(store, plan);
 
     let out = ex.enumerate(
         Vec::new(),
-        |mut acc, row| {
+        |mut acc, mut row| {
             acc.push(row.to_value(interner)?);
             Ok(Stream::Continue(acc))
         },
@@ -91,7 +92,7 @@ pub fn collect_rows<S: FactStore>(
 /// decode and allocate at the escape boundary.
 pub fn count_rows<S: FactStore>(store: S, plan: Plan) -> Result<usize, ApertureError> {
     let cancel = CancellationToken::new();
-    let mut ex = Executor::new(store, plan);
+    let ex = Executor::new(store, plan);
 
     let out = ex.enumerate(0usize, |n, _row| Ok(Stream::Continue(n + 1)), &cancel)?;
 
@@ -136,14 +137,14 @@ pub fn run_with_suspends<S: FactStore>(
     loop {
         let (store, plan) = mk();
 
-        let mut ex = match cursor.take() {
+        let ex = match cursor.take() {
             None => Executor::new(store, plan),
             Some(cursor) => Executor::resume(store, plan, cursor)?,
         };
 
         let out = ex.enumerate(
             (rows, emitted),
-            |(mut rows, n), row| {
+            |(mut rows, n), mut row| {
                 rows.push(row.to_value(interner)?);
                 let n = n + 1;
 
@@ -174,6 +175,147 @@ pub fn run_with_suspends<S: FactStore>(
     }
 }
 
+/// Assert the [`FactStore`] scan contract: **every row a scan yields lies inside
+/// the predicate named by `lo`'s prefix.**
+///
+/// This is a contract on the trait, not a property of one backend, so every impl
+/// is held to it — including for `hi = None`, which the trait permits and which a
+/// store must therefore clamp itself. A scan that walks past the predicate binds a
+/// *different* predicate's row into the register, and the join above it silently
+/// produces wrong results rather than failing.
+///
+/// [`FjallStore`](crate::focus::store::FjallStore) satisfies this structurally —
+/// one keyspace per predicate, so there is nothing else in the tree to walk into.
+/// [`MemStore`](super::mem_store::MemStore) holds every predicate in one
+/// map and has to clamp explicitly; it did not, and an unbounded scan walked on
+/// into the next predicate's rows. That bug is why this assertion exists.
+///
+/// [I1]: ../../../docs/invariants.md
+pub fn assert_scan_stays_in_predicate<S: FactStore>(
+    store: &S,
+    lo: &[u8],
+    hi: Option<&[u8]>,
+) -> Result<(), ApertureError> {
+    let predicate = lo
+        .get(..PREDICATE_ID_SIZE)
+        .expect("a scan bound names a predicate in its first four bytes");
+
+    for row in store.scan(lo, hi)? {
+        let (key, fact_id) = row?;
+        assert!(
+            key.starts_with(predicate),
+            "scan from {lo:?} (hi {hi:?}) yielded {key:?} (fact {fact_id:?}), \
+             which is outside predicate {predicate:?}"
+        );
+    }
+
+    Ok(())
+}
+
+/// Assert the other half of the scan contract: **a bound too short to name a
+/// predicate is rejected when the scan is opened**, identically by every impl.
+///
+/// Opening a scan can fail, so it is `scan` that reports it rather than the first
+/// row. While it could not, this case was unspecified and each implementation
+/// answered differently — the real store smuggled the fault out as a first row,
+/// while the two model stores read "no predicate to bound to" as "no bound" and
+/// scanned straight across the boundary, which is the leak
+/// [`assert_scan_stays_in_predicate`] exists to forbid. No valid bound is ever
+/// short, so nothing caught the divergence.
+pub fn assert_short_bound_is_rejected<S: FactStore>(store: &S, lo: &[u8]) {
+    assert!(
+        lo.len() < PREDICATE_ID_SIZE,
+        "this asserts the *malformed* case; {lo:?} is a legal bound"
+    );
+
+    match store.scan(lo, None) {
+        Err(ApertureError::Store(StoreError::ShortScanBound { len, expected })) => {
+            assert_eq!(len, lo.len());
+            assert_eq!(expected, PREDICATE_ID_SIZE);
+        }
+        Err(other) => panic!("expected a short-bound error, got {other}"),
+        Ok(_) => panic!("a {}-byte bound was accepted", lo.len()),
+    }
+}
+
+/// A `FactStore` wrapper counting how many things it has handed out that are
+/// **still alive** — itself, plus every scan it opened — for the I8 guard
+/// (`store::snapshot_released_at_suspend`).
+///
+/// Both have to be counted, because either alone keeps a fjall read snapshot
+/// pinned: the store handle owns the `Snapshot`, and every `Iter` fjall hands out
+/// holds its own clone of the snapshot nonce. A guard that watched only the
+/// iterators would pass while the whole snapshot stayed open.
+///
+/// The count reaching zero is the *localising* half of the guard — it says which
+/// object survived. The authoritative half is fjall's own open-snapshot count
+/// (`FjallDb::open_snapshots`).
+pub struct DropProbe<S: FactStore> {
+    inner: S,
+    live: Arc<AtomicUsize>,
+}
+
+impl<S: FactStore> DropProbe<S> {
+    /// Wrap `inner`, returning the probe and a handle to its live-object count.
+    /// The count starts at 1: the store handle itself.
+    pub fn new(inner: S) -> (Self, Arc<AtomicUsize>) {
+        let live = Arc::new(AtomicUsize::new(1));
+        (
+            Self {
+                inner,
+                live: Arc::clone(&live),
+            },
+            live,
+        )
+    }
+}
+
+impl<S: FactStore> Drop for DropProbe<S> {
+    fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub struct ProbedScan<I> {
+    inner: I,
+    live: Arc<AtomicUsize>,
+}
+
+impl<I> Drop for ProbedScan<I> {
+    fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl<I: Iterator> Iterator for ProbedScan<I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<I::Item> {
+        self.inner.next()
+    }
+}
+
+impl<S: FactStore> FactStore for DropProbe<S> {
+    type Scan = ProbedScan<S::Scan>;
+
+    fn scan(&self, lo: &[u8], hi: Option<&[u8]>) -> Result<Self::Scan, ApertureError> {
+        // Counted only once the inner scan exists. A failed open hands out
+        // nothing, so incrementing first would leave a count no drop balances and
+        // the I8 guard would report a leak that never happened.
+        let inner = self.inner.scan(lo, hi)?;
+        self.live.fetch_add(1, Ordering::SeqCst);
+
+        Ok(ProbedScan {
+            inner,
+            live: Arc::clone(&self.live),
+        })
+    }
+
+    fn point(&self, id: FactId) -> Result<Option<Entity>, ApertureError> {
+        self.inner.point(id)
+    }
+}
+
 /// A `FactStore` wrapper that counts `point()` calls, for the I6 guard
 /// (`exec::no_value_fetch_in_scan`): a value must be fetched from `entities`
 /// only at projection, never during a key-only scan.
@@ -199,7 +341,7 @@ impl<S: FactStore> PointSpy<S> {
 impl<S: FactStore> FactStore for PointSpy<S> {
     type Scan = S::Scan;
 
-    fn scan(&self, lo: &[u8], hi: Option<&[u8]>) -> Self::Scan {
+    fn scan(&self, lo: &[u8], hi: Option<&[u8]>) -> Result<Self::Scan, ApertureError> {
         self.inner.scan(lo, hi)
     }
 
@@ -232,14 +374,36 @@ impl FrozenStore {
         predicate_id: PredicateId,
         facts: impl IntoIterator<Item = (Vec<u8>, u64)>,
     ) -> Self {
+        Self::from_facts(
+            facts
+                .into_iter()
+                .map(move |(key_fields, sequence)| (predicate_id, key_fields, sequence)),
+        )
+    }
+
+    /// Build from key-only facts spread across predicates.
+    ///
+    /// The multi-predicate case is what makes the scan contract testable here at
+    /// all — a store holding one predicate cannot leak out of it.
+    ///
+    /// `sequence` is the fact's number *within its predicate*, not a raw
+    /// [`FactId`], for the same reason [`MemStore::insert_valued`] takes one: the
+    /// real store composes a snowflake id from the two, so a fixture that took
+    /// whole ids could hold a fact tagged for a different predicate — or, as this
+    /// one did, sequence 0, which [I11] reserves precisely so that no valid id is
+    /// `FactId(0)`.
+    ///
+    /// [I11]: ../../../docs/invariants.md
+    /// [`MemStore::insert_valued`]: super::mem_store::MemStore::insert_valued
+    pub fn from_facts(facts: impl IntoIterator<Item = (PredicateId, Vec<u8>, u64)>) -> Self {
         let mut rows: Vec<FrozenFact> = facts
             .into_iter()
-            .map(|(key_fields, id)| {
+            .map(|(predicate_id, key_fields, sequence)| {
                 let mut full = predicate_id.0.to_be_bytes().to_vec();
                 full.extend_from_slice(&key_fields);
                 FrozenFact {
                     key: ByteView::from(full),
-                    fact_id: FactId(id),
+                    fact_id: FactId::new(predicate_id, sequence).expect("test fixture fact id"),
                     value: ByteView::from(Vec::new()),
                 }
             })
@@ -273,17 +437,31 @@ impl Iterator for FrozenScan {
 impl FactStore for FrozenStore {
     type Scan = FrozenScan;
 
-    fn scan(&self, lo: &[u8], hi: Option<&[u8]>) -> FrozenScan {
+    fn scan(&self, lo: &[u8], hi: Option<&[u8]>) -> Result<FrozenScan, ApertureError> {
+        // A scan never crosses out of the predicate named by `lo`'s prefix — the
+        // trait's contract, which [`assert_scan_stays_in_predicate`] holds every
+        // impl to. Like `MemStore`, this store keeps every predicate in one
+        // sorted run and so has to clamp explicitly; the real store gets it
+        // structurally from one keyspace per predicate.
+        //
+        // A fixture that shipped beside that assertion while breaking it is worse
+        // than one that never claimed to satisfy it, because it reads as evidence.
+        let predicate_end = strinc(&predicate_of(lo)?.to_be_bytes());
+        let upper = match (hi, predicate_end.as_deref()) {
+            (Some(hi), Some(predicate_end)) => Some(hi.min(predicate_end)),
+            (hi, predicate_end) => hi.or(predicate_end),
+        };
+
         let start = self.rows.partition_point(|f| f.key.as_ref() < lo);
-        let end = match hi {
-            Some(hi) => self.rows.partition_point(|f| f.key.as_ref() < hi),
+        let end = match upper {
+            Some(upper) => self.rows.partition_point(|f| f.key.as_ref() < upper),
             None => self.rows.len(),
         };
-        FrozenScan {
+        Ok(FrozenScan {
             rows: Arc::clone(&self.rows),
             idx: start,
             end,
-        }
+        })
     }
 
     fn point(&self, id: FactId) -> Result<Option<Entity>, ApertureError> {
@@ -291,5 +469,39 @@ impl FactStore for FrozenStore {
             key: f.key.slice(PREDICATE_ID_SIZE..),
             value: f.value.clone(),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// [`FrozenStore`] is held to the same scan contract as every other
+    /// `FactStore`, including the `hi = None` case the trait permits — the case
+    /// `MemStore` was once wrong about, and this store was silently wrong about
+    /// too until it gained a second predicate to leak into.
+    #[test]
+    fn frozen_store_scan_stays_in_its_predicate() {
+        let (first, second) = (PredicateId(0), PredicateId(1));
+
+        let store = FrozenStore::from_facts([
+            (first, i64_field(1), 1),
+            (first, i64_field(2), 2),
+            (second, i64_field(1), 1),
+            (second, i64_field(2), 2),
+        ]);
+
+        for predicate in [first, second] {
+            let lo = predicate.0.to_be_bytes().to_vec();
+            let hi = strinc(&lo);
+
+            for hi in [hi.as_deref(), None] {
+                assert_scan_stays_in_predicate(&store, &lo, hi).expect("frozen scan");
+            }
+
+            // ...and it yields the predicate's rows rather than none of them.
+            let rows = store.scan(&lo, None).expect("open scan").count();
+            assert_eq!(rows, 2, "predicate {} lost its rows", predicate.0);
+        }
     }
 }
