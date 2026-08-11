@@ -7,8 +7,8 @@ use tokio_util::sync::CancellationToken;
 use crate::focus::{
     error::{ApertureError, StoreCodecError, StoreError},
     plan::{
-        FactId, FactStore, FieldPath, Generator, Plan, Project, Residual, ResidualOp, SeekKey,
-        SeekKeyPart,
+        Computed, FactId, FactStore, FieldPath, Generator, Plan, Project, Residual, ResidualOp,
+        SeekKey, SeekKeyPart, Step,
     },
     schema::{LocalInterner, PREDICATE_ID_SIZE},
     tuple::{
@@ -60,8 +60,27 @@ impl Register {
     }
 }
 
+/// What a register holds: a **stored row**, or a **computed value**.
+///
+/// The fact case is the original register and the one
+/// [I5](../../docs/invariants.md#i5) is about — the whole row, fields decoded
+/// lazily at a read site. The value case is a *derived bind*'s output
+/// ([chapter 7](../../docs/07-compilation.md#derived-facts)): a pure function of
+/// the fact slots, which is exactly why the [`Cursor`] does not store one and a
+/// resume recomputes it instead.
+///
+/// The two are kept apart at the type level rather than unified behind "some
+/// bytes" because splicing a value where an id belongs — or the reverse — compares
+/// the wrong encoding and quietly matches nothing, which is the same class of
+/// silent fault the `FactRef` marker split guards against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Slot {
+    Fact(Register),
+    Value(Value),
+}
+
 pub struct MachineState {
-    pub registers: Box<[Option<Register>]>,
+    pub registers: Box<[Option<Slot>]>,
 }
 
 impl MachineState {
@@ -71,7 +90,37 @@ impl MachineState {
         }
     }
 
-    pub fn get(&self, address: Address) -> Result<&Register, ApertureError> {
+    /// The row bound to `address`.
+    ///
+    /// Reading a *value* slot here is a malformed plan, not a data condition: the
+    /// compiler knows which addresses derived binds write, so a seek splicing one
+    /// as a row is a compiler fault. It still reports rather than panics, because
+    /// a plan can also arrive off the wire.
+    pub fn fact(&self, address: Address) -> Result<&Register, ApertureError> {
+        match self.get(address)? {
+            Slot::Fact(register) => Ok(register),
+            Slot::Value(_) => Err(ApertureError::SlotKindMismatch {
+                address,
+                wanted: "a fact row",
+                held: "a computed value",
+            }),
+        }
+    }
+
+    /// The computed value bound to `address`, for a plan step reading a derived
+    /// bind's output.
+    pub fn value(&self, address: Address) -> Result<&Value, ApertureError> {
+        match self.get(address)? {
+            Slot::Value(value) => Ok(value),
+            Slot::Fact(_) => Err(ApertureError::SlotKindMismatch {
+                address,
+                wanted: "a computed value",
+                held: "a fact row",
+            }),
+        }
+    }
+
+    fn get(&self, address: Address) -> Result<&Slot, ApertureError> {
         self.registers
             .get(address.0)
             .ok_or(ApertureError::AddressOutOfBounds(address))?
@@ -378,6 +427,13 @@ struct StackFrame<S: FactStore> {
     scan: Option<S::Scan>,
     current: Option<Register>,
     field_offsets: Box<[FieldOffsets]>,
+    /// Whether a [`Step::Derive`] at this position has produced its one value —
+    /// unused by scan steps, which read the same thing off `scan`.
+    ///
+    /// This is the whole state a derived bind needs, and it has to live somewhere
+    /// the loop can read: arriving at a step from below and from above must do
+    /// different things, and `enumerate` carries no direction.
+    derived_produced: bool,
 }
 
 impl<S: FactStore> StackFrame<S> {
@@ -386,6 +442,7 @@ impl<S: FactStore> StackFrame<S> {
             scan: None,
             current: None,
             field_offsets: vec![FieldOffsets::new(); nvars].into_boxed_slice(),
+            derived_produced: false,
         }
     }
 
@@ -431,7 +488,7 @@ impl<S: FactStore> StackFrame<S> {
                             address: var_address,
                             path,
                         } => {
-                            let key = state.get(*var_address)?.key();
+                            let key = state.fact(*var_address)?.key();
                             let span =
                                 get_field_span(&mut self.field_offsets, &key, *var_address, path)?;
                             prefix.extend_from_slice(&key[span]);
@@ -439,7 +496,7 @@ impl<S: FactStore> StackFrame<S> {
                         // The register's *identity*, encoded as a fact-typed field
                         // holds it — never its key bytes (see the variant).
                         SeekKeyPart::RegisterFactId(var_address) => {
-                            let fact_id = state.get(*var_address)?.fact_id;
+                            let fact_id = state.fact(*var_address)?.fact_id;
                             prefix.extend_from_slice(&fact_ref_bytes(fact_id));
                         }
                     }
@@ -519,7 +576,7 @@ impl<S: FactStore> StackFrame<S> {
                     address: var_address,
                     path,
                 } => {
-                    let other = state.get(*var_address)?;
+                    let other = state.fact(*var_address)?;
                     let other_key = other.key();
                     let other_span =
                         get_field_span(frame_field_offsets, &other_key, *var_address, path)?;
@@ -530,7 +587,7 @@ impl<S: FactStore> StackFrame<S> {
                 // compare against a stack buffer — no decode, and no allocation in
                 // the scan loop ([I9]).
                 ResidualOp::EqRegisterFactId(var_address) => {
-                    field == fact_ref_bytes(state.get(*var_address)?.fact_id)
+                    field == fact_ref_bytes(state.fact(*var_address)?.fact_id)
                 }
             };
             if !ok {
@@ -596,10 +653,14 @@ fn project<S: FactStore>(
     match p {
         Project::Lit(v) => Ok(v.clone()),
 
-        Project::FactRef(address) => Ok(Value::FactRef(state.get(*address)?.fact_id)),
+        Project::FactRef(address) => Ok(Value::FactRef(state.fact(*address)?.fact_id)),
+
+        // A derived bind's output. Already a `Value` — computed, not decoded — so
+        // there is no row to walk and no type to decode against.
+        Project::Computed(address) => Ok(state.value(*address)?.clone()),
 
         Project::RegisterField { address, path, ty } => {
-            let reg = state.get(*address)?;
+            let reg = state.fact(*address)?;
             let key = reg.key();
 
             // Through the row's cache, so a head reading several fields of one
@@ -613,7 +674,7 @@ fn project<S: FactStore>(
             // The value lives in the `entities` CF, not in the register (which
             // holds `predicate_id ++ key`). Fetch it by fact id — the one place
             // a value is read (I6) — and decode the value bytes.
-            let reg = state.get(*address)?;
+            let reg = state.fact(*address)?;
             let entity = store
                 .point(reg.fact_id)?
                 .ok_or(ApertureError::DanglingFactId(reg.fact_id))?;
@@ -675,13 +736,14 @@ impl<S: FactStore> Executor<S> {
         }
     }
 
-    /// The bytes-only resume point: one detached row per open level.
+    /// The bytes-only resume point: one detached row per **level**.
     ///
-    /// Called at a suspend, where every level from 0 up to and including `depth`
-    /// has produced a row — so the cursor is expected to name `depth + 1` of them
-    /// and be contiguous. Asserted rather than assumed: collecting whatever
-    /// happened to be set would quietly renumber the levels if a frame in the
-    /// middle were ever empty, and `resume` replays a cursor by position.
+    /// Called at a suspend, where every step up to and including `depth` has
+    /// produced — so the cursor names every scan step among them, and nothing for
+    /// the derive steps, which are recomputed instead. Asserted rather than
+    /// assumed: collecting whatever happened to be set would quietly renumber the
+    /// levels if a frame in the middle were ever empty, and `resume` pairs cursor
+    /// entries with scan steps **by order**.
     pub fn build_cursor(&self) -> Cursor {
         let saved: Vec<Register> = self
             .stack
@@ -691,7 +753,10 @@ impl<S: FactStore> Executor<S> {
 
         debug_assert_eq!(
             saved.len(),
-            self.depth + 1,
+            self.plan.body[..=self.depth]
+                .iter()
+                .filter(|step| step.is_scan())
+                .count(),
             "a suspend cursor must name every level up to `depth`, contiguously"
         );
 
@@ -701,17 +766,23 @@ impl<S: FactStore> Executor<S> {
     pub fn resume(store: S, plan: Plan, cursor: Cursor) -> Result<Self, ApertureError> {
         let mut ex = Executor::new(store, plan);
 
-        // A `Cursor` is bytes-only and rebuilt from the wire, so it is untrusted:
-        // checked here rather than left to index `plan.body` out of bounds below.
-        if cursor.0.len() > ex.plan.body.len() {
-            return Err(ApertureError::CursorPlanMismatch {
-                cursor: cursor.0.len(),
-                plan: ex.plan.body.len(),
-            });
-        }
-
         if cursor.0.is_empty() {
             return Ok(ex);
+        }
+
+        // A `Cursor` is bytes-only and rebuilt from the wire, so it is untrusted:
+        // checked here rather than left to index `plan.body` out of bounds below.
+        //
+        // Compared against the **level** count, not the step count: a cursor holds
+        // one row per level and a suspend always happens at a full row, so anything
+        // other than exactly that many is a cursor this plan did not produce. It was
+        // `>` while the two counts were the same number, which let a short cursor
+        // half-replay a plan and carry on from the wrong place.
+        if cursor.0.len() != ex.plan.levels() {
+            return Err(ApertureError::CursorPlanMismatch {
+                cursor: cursor.0.len(),
+                plan: ex.plan.levels(),
+            });
         }
 
         // Replaying a cursor re-reads one row per level, so it cannot run long
@@ -719,27 +790,47 @@ impl<S: FactStore> Executor<S> {
         let cancel = CancellationToken::new();
         let mut deadline = Deadline::new(&cancel);
 
-        for (level, saved) in cursor.0.iter().enumerate() {
-            let generator = &ex.plan.body[level];
-            let frame = &mut ex.stack[level];
+        // One forward walk over the steps, which is the design's sentence made
+        // literal: **re-bind the fact-slots, recompute the value-slots**. A scan
+        // consumes the next cursor entry in order; a derive recomputes, because the
+        // cursor deliberately carries nothing for it.
+        let mut saved_rows = cursor.0.iter();
 
-            frame.open(&ex.store, generator, &ex.state, Some(&saved.bytes))?;
+        for index in 0..ex.plan.body.len() {
+            let frame = &mut ex.stack[index];
 
-            let row = frame
-                .next(&ex.state, generator, &mut deadline)?
-                .ok_or(ApertureError::BadResumeKey)?;
+            match &ex.plan.body[index] {
+                Step::Scan(generator) => {
+                    // Cannot run out: the length check above pinned the cursor to
+                    // exactly this plan's level count.
+                    let saved = saved_rows.next().ok_or(ApertureError::BadResumeKey)?;
 
-            if row.fact_id != saved.fact_id {
-                return Err(ApertureError::BadResumeKey);
+                    frame.open(&ex.store, generator, &ex.state, Some(&saved.bytes))?;
+
+                    let row = frame
+                        .next(&ex.state, generator, &mut deadline)?
+                        .ok_or(ApertureError::BadResumeKey)?;
+
+                    if row.fact_id != saved.fact_id {
+                        return Err(ApertureError::BadResumeKey);
+                    }
+
+                    for var_address in generator.binds.iter() {
+                        ex.state.registers[var_address.0] = Some(Slot::Fact(row.clone()));
+                    }
+                    frame.current = Some(row);
+                }
+
+                Step::Derive(derived) => {
+                    ex.state.registers[derived.bind.0] = Some(Slot::Value(compute(&derived.value)));
+                    frame.derived_produced = true;
+                }
             }
-
-            for var_address in generator.binds.iter() {
-                ex.state.registers[var_address.0] = Some(row.clone());
-            }
-            frame.current = Some(row);
         }
 
-        ex.depth = cursor.0.len() - 1;
+        // A suspend only ever happens at a full row, so every step had produced —
+        // which is why the walk above replays all of them and lands here.
+        ex.depth = ex.plan.body.len() - 1;
         Ok(ex)
     }
 
@@ -762,15 +853,6 @@ impl<S: FactStore> Executor<S> {
         mut step: impl FnMut(A, Row<'_, S>) -> Result<Stream<A>, ApertureError>,
         cancellation_token: &CancellationToken,
     ) -> Result<Iteratee<A>, ApertureError> {
-        // With no generators, `depth` is already at the head on the first pass and
-        // there is no level to back into — `depth -= 1` would underflow. Rejected
-        // rather than read as the unit relation: a single row emitted here could
-        // not be resumed past (an empty `Cursor` restarts the run), so it would
-        // trade a panic for a duplicated row.
-        if self.plan.body.is_empty() {
-            return Err(ApertureError::EmptyPlan);
-        }
-
         // One deadline for the whole run: the poll interval is a property of the
         // run, not of any single level's scan.
         let mut deadline = Deadline::new(cancellation_token);
@@ -787,47 +869,120 @@ impl<S: FactStore> Executor<S> {
                 match step(acc, row)? {
                     Stream::Continue(next) => {
                         acc = next;
+
+                        // No steps at all — a query whose every binding folded at
+                        // compile time, `X where X = 42`. It has produced its one
+                        // row and there is no level to back into; `depth -= 1` here
+                        // is what used to underflow, and is why an empty body was an
+                        // error. It is safe now for the same reason the suspend arm
+                        // below is: a plan with no levels is *exactly one row*, so
+                        // "done" is the truth rather than a guess.
+                        if self.plan.body.is_empty() {
+                            return Ok(Iteratee::Done(acc));
+                        }
+
                         self.depth -= 1;
                         continue;
                     }
                     Stream::Suspend(next) => {
                         acc = next;
+
+                        // A plan with no levels produces **exactly one row** — every
+                        // step is a derived bind, and a derived bind is one value —
+                        // so its cursor would be empty, and an empty cursor means
+                        // "start from the beginning". Suspending here would re-emit
+                        // that row on resume. Reporting `Done` instead is not a
+                        // half-answer: the run genuinely is complete, which is what
+                        // a resume would have discovered one round-trip later
+                        // anyway.
+                        if self.plan.levels() == 0 {
+                            return Ok(Iteratee::Done(acc));
+                        }
+
+                        // Back off the head before saving, so `depth` names the
+                        // innermost step holding a row — which is what the cursor
+                        // is checked against.
                         self.depth -= 1;
                         return Ok(Iteratee::Suspended(acc, self.build_cursor()));
                     }
                 }
             }
 
-            let generator = &self.plan.body[self.depth];
             let frame = &mut self.stack[self.depth];
 
-            if frame.scan.is_none() {
-                frame.open(&self.store, generator, &self.state, None)?;
-            }
+            // Descending or backtracking is not a variable the loop carries — it is
+            // read off the frame, which is what keeps this a defunctionalised state
+            // machine ([I7](../../docs/invariants.md#i7)). A scan reads it from
+            // whether its iterator is open; a derive step, having no iterator, needs
+            // the one bit below.
+            match &self.plan.body[self.depth] {
+                Step::Scan(generator) => {
+                    if frame.scan.is_none() {
+                        frame.open(&self.store, generator, &self.state, None)?;
+                    }
 
-            match frame.next(&self.state, generator, &mut deadline)? {
-                Some(register) => {
-                    for var_address in generator.binds.iter() {
+                    match frame.next(&self.state, generator, &mut deadline)? {
+                        Some(register) => {
+                            for var_address in generator.binds.iter() {
+                                let slot = self
+                                    .state
+                                    .registers
+                                    .get_mut(var_address.0)
+                                    .ok_or(ApertureError::AddressOutOfBounds(*var_address))?;
+                                *slot = Some(Slot::Fact(register.clone()));
+                            }
+                            frame.current = Some(register);
+                            self.depth += 1;
+                        }
+                        None => {
+                            frame.scan = None;
+                            frame.current = None;
+                            if self.depth == 0 {
+                                return Ok(Iteratee::Done(acc));
+                            }
+                            self.depth -= 1;
+                        }
+                    }
+                }
+
+                // A derived bind produces exactly one value, so as a step it is a
+                // one-row generator: compute and ascend the first time, report
+                // exhausted the second. That is the whole of "a derived bind is not
+                // a loop level" as the machine sees it — the difference from a scan
+                // is that it contributes nothing to the cursor and is recomputed on
+                // resume rather than replayed.
+                Step::Derive(derived) => {
+                    if frame.derived_produced {
+                        frame.derived_produced = false;
+                        if self.depth == 0 {
+                            return Ok(Iteratee::Done(acc));
+                        }
+                        self.depth -= 1;
+                    } else {
                         let slot = self
                             .state
                             .registers
-                            .get_mut(var_address.0)
-                            .ok_or(ApertureError::AddressOutOfBounds(*var_address))?;
-                        *slot = Some(register.clone());
+                            .get_mut(derived.bind.0)
+                            .ok_or(ApertureError::AddressOutOfBounds(derived.bind))?;
+                        *slot = Some(Slot::Value(compute(&derived.value)));
+                        frame.derived_produced = true;
+                        self.depth += 1;
                     }
-                    frame.current = Some(register);
-                    self.depth += 1;
-                }
-                None => {
-                    frame.scan = None;
-                    frame.current = None;
-                    if self.depth == 0 {
-                        return Ok(Iteratee::Done(acc));
-                    }
-                    self.depth -= 1;
                 }
             }
         }
+    }
+}
+
+/// Evaluate a derived bind.
+///
+/// Total and pure by construction — no store, no state, no iteration — which is
+/// the invariant the resume path depends on: this is called again after a restore
+/// and must produce what it produced before
+/// ([chapter 7](../../docs/07-compilation.md#derived-facts)).
+fn compute(value: &Computed) -> Value {
+    match value {
+        Computed::Lit(v) => v.clone(),
     }
 }
 
@@ -841,8 +996,8 @@ mod tests {
         },
         mem_store::MemStore,
         plan::{
-            Access, Entity, FactId, FieldPath, Generator, Plan, Project, Residual, ResidualOp,
-            SeekKey, SeekKeyPart,
+            Access, DerivedBind, Entity, FactId, FieldPath, Generator, Plan, Project, Residual,
+            ResidualOp, SeekKey, SeekKeyPart,
             proptest::{PlanAndStore, arb_interruption_schedule, arb_plan_and_store, cut_points},
         },
         schema::{PredicateId, PredicateTy},
@@ -1073,7 +1228,7 @@ mod tests {
         let interner = interner_with(&["n"]);
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 Generator {
                     access: Access {
                         predicate_id: nested,
@@ -1184,7 +1339,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, 0)]),
+            body: Step::scans([scan_all(p, 0)]),
             head,
         };
 
@@ -1210,20 +1365,30 @@ mod tests {
     // `Cursor` from the wire — so neither may panic it (conventions: errors, not
     // panics, on data paths).
 
-    /// A plan with no generators has no level to back into. Before this was
-    /// checked, the first row underflowed `depth` (`0usize - 1`).
+    /// **A plan with no steps is the unit relation: exactly one row.**
+    ///
+    /// It used to be `EmptyPlan`, and the reason was sound at the time — the first
+    /// row backed into `depth -= 1` and underflowed, and emitting a row anyway would
+    /// have been worse than a panic, because an empty `Cursor` restarts a run and so
+    /// the row would come back twice across a suspend. Both halves are now answered:
+    /// the head backs out to `Done` instead of decrementing, and a plan with no
+    /// levels reports `Done` when asked to suspend rather than handing back a cursor
+    /// that cannot express "already emitted".
+    ///
+    /// What produces this shape is a query whose every binding **folded** —
+    /// `X where X = 42` compiles to no steps and a literal head.
     #[test]
-    fn an_empty_plan_body_is_an_error_not_a_panic() {
+    fn a_plan_with_no_steps_yields_exactly_one_row() {
         let plan = Plan {
             nvars: 0,
-            body: Box::new([]),
+            body: Step::scans([]),
             head: Project::Lit(Value::Int(1)),
         };
 
-        assert!(matches!(
-            collect_rows(MemStore::new(), plan, &interner_with(&[])),
-            Err(ApertureError::EmptyPlan)
-        ));
+        assert_eq!(
+            collect_rows(MemStore::new(), plan, &interner_with(&[])).expect("run"),
+            vec![Value::Int(1)],
+        );
     }
 
     /// Cancellation is observed on a scan whose rows **all match**.
@@ -1249,7 +1414,7 @@ mod tests {
         // No residual: every row matches, so every `next()` returns immediately.
         let plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, 0)]),
+            body: Step::scans([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -1303,7 +1468,7 @@ mod tests {
     fn a_short_keys_row_is_an_error_not_a_panic() {
         let plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(PredicateId(0), 0)]),
+            body: Step::scans([scan_all(PredicateId(0), 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -1334,7 +1499,7 @@ mod tests {
 
         let two_level = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(person, 0),
                 Generator {
                     access: Access {
@@ -1366,7 +1531,7 @@ mod tests {
 
         let one_level = Plan {
             nvars: 1,
-            body: Box::new([scan_all(person, 0)]),
+            body: Step::scans([scan_all(person, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -1374,6 +1539,239 @@ mod tests {
             Executor::resume(seed(), one_level, cursor),
             Err(ApertureError::CursorPlanMismatch { cursor: 2, plan: 1 })
         ));
+    }
+
+    // ---- the register file and the cursor, at the seams --------------------
+    //
+    // These pin the three contracts the `Register → Slot` promotion (PLAN Phase
+    // 6) rewrites: what [`MachineState::get`] does when a register is not there,
+    // what `resume` does when a saved row is not the row it saved, and that a
+    // [`Cursor`] is exactly one **detached** row per level. Each was reachable
+    // only by inspection before — `an_address_reads_as_a_register` asserts how
+    // the two register faults *render*, which is a different claim from the
+    // machine producing them.
+
+    /// Reading a register no generator binds must come back as `UseBeforeBind`,
+    /// not unwrap a `None`.
+    ///
+    /// Flatten cannot emit this — range-restriction rejects it first — which is
+    /// precisely why it needs a guard here rather than there: the plan this
+    /// protects against arrives from somewhere else, hand-built today and
+    /// wire-decoded later, and `MachineState::get` is the one funnel both go
+    /// through.
+    #[test]
+    fn reading_an_unbound_register_is_an_error_not_a_panic() {
+        let p = PredicateId(0);
+        let mut store = MemStore::new();
+        store.insert(p, i64_field(1), 1);
+
+        // Two registers, one generator binding r0: nothing ever binds r1.
+        let plan = Plan {
+            nvars: 2,
+            body: Step::scans([scan_all(p, 0)]),
+            head: Project::FactRef(Address::new(1)),
+        };
+
+        assert!(matches!(
+            collect_rows(store, plan, &interner_with(&[])),
+            Err(ApertureError::UseBeforeBind(a)) if a == Address::new(1)
+        ));
+    }
+
+    /// Reading a register the plan does not have at all is `AddressOutOfBounds` —
+    /// the arm above it in `get`, and a different fault: out of range rather than
+    /// in range and empty.
+    #[test]
+    fn reading_a_register_past_the_plan_is_an_error_not_a_panic() {
+        let p = PredicateId(0);
+        let mut store = MemStore::new();
+        store.insert(p, i64_field(1), 1);
+
+        let plan = Plan {
+            nvars: 1,
+            body: Step::scans([scan_all(p, 0)]),
+            head: Project::FactRef(Address::new(7)),
+        };
+
+        assert!(matches!(
+            collect_rows(store, plan, &interner_with(&[])),
+            Err(ApertureError::AddressOutOfBounds(a)) if a == Address::new(7)
+        ));
+    }
+
+    /// Reading a register as the **wrong kind of slot** reports rather than
+    /// panics, in both directions.
+    ///
+    /// This is the fault the [`Slot`] split exists to make impossible to ignore:
+    /// a value spliced where a row's bytes belong (or the reverse) compares two
+    /// different encodings and would quietly match nothing — the same silent shape
+    /// as the `FactRef` marker trap. A plan from the compiler cannot do this,
+    /// since flatten knows which addresses a derived bind writes; a plan off the
+    /// wire can, which is why it is an error and not a `debug_assert`.
+    #[test]
+    fn reading_a_register_as_the_wrong_kind_of_slot_is_an_error() {
+        let mut state = MachineState::new(2);
+        state.registers[0] = Some(Slot::Value(Value::Int(42)));
+        state.registers[1] = Some(Slot::Fact(Register {
+            fact_id: FactId::new(PredicateId(0), 1).expect("id"),
+            bytes: ByteView::from(vec![0, 0, 0, 0]),
+        }));
+
+        assert!(matches!(
+            state.fact(Address::new(0)),
+            Err(ApertureError::SlotKindMismatch {
+                address,
+                wanted: "a fact row",
+                held: "a computed value",
+            }) if address == Address::new(0)
+        ));
+        assert!(matches!(
+            state.value(Address::new(1)),
+            Err(ApertureError::SlotKindMismatch {
+                wanted: "a computed value",
+                held: "a fact row",
+                ..
+            })
+        ));
+
+        // ...and reads the right kind without complaint.
+        assert_eq!(
+            state.value(Address::new(0)).expect("a value"),
+            &Value::Int(42)
+        );
+        assert!(state.fact(Address::new(1)).is_ok());
+
+        // The two faults above are distinct from *absence*, which the addresses
+        // beyond these two still report as before.
+        assert!(matches!(
+            state.fact(Address::new(9)),
+            Err(ApertureError::AddressOutOfBounds(_))
+        ));
+    }
+
+    /// A one-level plan suspended after its first row, as the cursor tests below
+    /// need it. Returns the cursor and the model rows.
+    fn suspend_after_first_row(store: MemStore, plan: Plan) -> Cursor {
+        let out = Executor::new(store, plan)
+            .enumerate(
+                (),
+                |(), _row| Ok(Stream::Suspend(())),
+                &CancellationToken::new(),
+            )
+            .expect("run");
+
+        match out {
+            Iteratee::Suspended((), cursor) => cursor,
+            Iteratee::Done(()) => panic!("the plan was supposed to suspend"),
+        }
+    }
+
+    /// **The resume integrity check.** A cursor's saved key must still resolve to
+    /// the *same fact*, and when it does not, resume must refuse rather than carry
+    /// on against a row it never saw.
+    ///
+    /// This is what [I11](../../docs/invariants.md#i11) buys the executor: ids are
+    /// never reused, so a key that now names a different id means the cursor and
+    /// the store disagree about the world — a stale portal against a rebuilt DB.
+    /// Resuming anyway would emit a row the uninterrupted run never produced,
+    /// which is exactly the failure [I4](../../docs/invariants.md#i4) forbids and
+    /// the one the row-sequence comparison cannot see, because the run it is
+    /// compared against no longer exists.
+    #[test]
+    fn resume_refuses_a_cursor_whose_key_now_names_another_fact() {
+        let p = PredicateId(0);
+
+        let plan = || Plan {
+            nvars: 1,
+            body: Step::scans([scan_all(p, 0)]),
+            head: Project::FactRef(Address::new(0)),
+        };
+
+        let mut original = MemStore::new();
+        original.insert(p, i64_field(1), 1);
+        let cursor = suspend_after_first_row(original, plan());
+
+        // The same key, a different id — what a rebuilt DB looks like from the
+        // outside. The bytes resume seeks by are byte-identical, so only the id
+        // check can catch this.
+        let mut rebuilt = MemStore::new();
+        rebuilt.insert(p, i64_field(1), 99);
+
+        assert!(matches!(
+            Executor::resume(rebuilt, plan(), cursor),
+            Err(ApertureError::BadResumeKey)
+        ));
+    }
+
+    /// The other arm of the same check: the saved key is gone entirely, so the
+    /// replay scan yields nothing where it must yield the saved row.
+    #[test]
+    fn resume_refuses_a_cursor_whose_key_is_gone() {
+        let p = PredicateId(0);
+
+        let plan = || Plan {
+            nvars: 1,
+            body: Step::scans([scan_all(p, 0)]),
+            head: Project::FactRef(Address::new(0)),
+        };
+
+        let mut original = MemStore::new();
+        original.insert(p, i64_field(1), 1);
+        let cursor = suspend_after_first_row(original, plan());
+
+        assert!(matches!(
+            Executor::resume(MemStore::new(), plan(), cursor),
+            Err(ApertureError::BadResumeKey)
+        ));
+    }
+
+    /// A cursor is **one row per level, every level, and it owns its bytes**.
+    ///
+    /// Two claims in one test because they are the same claim from either end.
+    /// *One per level:* `build_cursor` collects whichever frames hold a row and
+    /// `debug_assert`s that this is `depth + 1` of them; a suspend only ever
+    /// happens at a full row, so the count is the level count — which is what
+    /// makes `resume`'s replay-by-position sound. Phase 6 must keep this exact
+    /// number: a derived bind is not a loop level and adds no cursor entry.
+    /// *Owns its bytes:* the store is dropped here before the cursor is read, so
+    /// a view still pointing into it would be reading freed memory — the whole
+    /// reason [`Register::to_detached`] exists on the suspend path.
+    #[test]
+    fn a_cursor_holds_one_detached_row_per_level() {
+        let interner = interner_with(&["a", "b", "c"]);
+
+        for (levels, mk) in [
+            (1usize, &one_level_scan as &dyn Fn() -> (MemStore, Plan)),
+            (2, &|| two_level_seek_join(&interner)),
+            (3, &|| three_level_seek_join(&interner)),
+        ] {
+            let (store, plan) = mk();
+            let cursor = suspend_after_first_row(store, plan);
+
+            assert_eq!(
+                cursor.0.len(),
+                levels,
+                "a {levels}-level plan suspended with {} cursor entr(ies)",
+                cursor.0.len()
+            );
+
+            // Every entry names a real fact and carries its whole row —
+            // `predicate_id ++ key`, so at least the id is present. Read *after*
+            // the store that produced the bytes has been dropped.
+            for (level, saved) in cursor.0.iter().enumerate() {
+                assert!(
+                    saved.bytes.len() > PREDICATE_ID_SIZE,
+                    "level {level}'s saved row is {} byte(s) — no key follows the \
+                     predicate id",
+                    saved.bytes.len()
+                );
+                assert_ne!(
+                    saved.fact_id.raw(),
+                    0,
+                    "level {level} saved the reserved fact id, which is never a fact"
+                );
+            }
+        }
     }
 
     // A residual on a key field is evaluated against the field's value (the
@@ -1390,7 +1788,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Box::new([Generator {
+            body: Step::scans([Generator {
                 access: Access {
                     predicate_id: pred,
                     seek_key: SeekKey::Prefix(Box::new([])),
@@ -1425,7 +1823,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Box::new([Generator {
+            body: Step::scans([Generator {
                 access: Access {
                     predicate_id: pred,
                     seek_key: SeekKey::Prefix(Box::new([])),
@@ -1486,7 +1884,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, 0)]),
+            body: Step::scans([scan_all(p, 0)]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(0),
@@ -1518,7 +1916,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Box::new([Generator {
+            body: Step::scans([Generator {
                 access: Access {
                     predicate_id: p,
                     seek_key: SeekKey::Prefix(Box::new([])),
@@ -1567,7 +1965,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(person, 0),
                 Generator {
                     access: Access {
@@ -1653,7 +2051,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(outer, 0),
                 Generator {
                     access: Access {
@@ -1752,7 +2150,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(person, 0),
                 Generator {
                     access: Access {
@@ -1802,7 +2200,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(person, 0),
                 Generator {
                     access: Access {
@@ -1844,7 +2242,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(person, 0),
                 Generator {
                     access: Access {
@@ -1904,7 +2302,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 3,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(person, 0),
                 Generator {
                     access: Access {
@@ -1984,7 +2382,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(r, 0),
                 Generator {
                     access: Access {
@@ -2044,7 +2442,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, 0)]),
+            body: Step::scans([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -2065,11 +2463,181 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, 0)]),
+            body: Step::scans([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
         assert_eq!(run(store, plan), Vec::<Value>::new());
+    }
+
+    // ---- derive steps (Phase 6) -------------------------------------------
+    //
+    // A [`Step::Derive`] is a one-row generator: it computes its value on the way
+    // down and reports exhausted on the way back up. These drive it from
+    // hand-built plans, because flatten does not emit one yet — so without them
+    // the arm would be code with no coverage.
+
+    /// A derive step binding `r0`, for plans that want one.
+    fn derive(bind: usize, value: Value) -> Step {
+        Step::Derive(DerivedBind {
+            bind: Address::new(bind),
+            value: Computed::Lit(value),
+        })
+    }
+
+    /// **A plan with no levels answers exactly one row**, and its head reads the
+    /// computed slot.
+    ///
+    /// The shape `X where X = 42` compiles to, and the one that made the empty-body
+    /// rule need revisiting: `body.is_empty()` is still an error, but a body of
+    /// derive steps is not empty and is not a loop.
+    #[test]
+    fn a_plan_of_only_derives_yields_one_row() {
+        let plan = Plan {
+            nvars: 1,
+            body: Box::new([derive(0, Value::Int(42))]),
+            head: Project::Computed(Address::new(0)),
+        };
+
+        assert_eq!(plan.levels(), 0, "no scan steps, so no loop levels");
+        assert_eq!(run(MemStore::new(), plan), vec![Value::Int(42)]);
+    }
+
+    /// Two derives in a row, so the head sees both slots — and the machine walks
+    /// back down through both to finish.
+    #[test]
+    fn derives_compose_and_the_run_terminates() {
+        let interner = interner_with(&["a", "b"]);
+        let plan = Plan {
+            nvars: 2,
+            body: Box::new([derive(0, Value::Int(1)), derive(1, Value::Int(2))]),
+            head: Project::Record(Box::new([
+                (
+                    interner.get("a").expect("interned"),
+                    Project::Computed(Address::new(0)),
+                ),
+                (
+                    interner.get("b").expect("interned"),
+                    Project::Computed(Address::new(1)),
+                ),
+            ])),
+        };
+
+        let rows = collect_rows(MemStore::new(), plan, &interner).expect("run");
+        assert_eq!(rows.len(), 1, "two one-row steps are still one row");
+    }
+
+    /// A derive **above** a scan: computed once, then read on every row the scan
+    /// produces. The row count is the scan's, which is what says the derive did not
+    /// multiply the answer.
+    #[test]
+    fn a_derive_above_a_scan_holds_for_every_row() {
+        let p = PredicateId(0);
+        let mut store = MemStore::new();
+        for (i, v) in [10i64, 20, 30].into_iter().enumerate() {
+            store.insert(p, i64_field(v), i as u64 + 1);
+        }
+
+        let interner = interner_with(&["got", "want"]);
+        let plan = Plan {
+            nvars: 2,
+            body: Box::new([derive(1, Value::Int(7)), Step::Scan(scan_all(p, 0))]),
+            head: Project::Record(Box::new([
+                (
+                    interner.get("got").expect("interned"),
+                    Project::RegisterField {
+                        address: Address::new(0),
+                        path: FieldPath::field(0),
+                        ty: PredicateTy::Int,
+                    },
+                ),
+                (
+                    interner.get("want").expect("interned"),
+                    Project::Computed(Address::new(1)),
+                ),
+            ])),
+        };
+
+        assert_eq!(plan.levels(), 1, "one scan among two steps");
+        assert_eq!(plan.body.len(), 2, "...and two steps in the body");
+
+        let rows = collect_rows(store, plan, &interner).expect("run");
+        assert_eq!(rows.len(), 3, "one row per scanned fact, not more");
+    }
+
+    /// **Recompute-on-restore.** A derive step contributes nothing to the cursor,
+    /// so a resume has to recompute it — and the rows either side of every cut
+    /// point must be identical.
+    ///
+    /// This is the purity invariant's guard in the form chapter 7 specifies, and
+    /// **the step order is the whole test**. With the derive *below* the scan,
+    /// `enumerate` re-enters it from below on the way back up and recomputes it
+    /// itself — so a `resume` that skipped its recompute still passed. Deleting the
+    /// recompute is only observable when a derive sits *above* a scan: there the
+    /// machine backtracks into the scan and ascends through the head without ever
+    /// re-entering the derive, so the slot `resume` left behind is the one the head
+    /// reads. Both orders are run, because the masking order is the one a careless
+    /// change would leave as the only coverage.
+    #[test]
+    fn a_derive_is_recomputed_across_every_cut_point() {
+        let p = PredicateId(0);
+        let interner = interner_with(&["n", "z"]);
+
+        // `above` puts the derive before the scan — the order that actually depends
+        // on `resume` recomputing.
+        for above in [true, false] {
+            let where_ = if above { "above" } else { "below" };
+
+            let mk = || {
+                let mut store = MemStore::new();
+                for (i, v) in [1i64, 2, 3].into_iter().enumerate() {
+                    store.insert(p, i64_field(v), i as u64 + 1);
+                }
+
+                let scan = Step::Scan(scan_all(p, 0));
+                let computed = derive(1, Value::Int(99));
+                let body: Box<[Step]> = if above {
+                    Box::new([computed, scan])
+                } else {
+                    Box::new([scan, computed])
+                };
+
+                let plan = Plan {
+                    nvars: 2,
+                    body,
+                    head: Project::Record(Box::new([
+                        (
+                            interner.get("n").expect("interned"),
+                            Project::RegisterField {
+                                address: Address::new(0),
+                                path: FieldPath::field(0),
+                                ty: PredicateTy::Int,
+                            },
+                        ),
+                        (
+                            interner.get("z").expect("interned"),
+                            Project::Computed(Address::new(1)),
+                        ),
+                    ])),
+                };
+
+                (store, plan)
+            };
+
+            // The structural half: the cursor names levels, not steps.
+            let cursor = suspend_after_first_row(mk().0, mk().1);
+            assert_eq!(
+                cursor.0.len(),
+                1,
+                "derive {where_} the scan: a two-step plan with one level must save \
+                 one row, not two"
+            );
+
+            // The behavioural half, at every cut point.
+            let context = format!("MemStore, derive {where_} scan");
+            let model = assert_resume_equals_uninterrupted(mk, &interner, &context);
+            assert_rows(&model, 3);
+        }
     }
 
     // ---- Resume battery (0c) ----------------------------------------------
@@ -2151,7 +2719,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, 0)]),
+            body: Step::scans([scan_all(p, 0)]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(0),
@@ -2179,7 +2747,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(person, 0),
                 Generator {
                     access: Access {
@@ -2247,7 +2815,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 3,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(person, 0),
                 Generator {
                     access: Access {
@@ -2310,7 +2878,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Box::new([
+            body: Step::scans([
                 scan_all(r, 0),
                 Generator {
                     access: Access {
@@ -2519,7 +3087,7 @@ mod tests {
         // Three variables bind to each whole row; no residuals; no projection.
         let bind_plan = Plan {
             nvars: 3,
-            body: Box::new([Generator {
+            body: Step::scans([Generator {
                 access: Access {
                     predicate_id: p,
                     seek_key: SeekKey::Prefix(Box::new([])),
@@ -2545,7 +3113,7 @@ mod tests {
         store2.insert(p, compose(&[&i64_field(1), &i64_field(2)]), 1);
         let proj_plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, 0)]),
+            body: Step::scans([scan_all(p, 0)]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(1),
@@ -2575,7 +3143,7 @@ mod tests {
         let (spy, calls) = PointSpy::new(store);
         let plan = Plan {
             nvars: 1,
-            body: Box::new([Generator {
+            body: Step::scans([Generator {
                 access: Access {
                     predicate_id: p,
                     seek_key: SeekKey::Prefix(Box::new([])),
@@ -2607,7 +3175,7 @@ mod tests {
         let (spy2, calls2) = PointSpy::new(store2);
         let value_plan = Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, 0)]),
+            body: Step::scans([scan_all(p, 0)]),
             head: Project::Value {
                 address: Address::new(0),
                 ty: PredicateTy::Int,
@@ -2654,7 +3222,7 @@ mod tests {
 
         let plan = |bind| Plan {
             nvars: 1,
-            body: Box::new([scan_all(p, bind)]),
+            body: Step::scans([scan_all(p, bind)]),
             head: Project::FactRef(Address::new(0)),
         };
 

@@ -346,9 +346,32 @@ pub const CORPUS: &[Entry] = &[
     // ---- deferred at flatten: parse, typecheck, then say so by name ----
     entry(
         "X where X = 42",
-        Diagnosed(Code::NyiValueBind),
-        "binding a variable to a value no generator produced is a derived bind \
-         (PLAN Phase 6), which needs the `Slot` value variant",
+        Supported("42"),
+        "a variable bound to a literal is **folded**: substituted at every use, so \
+         it takes no register and no plan step. This one folds away entirely, \
+         leaving a plan with no levels — the unit relation, exactly one row",
+    ),
+    entry(
+        "Z where Z = 1; test.Bar {id = Z}",
+        Supported("1"),
+        "the same fold **narrowing a seek**: `{id = Z}` seeks the bytes `{id = 1}` \
+         seeks, because the fold is seen through by the same code that encodes a \
+         literal written in place",
+    ),
+    entry(
+        "X where X = {inner = 1}; test.Nested {outer = X}",
+        Supported("{inner = 1}"),
+        "a **record** of constants folds too, and narrows a nested key field. The \
+         wrapped form `constant` writes is right inside a field and would be wrong \
+         for a whole key — safe because `key` destructures the top-level record \
+         itself, and a bare variable as a whole key is `nyi/whole-key` first",
+    ),
+    entry(
+        "{a = X, b = Z} where test.Edge {from = X, to = _}; Z = 7",
+        Supported("{a = 1, b = 7}; {a = 1, b = 7}; {a = 2, b = 7}"),
+        "and a fold read by the head beside a captured field — one row per edge, \
+         the folded value repeated, which is what says folding did not turn a \
+         constant into a level of its own",
     ),
     entry(
         "X.name where test.Ref {of = X}",

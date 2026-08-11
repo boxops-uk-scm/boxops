@@ -64,6 +64,7 @@ use crate::focus::{
     iter::Address,
     plan::{
         Access, FieldPath, Generator, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart,
+        Step,
     },
     reorder::{Deps, StmtDeps, reorder},
     schema::{LocalInterner, PredicateId, PredicateTy, Schema, Symbol},
@@ -94,6 +95,20 @@ enum Slot {
     ///
     /// [I6]: ../../../docs/invariants.md#i6
     Value { address: Address, ty: PredicateTy },
+    /// A **constant**, from `X = 42` — held as the literal's own node rather than
+    /// as bytes or a decoded value, so every use resolves by *substitution*: a key
+    /// field asks [`constant`](Flatten::constant) and a head asks
+    /// [`project`](Flatten::project), each reaching the same arm it would have
+    /// reached had the literal been written in place.
+    ///
+    /// So a constant bind occupies **no register and no plan step**. The machine
+    /// has a derived-bind step ([`Step::Derive`]) and this deliberately does not
+    /// use it: introducing a slot to hold a value already known at compile time
+    /// would be a level for the executor to walk and a value for a resume to
+    /// recompute, both to arrive back at the literal. The step exists for a value
+    /// that *cannot* be folded — one computed from a row — and nothing in the
+    /// language produces one yet.
+    Const(NodeId),
 }
 
 /// One statement, as a generator-to-be — before an order is chosen, so before any
@@ -399,6 +414,14 @@ impl Flattener<'_> {
                         if let Some(generator) = self.generator(*rhs, row) {
                             self.hoist_within(generator.key, &mut stmts);
                             stmts.push(generator);
+                        }
+                    } else if self.is_foldable(*rhs) {
+                        // A constant bind: recorded and substituted at every use, so
+                        // it contributes no generator and no step. `row` is `Some`
+                        // unless the left side is a wildcard, and `_ = 42` binds
+                        // nothing anyone can read — harmless, and dropped here.
+                        if let Some(symbol) = row {
+                            self.bindings.push((symbol, Slot::Const(*rhs)));
                         }
                     } else {
                         self.report(
@@ -740,7 +763,16 @@ impl Flattener<'_> {
     /// reader — nothing has bound it yet — and the second is what makes this the
     /// check on the order rather than on the query.
     fn safe(&mut self, collected: &Collected, order: &[usize]) -> bool {
-        let mut bound: Vec<Symbol> = vec![];
+        // A folded constant is bound **before any level runs**, and range
+        // restriction is satisfied: `X = 42` gives `X` exactly one value, which is
+        // what the check is for — that a variable ranges over something finite. It
+        // needs no ordering either, since nothing it depends on can move.
+        let mut bound: Vec<Symbol> = self
+            .bindings
+            .iter()
+            .filter(|(_, slot)| matches!(slot, Slot::Const(_)))
+            .map(|(symbol, _)| *symbol)
+            .collect();
         let mut ok = true;
 
         for &stmt in order {
@@ -830,7 +862,7 @@ impl Flattener<'_> {
 
         Some(Plan {
             nvars: order.len(),
-            body: body.into(),
+            body: body.into_iter().map(Step::Scan).collect(),
             head: head?,
         })
     }
@@ -898,30 +930,7 @@ impl Flattener<'_> {
 
             // A literal, a string prefix, or a record of them.
             _ => match self.constant(node, ty) {
-                Some(Const::Bytes(bytes)) => {
-                    if level.building {
-                        level.parts.push(SeekKeyPart::Bytes(bytes.into()));
-                    } else {
-                        level.residuals.push(Residual {
-                            path: path.clone(),
-                            op: ResidualOp::EqConst(bytes.into()),
-                        });
-                    }
-                }
-
-                // A prefix narrows to a *range*, so it can end a seek but nothing
-                // may follow it in one: the bytes after it are not the field's.
-                Some(Const::Prefix(bytes)) => {
-                    if level.building {
-                        level.parts.push(SeekKeyPart::Bytes(bytes.into()));
-                        level.building = false;
-                    } else {
-                        level.residuals.push(Residual {
-                            path: path.clone(),
-                            op: ResidualOp::Prefix(bytes.into()),
-                        });
-                    }
-                }
+                Some(constant) => Self::narrow_by(constant, path, level),
 
                 // Not fully determined: a record giving only some of its fields.
                 // Those become residuals and captures one step deeper, and the
@@ -1026,6 +1035,22 @@ impl Flattener<'_> {
                 ),
             },
 
+            // A **folded constant** at a key field: narrowed exactly as the literal
+            // written in place would be. This is the arm that makes
+            // `Z = 1; test.Bar {id = Z}` a seek rather than a scan.
+            //
+            // `None` means the literal does not encode against this field's type,
+            // which typecheck rejects first — reported rather than declined so no
+            // path can refuse a plan without saying why.
+            Slot::Const(folded) => match self.constant(*folded, ty) {
+                Some(constant) => Self::narrow_by(constant, path, level),
+                None => self.report(
+                    node,
+                    Code::RejectTypeMismatch,
+                    "this constant is not a value of that field's type",
+                ),
+            },
+
             // Reported by `collect` too, which sees the field's declared type before
             // any of this; reported here for the same reason.
             Slot::Value { .. } => self.report(
@@ -1036,6 +1061,66 @@ impl Flattener<'_> {
         }
     }
 
+    /// Narrow this level by a constant: a seek component while the prefix is still
+    /// building, a residual once it has closed.
+    ///
+    /// Shared by the two ways a constant reaches a key field — written there, or
+    /// bound to a variable and folded — so that `Z = 1; test.Bar {id = Z}` narrows
+    /// exactly as `test.Bar {id = 1}` does rather than by a parallel code path.
+    fn narrow_by(constant: Const, path: &FieldPath, level: &mut Level) {
+        match constant {
+            Const::Bytes(bytes) => {
+                if level.building {
+                    level.parts.push(SeekKeyPart::Bytes(bytes.into()));
+                } else {
+                    level.residuals.push(Residual {
+                        path: path.clone(),
+                        op: ResidualOp::EqConst(bytes.into()),
+                    });
+                }
+            }
+
+            // A prefix narrows to a *range*, so it can end a seek but nothing may
+            // follow it in one: the bytes after it are not the field's.
+            Const::Prefix(bytes) => {
+                if level.building {
+                    level.parts.push(SeekKeyPart::Bytes(bytes.into()));
+                    level.building = false;
+                } else {
+                    level.residuals.push(Residual {
+                        path: path.clone(),
+                        op: ResidualOp::Prefix(bytes.into()),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Whether `node` is a pattern a bind can **fold** — one whose value is known
+    /// without running anything.
+    ///
+    /// A scalar literal, or a record built entirely of foldable things, however
+    /// deeply. A record on the *left* of a bind is `pattern = pattern` unification
+    /// and typecheck defers it before flatten sees it; a record on the right of a
+    /// plain variable bind is not unification at all, just a constant with fields,
+    /// and folding it is the same substitution as a scalar.
+    ///
+    /// Two things are deliberately not foldable. A string **prefix** denotes a
+    /// range rather than a value, so there is nothing for a variable bound to one to
+    /// be. And a record mentioning a **captured** variable — `{a = 1, b = Y}` — is a
+    /// value that differs per row, so it is not a constant at all: that is the
+    /// derived bind this phase leaves unlowered, and the nearest thing in the
+    /// language to a producer for [`Step::Derive`].
+    fn is_foldable(&self, node: NodeId) -> bool {
+        match self.ast.store().kind(node) {
+            ExprKind::Lit(Literal::Int(_) | Literal::Str(_)) => true,
+            ExprKind::Record(fields) => {
+                fields.iter().all(|(_, pattern)| self.is_foldable(*pattern))
+            }
+            _ => false,
+        }
+    }
+
     /// The bytes a pattern determines, if it determines all of them.
     ///
     /// `None` is "not a constant" — a variable, a wildcard, or a record giving only
@@ -1043,6 +1128,16 @@ impl Flattener<'_> {
     /// given, because the encoding is positional: a missing field would leave the
     /// bytes of the ones after it in the wrong place.
     fn constant(&self, node: NodeId, ty: &PredicateTy) -> Option<Const> {
+        // A variable bound to a literal *is* that literal here, which is what makes
+        // `Z = 1; test.Bar {id = Z}` seek the same bytes `{id = 1}` does rather than
+        // splice a register. Resolved before the match so every arm below — records
+        // included — sees through the binding.
+        if let ExprKind::Var(symbol) = self.ast.store().kind(node)
+            && let Some(Slot::Const(folded)) = self.lookup(*symbol)
+        {
+            return self.constant(folded, ty);
+        }
+
         match (self.ast.store().kind(node), ty) {
             (ExprKind::Lit(Literal::Int(value)), PredicateTy::Int) => {
                 let mut out = vec![];
@@ -1153,9 +1248,9 @@ impl Flattener<'_> {
                         _ => None,
                     },
 
-                    // Reading a field of a scalar value: typecheck rejects it, since
-                    // a value's type has no fields.
-                    Slot::Value { .. } => None,
+                    // Reading a field of a scalar: typecheck rejects both, since
+                    // neither a value's type nor a literal's has fields.
+                    Slot::Value { .. } | Slot::Const(_) => None,
                 }
             }
 
@@ -1196,6 +1291,10 @@ impl Flattener<'_> {
                         Some(Project::RegisterField { address, path, ty })
                     }
                     Slot::Value { address, ty } => Some(Project::Value { address, ty }),
+                    // Substitution: project the literal the variable was bound to,
+                    // which is the same `Project::Lit` the head would have got had
+                    // the literal been written here.
+                    Slot::Const(folded) => self.project(folded),
                 }
             }
 
@@ -1254,7 +1353,7 @@ mod tests {
         corpus,
         cst::CstNode,
         fixture,
-        fixtures::{collect_rows, i64_field, str_field},
+        fixtures::{collect_rows, i64_field, run_with_suspends, str_field},
         lower::lower,
         mem_store::MemStore,
         parse::parse,
@@ -1363,7 +1462,16 @@ mod tests {
         let schema = corpus::schema();
         let mut out = vec![];
 
-        for (level, generator) in plan.body.iter().enumerate() {
+        for step in plan.body.iter() {
+            let generator = match step {
+                Step::Scan(generator) => generator,
+                // A derived bind, which binds a value rather than a level.
+                Step::Derive(derived) => {
+                    out.push(format!("{} = <computed>", derived.bind));
+                    continue;
+                }
+            };
+
             let name = schema
                 .get(generator.access.predicate_id)
                 .and_then(|p| p.name())
@@ -1417,7 +1525,6 @@ mod tests {
                 .join(",");
 
             out.push(format!("{binds} <- {name} {access}{residuals}"));
-            let _ = level;
         }
 
         out.push(format!("head {}", project(&plan.head, interner)));
@@ -1434,6 +1541,7 @@ mod tests {
                 format!("{address}.{path}:{}", render_ty(ty))
             }
             Project::Value { address, ty } => format!("{address}.value:{}", render_ty(ty)),
+            Project::Computed(address) => format!("{address}="),
             Project::Record(fields) => format!(
                 "{{{}}}",
                 fields
@@ -1480,7 +1588,10 @@ mod tests {
 
         assert_eq!(plan.nvars, 1);
         assert_eq!(plan.body.len(), 1);
-        assert_eq!(plan.body[0].binds.as_ref(), [Address::new(0)]);
+        assert_eq!(
+            plan.level(0).expect("a level").binds.as_ref(),
+            [Address::new(0)]
+        );
         assert_eq!(
             describe(plan, &flattened.interner),
             lines(&["r0 <- test.Foo scan", "head r0"])
@@ -1555,7 +1666,7 @@ mod tests {
             describe(plan, &flattened.interner),
             lines(&["r0 <- test.Foo seek[k]", "head r0"])
         );
-        match &plan.body[0].access.seek_key {
+        match &plan.level(0).expect("a level").access.seek_key {
             SeekKey::Prefix(bytes) => assert_eq!(bytes.as_ref(), i64_field(1).as_slice()),
             other => panic!("expected a constant prefix, got {other:?}"),
         }
@@ -1566,7 +1677,7 @@ mod tests {
     fn a_scalar_key_constant_is_the_whole_seek() {
         let flattened = compile("X where X = test.Count -42");
 
-        match &flattened.plan().body[0].access.seek_key {
+        match &flattened.plan().level(0).expect("a level").access.seek_key {
             SeekKey::Prefix(bytes) => assert_eq!(bytes.as_ref(), i64_field(-42).as_slice()),
             other => panic!("expected a constant prefix, got {other:?}"),
         }
@@ -1584,7 +1695,7 @@ mod tests {
             describe(plan, &flattened.interner),
             lines(&["r0 <- test.Foo scan where 1 == k", "head r0.0:int"])
         );
-        match &plan.body[0].residuals[0].op {
+        match &plan.level(0).expect("a level").residuals[0].op {
             ResidualOp::EqConst(bytes) => assert_eq!(bytes.as_ref(), str_field("a").as_slice()),
             other => panic!("expected a constant residual, got {other:?}"),
         }
@@ -1606,7 +1717,7 @@ mod tests {
 
         let mut expected = str_field("abc");
         expected.pop().expect("a terminated string");
-        match &plan.body[0].access.seek_key {
+        match &plan.level(0).expect("a level").access.seek_key {
             SeekKey::Prefix(bytes) => assert_eq!(bytes.as_ref(), expected.as_slice()),
             other => panic!("expected a prefix seek, got {other:?}"),
         }
@@ -1626,7 +1737,7 @@ mod tests {
 
         let mut expected = str_field("a");
         expected.pop().expect("a terminated string");
-        match &plan.body[0].residuals[0].op {
+        match &plan.level(0).expect("a level").residuals[0].op {
             ResidualOp::Prefix(bytes) => assert_eq!(bytes.as_ref(), expected.as_slice()),
             other => panic!("expected a prefix residual, got {other:?}"),
         }
@@ -2032,15 +2143,98 @@ mod tests {
 
     // ---- the deferred constructs -------------------------------------------
 
-    /// Binding a variable to something no generator produced is a *derived bind*,
-    /// which needs Phase 6's value slots.
+    /// Binding a variable to a value **a row produced** is still a derived bind.
+    ///
+    /// The line moved in Phase 6: a *literal* bind folds (see
+    /// [`a_value_bind_returns_the_value`]), because its value is known before
+    /// anything runs and substituting it is what the query means. This one is not
+    /// foldable — `X.name` is a different row's field on every iteration — so it
+    /// needs a value that is computed while the plan runs, and nothing lowers one
+    /// yet. `Y` would most likely become another *substitution* (an alias for a
+    /// field of `X`'s register) rather than a value slot, which is why the derive
+    /// step still has no producer in the language.
     #[test]
     fn a_computed_bind_is_not_implemented_yet() {
-        for source in [
-            "X where X = 42",
-            "X where X = test.Foo _; Y = X.name; test.Name Y",
-        ] {
-            assert_eq!(compile(source).codes(), ["nyi/value-bind"], "{source:?}");
+        assert_eq!(
+            compile("X where X = test.Foo _; Y = X.name; test.Name Y").codes(),
+            ["nyi/value-bind"],
+        );
+    }
+
+    /// The folding rule's edges: what a bind may fold, and what it may not.
+    #[test]
+    fn a_constant_bind_folds_however_deep_it_is() {
+        // A string folds as readily as an int.
+        assert_eq!(rows("X where X = \"ann\""), strs(&["ann"]));
+
+        // A *prefix* is not a value — it denotes a range, so there is nothing for a
+        // variable bound to it to be.
+        assert_eq!(compile("X where X = \"a\"..").codes(), ["nyi/value-bind"]);
+
+        // A record of constants is a constant. The left side is a plain variable, so
+        // this is an ordinary bind and not the `pattern = pattern` unification a
+        // record on the *left* would be — that one typecheck defers, and the corpus
+        // pins it, before flatten is reached.
+        assert_eq!(
+            rows("X where X = {inner = 1}"),
+            vec![Value::Record(Box::new([(
+                "inner".to_owned(),
+                Value::Int(1)
+            )]))],
+        );
+
+        // ...to any depth, and field order is the schema's rather than the source's,
+        // since lowering sorts them.
+        assert_eq!(
+            rows("X where X = {extra = 2, inner = 1}"),
+            rows("X where X = {inner = 1, extra = 2}"),
+        );
+
+        // A record mentioning a **captured** variable is not a constant: its value
+        // differs per row. That is the derived bind this phase leaves unlowered.
+        assert_eq!(
+            compile("X where test.Nested {outer = {inner = Y}}; X = {inner = Y}").codes(),
+            ["nyi/value-bind"],
+        );
+    }
+
+    /// **The trap a folded record walks past.** A record inside a field keeps its
+    /// `MARK_RECORD` wrapper; a *stored key* is flat. Folding reaches
+    /// [`constant`](Flattener::constant), whose record arm writes the wrapped form —
+    /// which is right here and would be wrong for a whole key.
+    ///
+    /// It is safe because `key` destructures the top-level record itself and emits
+    /// field by field, so a whole key never reaches `constant`; and a bare variable
+    /// as a whole key is `nyi/whole-key` from `collect` before any of this. Pinned
+    /// because both halves are invisible from the fold's own code, and getting it
+    /// wrong reads the wrong bytes with no error — it matches nothing.
+    #[test]
+    fn a_folded_record_narrows_a_nested_field_and_still_matches() {
+        assert_eq!(
+            rows("X where X = {inner = 1}; test.Nested {outer = X}").len(),
+            1
+        );
+
+        // The written form is the oracle: a fold must reach the *same row*, which
+        // projecting the matched fact's identity says exactly.
+        assert_eq!(
+            rows("R where X = {inner = 1}; R = test.Nested {outer = X}"),
+            rows("R where R = test.Nested {outer = {inner = 1}}"),
+        );
+        assert_eq!(
+            rows("R where R = test.Nested {outer = {inner = 1}}").len(),
+            1,
+            "the oracle has to match something for the comparison to mean anything",
+        );
+
+        // And it is a seek, not a scan-and-filter: `outer` is the leading key field.
+        let flattened = compile("X where X = {inner = 1}; test.Nested {outer = X}");
+        match &flattened.plan().level(0).expect("a level").access.seek_key {
+            SeekKey::Prefix(bytes) => assert!(!bytes.is_empty(), "a constant prefix"),
+            SeekKey::Composite(parts) => assert!(
+                matches!(parts.first(), Some(SeekKeyPart::Bytes(_))),
+                "the fold must reach the seek prefix, got {parts:?}",
+            ),
         }
     }
 
@@ -2283,6 +2477,123 @@ mod tests {
             vec![],
             "no such `test.Bar` exists, so nothing survives the last level",
         );
+    }
+
+    // ---- Phase 6: derived binds (red, pending the `Slot` promotion) ---------
+    //
+    // Phase 6's acceptance criteria, as tests, written before the machine that
+    // satisfies them ([`PLAN.md`](../../PLAN.md) Phase 6). They are deliberately
+    // written **through the driver** — focus text in, rows out — and name no plan
+    // type that does not exist yet, so they compile today, fail today for the
+    // right reason (`nyi/value-bind`, reported by `collect`), and go green when
+    // the feature lands rather than when a test is rewritten. That also means the
+    // still-open question of *how* a derived bind sits in the `Plan` IR cannot be
+    // pre-judged by its own acceptance test.
+    //
+    // Un-ignore each as its leaf lands; the ledger
+    // (`cargo test -- --ignored --list`) is what says the phase is unfinished.
+
+    /// The smallest derived bind there is: a variable bound to a value no
+    /// generator produced.
+    ///
+    /// Also the shape with **no generator at all**: the bind folds away entirely,
+    /// leaving a plan with no steps, which answers exactly one row.
+    #[test]
+    fn a_value_bind_returns_the_value() {
+        assert_eq!(rows("X where X = 42"), ints(&[42]));
+        assert_eq!(rows("X where X = \"ann\""), strs(&["ann"]));
+    }
+
+    /// A folded bind **narrowing a scan**: the constant reaches the key field by
+    /// substitution, so it seeks or filters exactly as the literal written in place
+    /// would — which is the point of folding rather than binding a register.
+    ///
+    /// Whether it lands in the seek prefix or in a residual is sargeability's
+    /// ordinary decision about *that field*, not a fact about the fold.
+    #[test]
+    fn a_folded_bind_narrows_a_seek() {
+        assert_eq!(rows("Z where Z = 1; test.Bar {id = Z}"), ints(&[1]));
+        assert_eq!(
+            rows("Z where Z = 99; test.Bar {id = Z}"),
+            vec![],
+            "no `test.Bar` has id 99, so the spliced seek finds nothing",
+        );
+        assert_eq!(
+            rows("X where Z = 1; test.Edge {from = Z, to = X}"),
+            ints(&[2, 3]),
+            "edges (1,2) and (1,3), reached by a seek on a derived value",
+        );
+    }
+
+    /// A fold must leave **resume** exactly as it was.
+    ///
+    /// It should, by construction: a folded constant is in the plan's bytes and its
+    /// head, not in a register, so there is nothing for a cursor to carry and
+    /// nothing to recompute. That is the argument, and this is the check on it —
+    /// resume == uninterrupted at every cut point over plans built from folded
+    /// binds, including one the head reads beside a captured field.
+    ///
+    /// The purity invariant's own guard is
+    /// `iter::a_derive_is_recomputed_across_every_cut_point`, which drives a real
+    /// [`Step::Derive`](crate::focus::plan::Step) from a hand-built plan — nothing
+    /// in the language lowers one, so nothing here can reach it.
+    /// A query whose **every** binding folded has no levels, so it cannot be
+    /// suspended past — and reports `Done` when asked to suspend rather than
+    /// handing back a cursor that would re-emit its row.
+    ///
+    /// The rows are the point of the assertion; the zero round-trips are the rule.
+    #[test]
+    fn a_query_with_no_levels_answers_without_suspending() {
+        let flattened = compile("X where X = 42");
+        let plan = flattened.plan().clone();
+
+        assert_eq!(plan.levels(), 0, "everything folded, so there is no loop");
+        assert!(plan.body.is_empty(), "...and so no step either");
+
+        let mut mk = || (store(), plan.clone());
+        let cuts = std::collections::BTreeSet::from([1]);
+        let (rows, suspends) = run_with_suspends(&mut mk, &flattened.interner, &cuts).expect("run");
+
+        assert_eq!(rows, ints(&[42]), "the row is still the answer");
+        assert_eq!(
+            suspends, 0,
+            "a plan with no levels reports Done at a suspend request, since an \
+             empty cursor would restart it and re-emit the row",
+        );
+    }
+
+    #[test]
+    fn resume_is_unaffected_by_a_folded_bind() {
+        for source in [
+            // Recomputed before the level whose seek reads it.
+            "X where Z = 1; test.Edge {from = Z, to = X}",
+            // Recomputed at a level *under* a fact binding, so the cut points fall
+            // either side of a backtrack.
+            "{a = X, b = Z} where test.Edge {from = X, to = _}; Z = 7",
+        ] {
+            let flattened = compile(source);
+            let plan = flattened.plan().clone();
+            let interner = &flattened.interner;
+
+            let model = collect_rows(store(), plan.clone(), interner).expect("run");
+            assert!(
+                !model.is_empty(),
+                "{source:?} must produce rows for a cut point to mean anything",
+            );
+
+            for k in 1..=model.len() {
+                let mut mk = || (store(), plan.clone());
+                let cuts = std::collections::BTreeSet::from([k]);
+                let (rows, suspends) = run_with_suspends(&mut mk, interner, &cuts).expect("resume");
+
+                assert_eq!(suspends, 1, "{source:?}: schedule {{{k}}} never suspended");
+                assert_eq!(
+                    rows, model,
+                    "{source:?}: suspending after row {k} changed the run — the \
+                     derived bind did not recompute to the same value",
+                );
+            }
+        }
     }
 
     /// **Every order of the body gives the same rows** — the executable form of
@@ -3475,7 +3786,7 @@ mod battery {
         lower::lower,
         parse::parse,
         plan::{
-            FactId, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart,
+            FactId, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart, Step,
             proptest::{arb_interruption_schedule, cut_points},
         },
         schema::{LocalInterner, PredicateTy, Schema},
@@ -3657,7 +3968,15 @@ mod battery {
         }
 
         fn observe(&mut self, plan: &Plan) {
-            for generator in plan.body.iter() {
+            for step in plan.body.iter() {
+                // The census is about the shapes a *scan* can take; a derive step
+                // has no seek and no residuals. When the generator learns to draw
+                // one, it gets its own census entry rather than being folded in
+                // here, since "reached a derive step" is a different claim.
+                let Step::Scan(generator) = step else {
+                    continue;
+                };
+
                 match &generator.access.seek_key {
                     SeekKey::Prefix(bytes) => self.constant_seek |= !bytes.is_empty(),
                     SeekKey::Composite(parts) => {
@@ -3695,6 +4014,10 @@ mod battery {
 
         fn observe_head(&mut self, head: &Project) {
             match head {
+                // A derived bind's output. Not a census entry yet: the query
+                // generator draws no derived binds, so claiming coverage of one
+                // would be claiming what nothing checks.
+                Project::Computed(_) => {}
                 Project::Value { .. } => self.value_projection = true,
                 Project::FactRef(_) => self.fact_ref_projection = true,
                 Project::RegisterField { path, ty, .. } => {

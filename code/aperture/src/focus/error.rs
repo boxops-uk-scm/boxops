@@ -18,18 +18,18 @@ pub enum ApertureError {
     #[error("{0} was read before anything was bound to it")]
     UseBeforeBind(Address),
 
+    #[error("{address} holds {held} where the plan wanted {wanted}")]
+    SlotKindMismatch {
+        address: Address,
+        wanted: &'static str,
+        held: &'static str,
+    },
+
     #[error("{0} is not a register in this plan")]
     AddressOutOfBounds(Address),
 
     #[error("advance of closed frame")]
     AdvanceAfterClose,
-
-    /// A plan with no generators. The executor is a nested loop over the plan's
-    /// body, so "no loops" has no level to back into; the compiler never emits
-    /// one, which makes this a malformed plan rather than a query yielding
-    /// nothing.
-    #[error("a plan must have at least one generator")]
-    EmptyPlan,
 
     /// A resume cursor naming more levels than the plan has. A
     /// [`Cursor`](crate::focus::iter::Cursor) is bytes-only and rebuilt from the
