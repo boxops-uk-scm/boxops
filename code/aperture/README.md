@@ -13,11 +13,11 @@ ingestion is "fearless."
 
 > **Status.** Being taken from prototype to production. In `src/focus/`: the engine spine
 > (codec, executor, resume, projection) and the fjall store are built and guarded, and the
-> front end is live through typecheck — focus text parses, lowers and typechecks, with every
-> construct deferred to a later phase drawing a diagnostic that names it. **Not yet built:**
-> flatten/reorder, so no query compiles to a `Plan` and nothing runs end to end yet; then
-> ingestion, schema parsing, and the operational layer. See [`PLAN.md`](PLAN.md) for the
-> sequence and current state.
+> **front end now reaches the `Plan`** — focus text parses, lowers, typechecks and flattens,
+> so a query compiles to a plan the executor runs, with every construct deferred to a later
+> phase drawing a diagnostic that names it. **Not yet built:** running one at the prompt
+> (Phase 5 wires `plan()` into the shell), then derived facts, ingestion, schema parsing and
+> the operational layer. See [`PLAN.md`](PLAN.md) for the sequence and current state.
 
 ---
 
@@ -46,8 +46,8 @@ about one subsystem.
    their stable discriminants, and schema identity (canonical form + fingerprint). *(I10,
    I13.)*
 7. [**Compilation**](docs/07-compilation.md) — lex → parse → typecheck → flatten → reorder,
-   the three tree layers, sargeability, and derived facts (the one deliberate machine
-   change).
+   the tree layers, sargeability (seek · splice · residual), why identity reordering is
+   *correct*, what flatten defers, and derived facts (the one deliberate machine change).
 8. [**Operations**](docs/aperture-cli-design.md) — the CLI, the `Writable → Complete`
    lifecycle, the parallel ingestion pipeline, the wire protocol, and the operational
    invariants. *(ops-I1–ops-I10.)* The operational design of record.
@@ -63,6 +63,9 @@ about one subsystem.
   that look reasonable but are wrong here.
 - [**Open decisions**](docs/open-decisions.md) — what's not yet settled (and where the
   settled ones landed).
+- [**Aperture vs Glean**](docs/glean-comparison.md) — what we take from Glean, what we
+  deliberately changed and why, and the capabilities we have **neither built nor ruled out**.
+  Read it before proposing a feature Glean has.
 - [**Glossary**](docs/glossary.md) — every term of art in one place.
 
 ---

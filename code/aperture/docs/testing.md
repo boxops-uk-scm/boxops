@@ -192,6 +192,25 @@ tests only the error path.
   or name a sibling while the tree comparison stayed green — and spans are what every diagnostic
   points with. It found the access chain spanning only its field name, so a type error on
   `X.a.b` underlined `b` where one on `test.Foo X` underlined the application.
+- **Front end, tier 3:** **"the flattened plan runs to the rows the query means"**
+  (`flatten::proptest`) — generate a schema, conforming facts, and a *query in focus text*
+  valid against them; compile it through the real driver, run it, and compare against a
+  **model** that reads the query as slow nested loops. The model is the oracle, written first,
+  and deliberately shares nothing with the compiler's idea of how to go fast. The same battery
+  carries the **reorderability** claim: run every permutation of the body and the rows must not
+  change — which is what makes `reorder = identity` an argued choice rather than a shortcut
+  ([chapter 7](07-compilation.md)). Its population is asserted too (statements, joins,
+  constants, wildcards, rows produced), for the same reason the printer's is.
+- **The same battery carries [I4](invariants.md#i4) over *compiled* plans**, on `MemStore` and
+  on fjall: the query is also run with a suspend at every scheduled row and compared against
+  the model. This is not redundant with the executor's own resume battery, and the reason is a
+  generator-coverage argument worth remembering: `plan::proptest` draws plans that seek by one
+  whole spliced field from an empty prefix, with at most one flat-path residual per level and
+  no value projection — while flatten emits constant seek prefixes, several-part composites,
+  `ResidualOp::Prefix`, nested field paths, several residuals per level and `Project::Value`. A
+  **census** asserts the battery reaches each of those shapes, because otherwise the extra arm
+  would be a slower way of testing what was already covered. Written first, it failed on five
+  of the six.
 - **Regression examples** (specific past bugs, named edge cases) live alongside the
   properties as ordinary `#[test]`s — properties explore, examples pin.
 
