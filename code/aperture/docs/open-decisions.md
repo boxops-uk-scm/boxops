@@ -32,9 +32,14 @@ either way. Related, and easier: `bool` and `maybe T` are sugar over a union onc
 Angle has `prim.*` — arithmetic, string operations, comparisons — and if-then-else. focus has
 string prefix matching, and **order comparisons** are deferred-with-a-seam (`ResidualOp` arms).
 Arithmetic, string functions and conditionals are in neither place: not built, not deferred,
-not ruled out. The seam that would carry them is Phase 6's derived binds (a pure function of
-the fact bindings), so this is additive whenever it is wanted — the open question is whether P0
-wants any of it, since a query language with no arithmetic pushes that work onto the caller.
+not ruled out. The seam that would carry them **now exists**: Phase 6 built derived binds (a pure
+function of the fact bindings, [I14](invariants.md#i14)), and a primitive would be an arm of
+`Computed`. So this is additive whenever it is wanted — the open question is whether P0 wants any
+of it, since a query language with no arithmetic pushes that work onto the caller.
+
+Worth knowing when deciding: a primitive would be the **first thing in the language to produce a
+`Step::Derive` at all**. A constant bind folds instead, so the machinery is currently exercised
+only by hand-built plans — which means the first primitive is also the first real test of it.
 
 ---
 
@@ -110,8 +115,10 @@ splices" rationale was found overstated (splices work with a distinct marker too
 
 The engine-side effect (the [Phase 7 gate](../PLAN.md) "resolve `FactRef` before ingesting
 fact-typed fields") is satisfied by the marker existing, and `CLAUDE.md` no longer lists it as
-open. A fact-typed field is now written end to end by the demo shell (`src/main.rs`), whose
-`demo.LivesIn` references the `demo.City` and `demo.Person` facts it is about.
+open. A fact-typed field is written end to end by the shared fixture (`focus::fixture`), and as
+of Phase 5 it is also **queried** end to end: `test.Ref {of = test.Foo {id = 1}}` follows the
+reference by splicing the id the marker distinguishes, which is the use the distinct marker was
+doubted to support.
 
 ### Storage codec vs transport (wire) codec — settled
 
@@ -138,11 +145,17 @@ with the seam kept.)
 Features that are *designed-for and additive* (a new enum arm, a new access kind) aren't
 "open decisions" — they have a settled shape and a kept seam, listed in
 [`PLAN.md`](../PLAN.md) "Deferred features" and [Operations §11](aperture-cli-design.md):
-order comparisons (`ResidualOp` arms), cross-fact navigation (`Access::Fetch`), unions-as-
-data then the disjunction union-of-streams operator (with a per-branch `Cursor`
-discriminant), negation/subqueries, `evolves`, cross-DB queries. The two that are *not*
-additive — derived facts and (now-resolved) the `FactRef` marker — are handled as deliberate
-machine/codec changes ([chapter 7](07-compilation.md), [chapter 2](02-tuple-codec.md)).
+order comparisons (`ResidualOp` arms), cross-fact navigation (`Access::Fetch`), `evolves`,
+cross-DB queries. The two that are *not* additive — derived facts and (now-resolved) the
+`FactRef` marker — are handled as deliberate machine/codec changes
+([chapter 7](07-compilation.md), [chapter 2](02-tuple-codec.md)).
+
+**Additive is not the same as small**, and five features that were on that list now have
+phases of their own to say so: disjunction, `never`, negation and subqueries are
+[`PLAN.md`](../PLAN.md) Phase 6b, and unions-as-data is Phase 8. None of them reshapes the
+machine — but disjunction extends the resume `Cursor` with a per-branch discriminant, and a
+union freezes its discriminants on disk the moment one is written
+([I10](invariants.md#i10)), so both need acceptance criteria rather than a bullet.
 
 ---
 

@@ -13,11 +13,21 @@ ingestion is "fearless."
 
 > **Status.** Being taken from prototype to production. In `src/focus/`: the engine spine
 > (codec, executor, resume, projection) and the fjall store are built and guarded, and the
-> **front end now reaches the `Plan`** — focus text parses, lowers, typechecks and flattens,
-> so a query compiles to a plan the executor runs, with every construct deferred to a later
-> phase drawing a diagnostic that names it. **Not yet built:** running one at the prompt
-> (Phase 5 wires `plan()` into the shell), then derived facts, ingestion, schema parsing and
-> the operational layer. See [`PLAN.md`](PLAN.md) for the sequence and current state.
+> **front end reaches the `Plan`** — focus text parses, lowers, typechecks and flattens, with
+> every construct deferred to a later phase drawing a diagnostic that names it. A query is now
+> **answerable end to end**: `aperture` compiles what you type and runs it against a real
+> store, joins *through fact references* included, and every supported construct in the corpus
+> is checked against the rows it returns rather than only against the plan it produced. Facts
+> are **written by hand as well-typed values** whose fields are resolved against the schema, so
+> the shell's store is a code index built through the same API a deriver would use.
+> A register now holds a **`Slot`** — a stored row or a computed value — and a plan's body is an
+> ordered sequence of **steps**, so a value can be derived mid-query and *recomputed* rather than
+> saved when a query suspends ([I14](docs/invariants.md#i14)); a bind to a constant is folded
+> instead, at compile time.
+> **Not yet built:** the rest of the query surface (`|`, `never`, `!`, subqueries, unions),
+> bulk ingestion, schema parsing, **stored** derivation (which needs the schema DSL first) and
+> the operational layer. See
+> [`PLAN.md`](PLAN.md) for the sequence and current state.
 
 ---
 
@@ -36,7 +46,9 @@ about one subsystem.
 2. [**The tuple codec**](docs/02-tuple-codec.md) — how values become order-preserving,
    self-delimiting bytes. The marker table and why it's frozen. *(Invariants I1–I3.)*
 3. [**The storage model**](docs/03-storage-model.md) — the two column families, one
-   keyspace per predicate, `FactId` allocation, and the atomic two-CF write. *(I11–I12.)*
+   keyspace per predicate, `FactId` allocation, the atomic two-CF write, and how a fact is
+   **written by hand** (the three silent traps in `put_fact` that `focus::fact` exists to
+   close). *(I11–I12.)*
 4. [**The executor (the VM)**](docs/04-executor.md) — the plan IR, the register file, and
    the `enumerate` nested-loop driver. Why it's a defunctionalised state machine. *(I5–I7,
    I9.)*
@@ -47,14 +59,15 @@ about one subsystem.
    I13.)*
 7. [**Compilation**](docs/07-compilation.md) — lex → parse → typecheck → flatten → reorder,
    the tree layers, sargeability (seek · splice · residual), why identity reordering is
-   *correct*, what flatten defers, and derived facts (the one deliberate machine change).
+   *correct*, what flatten defers, folding a constant bind, and derived facts — the two kinds,
+   and which of them was the machine change. *(I14.)*
 8. [**Operations**](docs/aperture-cli-design.md) — the CLI, the `Writable → Complete`
    lifecycle, the parallel ingestion pipeline, the wire protocol, and the operational
    invariants. *(ops-I1–ops-I10.)* The operational design of record.
 
 **Reference docs (look up, don't read cover-to-cover):**
 
-- [**Invariant registry**](docs/invariants.md) — every invariant (`I1`–`I13`,
+- [**Invariant registry**](docs/invariants.md) — every invariant (`I1`–`I14`,
   `ops-I1`–`ops-I10`) in one table: one-line statement, its guard test, and a link to the
   chapter that explains it. **The fastest way to check "what must I not break here."**
 - [**Testing methodology**](docs/testing.md) — property-first, generator-first testing;
@@ -72,8 +85,8 @@ about one subsystem.
 
 ## Two invariant namespaces (don't conflate them)
 
-- **Engine invariants `I1`–`I13`** — codec, executor/resume, storage, identity. Explained
-  in chapters 2–6, indexed in the [registry](docs/invariants.md).
+- **Engine invariants `I1`–`I14`** — codec, executor/resume, storage, identity, and
+  derived-bind purity. Explained in chapters 2–7, indexed in the [registry](docs/invariants.md).
 - **Operational invariants `ops-I1`–`ops-I10`** — lifecycle, single-writer ownership,
   reproducibility, the one-write-funnel. Explained in [Operations](docs/aperture-cli-design.md).
   Always written `ops-Ix` so they're never mistaken for the engine `Ix`.
@@ -97,7 +110,6 @@ cargo fmt
 - [`PLAN.md`](PLAN.md) — the living phase tree: the build sequence and current state.
 
 Module map: `src/focus/` is the live engine and language — all new work lands there.
-`src/main.rs` is the `aperture` focus shell (a Phase 5 scaffold: it typechecks, it cannot yet
-run a query). `src/lens/` is a superseded first attempt (not compiled) kept only as a reference
-to re-implement into `focus`. `src/focus.rs` is a commented-out graveyard. See
+`src/main.rs` is the `aperture` focus shell, which compiles and runs what you type against a
+real store. `src/focus.rs` is a commented-out graveyard. See
 [Concepts](docs/01-concepts.md) for detail.

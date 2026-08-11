@@ -10,7 +10,10 @@
 //!
 //! 1. **Collect** the statements into generators. A statement is a fact pattern —
 //!    `test.Foo {…}`, optionally bound to a variable by `X = test.Foo {…}` — and
-//!    each becomes one loop level holding one register.
+//!    each becomes one loop level holding one register. A fact pattern written
+//!    *inside* another is a generator too, and is **hoisted** into a level of its
+//!    own, bound to a name the query did not write; everything after this point
+//!    sees an ordinary row bind.
 //! 2. **Safety.** Every variable a seek, residual or the head *reads* must be
 //!    **captured** by some generator's key pattern. That is the whole of what
 //!    correctness needs — see [`reorder`](crate::focus::reorder) for why it is not
@@ -27,19 +30,14 @@
 //!
 //! # What it does not do
 //!
-//! **Hoist nested generators.** A fact pattern is a generator wherever it appears,
-//! so one written inside a key field or in the head would have to become a loop
-//! level of its own. In the implemented subset that can only arise through a
-//! fact-typed field or a head that is itself a fact pattern; both draw
-//! `nyi/nested-generator`, and this is the seam hoisting lands at.
-//!
-//! **Reach through a fact reference.** A fact-typed key field holds a `FactId`, so
-//! matching one against a bound row, or capturing one and reading *its* fields,
-//! needs cross-fact navigation (`Access::Fetch`) and a fact-id splice — neither of
-//! which the `Plan` IR has. `nyi/fact-field`. Getting this wrong silently is the
-//! trap it exists to close: a register holds its own row's key bytes, which are not
-//! the referenced fact's, and comparing them would give wrong answers rather than
-//! an error.
+//! **Read *through* a fact reference.** A fact-typed key field holds a `FactId`, and
+//! that id is enough to *follow* a reference — [`SeekKeyPart::RegisterFactId`] splices
+//! it, so a join through one costs no store read. Reaching the fact it names is the
+//! other half: `X.name` or `X.value` where `X` came out of a reference field needs a
+//! second lookup the `Plan` IR has no access kind for (`nyi/fact-field`). Getting the
+//! first half wrong *silently* is the trap the split exists to close — a register
+//! holds its own row's key bytes, which are not the referenced fact's, and comparing
+//! them would give wrong answers rather than an error.
 //!
 //! **Bind a computed value.** `X = 42`, `X = Y`, `X = Y.name` bind a variable to
 //! something no generator produced. That is a *derived bind* and needs the value
@@ -66,6 +64,7 @@ use crate::focus::{
     iter::Address,
     plan::{
         Access, FieldPath, Generator, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart,
+        Step,
     },
     reorder::{Deps, StmtDeps, reorder},
     schema::{LocalInterner, PredicateId, PredicateTy, Schema, Symbol},
@@ -96,6 +95,20 @@ enum Slot {
     ///
     /// [I6]: ../../../docs/invariants.md#i6
     Value { address: Address, ty: PredicateTy },
+    /// A **constant**, from `X = 42` — held as the literal's own node rather than
+    /// as bytes or a decoded value, so every use resolves by *substitution*: a key
+    /// field asks [`constant`](Flatten::constant) and a head asks
+    /// [`project`](Flatten::project), each reaching the same arm it would have
+    /// reached had the literal been written in place.
+    ///
+    /// So a constant bind occupies **no register and no plan step**. The machine
+    /// has a derived-bind step ([`Step::Derive`]) and this deliberately does not
+    /// use it: introducing a slot to hold a value already known at compile time
+    /// would be a level for the executor to walk and a value for a resume to
+    /// recompute, both to arrive back at the literal. The step exists for a value
+    /// that *cannot* be folded — one computed from a row — and nothing in the
+    /// language produces one yet.
+    Const(NodeId),
 }
 
 /// One statement, as a generator-to-be — before an order is chosen, so before any
@@ -229,7 +242,7 @@ impl Level {
 pub fn flatten(
     ast: &Ast,
     schema: &Schema,
-    interner: &LocalInterner,
+    interner: &mut LocalInterner,
     diagnostics: &mut Diagnostics,
 ) -> Option<Plan> {
     flatten_ordered(ast, schema, interner, diagnostics, None)
@@ -249,7 +262,7 @@ pub fn flatten(
 pub fn flatten_in_order(
     ast: &Ast,
     schema: &Schema,
-    interner: &LocalInterner,
+    interner: &mut LocalInterner,
     diagnostics: &mut Diagnostics,
     order: &[usize],
 ) -> Option<Plan> {
@@ -266,7 +279,7 @@ pub fn flatten_in_order(
 pub fn dependencies(
     ast: &Ast,
     schema: &Schema,
-    interner: &LocalInterner,
+    interner: &mut LocalInterner,
     diagnostics: &mut Diagnostics,
 ) -> Option<Deps> {
     let mut flattener = Flattener {
@@ -275,6 +288,7 @@ pub fn dependencies(
         interner,
         diagnostics,
         bindings: vec![],
+        hoisted: vec![],
     };
 
     Some(flattener.collect()?.deps)
@@ -283,7 +297,7 @@ pub fn dependencies(
 fn flatten_ordered(
     ast: &Ast,
     schema: &Schema,
-    interner: &LocalInterner,
+    interner: &mut LocalInterner,
     diagnostics: &mut Diagnostics,
     order: Option<&[usize]>,
 ) -> Option<Plan> {
@@ -308,7 +322,7 @@ fn flatten_ordered(
 fn flatten_reporting(
     ast: &Ast,
     schema: &Schema,
-    interner: &LocalInterner,
+    interner: &mut LocalInterner,
     diagnostics: &mut Diagnostics,
     order: Option<&[usize]>,
 ) -> Option<Plan> {
@@ -318,6 +332,7 @@ fn flatten_reporting(
         interner,
         diagnostics,
         bindings: vec![],
+        hoisted: vec![],
     };
 
     let collected = flattener.collect()?;
@@ -347,13 +362,21 @@ fn flatten_reporting(
 struct Flattener<'a> {
     ast: &'a Ast,
     schema: &'a Schema,
-    interner: &'a LocalInterner,
+    interner: &'a mut LocalInterner,
     diagnostics: &'a mut Diagnostics,
     /// Variable → where its value lives, as the levels are emitted in order.
     ///
     /// Append-only, and searched from the back: a variable is bound once, at its
     /// first occurrence in the chosen order, and every later occurrence reads it.
     bindings: Vec<(Symbol, Slot)>,
+    /// Nested fact pattern → the row variable it was **hoisted** to.
+    ///
+    /// A generator written inside another has no name, and everything downstream —
+    /// the dependency graph, the safety check, sargeability, projection — is written
+    /// in terms of variables. Rather than give each of those a second code path, the
+    /// hoist invents the name the user did not write and the rest of the pass sees an
+    /// ordinary row bind.
+    hoisted: Vec<(NodeId, Symbol)>,
 }
 
 impl Flattener<'_> {
@@ -374,6 +397,7 @@ impl Flattener<'_> {
             match stmt {
                 QueryStmt::Implicit(node) => {
                     if let Some(generator) = self.generator(*node, None) {
+                        self.hoist_within(generator.key, &mut stmts);
                         stmts.push(generator);
                     }
                 }
@@ -388,7 +412,16 @@ impl Flattener<'_> {
 
                     if matches!(self.ast.store().kind(*rhs), ExprKind::Fact(..)) {
                         if let Some(generator) = self.generator(*rhs, row) {
+                            self.hoist_within(generator.key, &mut stmts);
                             stmts.push(generator);
+                        }
+                    } else if self.is_foldable(*rhs) {
+                        // A constant bind: recorded and substituted at every use, so
+                        // it contributes no generator and no step. `row` is `Some`
+                        // unless the left side is a wildcard, and `_ = 42` binds
+                        // nothing anyone can read — harmless, and dropped here.
+                        if let Some(symbol) = row {
+                            self.bindings.push((symbol, Slot::Const(*rhs)));
                         }
                     } else {
                         self.report(
@@ -416,13 +449,27 @@ impl Flattener<'_> {
         // running, which is what a seek splicing it depends on.
         let mut deps = Vec::with_capacity(stmts.len());
 
+        // The head last, and after every statement: a generator in the head is read by
+        // the projection, which runs once every level has bound, and nothing reads it.
+        let head = *self.ast.query().head();
+        self.hoist_node(head, &mut stmts);
+
+        // Which variables name a whole row. A bare variable at a *fact-typed* field
+        // is capturable like any other — the field holds a reference and a reference
+        // is a value — but if the same variable is a row somewhere, the field can only
+        // be **matched against** that row, never bind it: the level would have to
+        // find its own fact by id, which is a point access the plan cannot express.
+        // Deciding it here, from the whole statement list, keeps it a property of the
+        // query rather than of the order.
+        let rows: Vec<Symbol> = stmts.iter().filter_map(|generator| generator.row).collect();
+
         for generator in &stmts {
             let mut occurrences = Occurrences::default();
 
             if let Some(row) = generator.row {
                 occurrences.capture(row);
             }
-            self.scan_key(generator.key, generator.predicate, &mut occurrences);
+            self.scan_key(generator.key, generator.predicate, &rows, &mut occurrences);
 
             deps.push(StmtDeps {
                 captures: occurrences.captures.into(),
@@ -442,6 +489,79 @@ impl Flattener<'_> {
             deps: Deps::new(deps),
             head_reads: head.reads,
         })
+    }
+
+    // ---- hoisting -----------------------------------------------------------
+
+    /// Hoist every fact pattern **inside** `node` into a generator of its own.
+    ///
+    /// A fact pattern denotes the facts matching it, so it is a generator wherever it
+    /// is written — in a key field, in the head, under a field read. Only the one a
+    /// statement *is* stays where it is; the rest become levels, appended here so that
+    /// each precedes whatever named it.
+    fn hoist_within(&mut self, node: NodeId, stmts: &mut Vec<Gen>) {
+        match self.ast.store().kind(node) {
+            ExprKind::Record(fields) => {
+                for (_, value) in fields.clone().iter() {
+                    self.hoist_node(*value, stmts);
+                }
+            }
+
+            ExprKind::Access(_, base) | ExprKind::Select(_, base) => {
+                self.hoist_node(*base, stmts);
+            }
+
+            // A fact pattern reached directly is the caller's own statement — or a
+            // whole-key pattern, which `scan_key` reports. Either way it is not
+            // hoisted from here; `hoist_node` is the entry point that does that.
+            _ => {}
+        }
+    }
+
+    /// [`hoist_within`](Self::hoist_within), and `node` itself if it is a generator.
+    fn hoist_node(&mut self, node: NodeId, stmts: &mut Vec<Gen>) {
+        let ExprKind::Fact(predicate, key) = *self.ast.store().kind(node) else {
+            self.hoist_within(node, stmts);
+            return;
+        };
+
+        // Innermost first: a generator nested inside this one has to be a level
+        // *before* it, because this one's key reads what that one binds.
+        self.hoist_within(key, stmts);
+
+        let row = self.fresh(stmts.len());
+        stmts.push(Gen {
+            predicate,
+            key,
+            row: Some(row),
+            span: self.ast.store().span(node),
+        });
+        self.hoisted.push((node, row));
+    }
+
+    /// A name for a hoisted row that no source can collide with: the lexer has no
+    /// rule producing `%`, and no schema declares one.
+    fn fresh(&mut self, level: usize) -> Symbol {
+        self.interner.get_or_intern(&format!("%h{level}"))
+    }
+
+    /// The slot a hoisted generator's row is in, once its level has been emitted.
+    fn hoisted_slot(&self, node: NodeId) -> Option<Slot> {
+        let row = self
+            .hoisted
+            .iter()
+            .find(|(hoisted, _)| *hoisted == node)
+            .map(|(_, row)| *row)?;
+
+        self.lookup(row)
+    }
+
+    /// The row variable a hoisted generator was given, for recording the read of it.
+    fn hoisted_row(&self, node: NodeId) -> Option<Symbol> {
+        self.hoisted
+            .iter()
+            .find(|(hoisted, _)| *hoisted == node)
+            .map(|(_, row)| *row)
     }
 
     /// One statement as a generator, or a report that it is not one.
@@ -466,14 +586,20 @@ impl Flattener<'_> {
 
     /// Walk a key pattern for variable occurrences, reporting anything the plan
     /// cannot express.
-    fn scan_key(&mut self, node: NodeId, predicate: PredicateId, occurrences: &mut Occurrences) {
+    fn scan_key(
+        &mut self,
+        node: NodeId,
+        predicate: PredicateId,
+        rows: &[Symbol],
+        occurrences: &mut Occurrences,
+    ) {
         let Some(key_ty) = self.schema.get(predicate).map(|p| p.key().ty.clone()) else {
             return;
         };
 
         match (&key_ty, self.ast.store().kind(node)) {
             (PredicateTy::Record(_), ExprKind::Record(_)) => {
-                self.scan_field(node, &key_ty, occurrences);
+                self.scan_field(node, &key_ty, rows, occurrences);
             }
             // A whole-predicate scan.
             (PredicateTy::Record(_), ExprKind::Wildcard) => {}
@@ -484,19 +610,28 @@ impl Flattener<'_> {
                  a stored key is its fields, so name the fields instead",
             ),
             // A scalar key is one field, and the pattern is that field's.
-            (scalar, _) => self.scan_field(node, scalar, occurrences),
+            (scalar, _) => self.scan_field(node, scalar, rows, occurrences),
         }
     }
 
-    fn scan_field(&mut self, node: NodeId, ty: &PredicateTy, occurrences: &mut Occurrences) {
+    fn scan_field(
+        &mut self,
+        node: NodeId,
+        ty: &PredicateTy,
+        rows: &[Symbol],
+        occurrences: &mut Occurrences,
+    ) {
         match self.ast.store().kind(node) {
             ExprKind::Wildcard | ExprKind::Lit(_) | ExprKind::Prefix(_) => {}
 
             ExprKind::Var(symbol) => {
-                if self.fact_field(node, ty) {
-                    return;
+                // A reference field whose variable is a row elsewhere can only read
+                // it; anything else is a capture. See `rows` in `collect`.
+                if matches!(ty, PredicateTy::Fact(_)) && rows.contains(symbol) {
+                    occurrences.read(*symbol);
+                } else {
+                    occurrences.capture(*symbol);
                 }
-                occurrences.capture(*symbol);
             }
 
             ExprKind::Record(fields) => {
@@ -506,7 +641,7 @@ impl Flattener<'_> {
 
                 for (name, field_ty) in field_tys.iter() {
                     if let Some(pattern) = field_pattern(fields, Symbol::Schema(*name)) {
-                        self.scan_field(pattern, field_ty, occurrences);
+                        self.scan_field(pattern, field_ty, rows, occurrences);
                     }
                 }
             }
@@ -519,17 +654,18 @@ impl Flattener<'_> {
             ),
 
             ExprKind::Access(FieldRef::Key(_), _) | ExprKind::Select(..) => {
-                if self.fact_field(node, ty) {
-                    return;
-                }
-                match self.ast.store().kind(self.chain_root(node)) {
+                let root = self.chain_root(node);
+
+                match self.ast.store().kind(root) {
                     ExprKind::Var(symbol) => occurrences.read(*symbol),
-                    ExprKind::Fact(..) => self.nested_generator(node),
+                    ExprKind::Fact(..) => self.read_hoisted(root, occurrences),
                     _ => {}
                 }
             }
 
-            ExprKind::Fact(..) => self.nested_generator(node),
+            // Hoisted into its own level by now, and read from here like the row bind
+            // it became.
+            ExprKind::Fact(..) => self.read_hoisted(node, occurrences),
 
             // Deferred constructs, all of which typecheck has already reported.
             ExprKind::Never
@@ -539,37 +675,28 @@ impl Flattener<'_> {
         }
     }
 
-    /// Whether `ty` is a fact reference, reported if so.
+    /// Reading *through* a reference — the half of cross-fact navigation that is
+    /// still deferred.
     ///
-    /// A fact-typed field holds a `FactId`, and a register holds the row it came
-    /// from — so matching one against a bound row would compare a key against an id,
-    /// and capturing one and reading its fields needs a fetch the plan cannot
-    /// express. Both are the same missing feature.
-    fn fact_field(&mut self, node: NodeId, ty: &PredicateTy) -> bool {
-        if !matches!(ty, PredicateTy::Fact(_)) {
-            return false;
-        }
-
-        self.report_fact_field(node);
-        true
-    }
-
-    fn report_fact_field(&mut self, node: NodeId) {
+    /// A reference may be captured, projected and matched, because all three are
+    /// operations on the id itself. Reaching the fact it names — its key fields or
+    /// its value — is a second lookup the `Plan` IR has no access kind for.
+    fn report_through_reference(&mut self, node: NodeId, what: &str) {
         self.report(
             node,
             Code::NyiFactField,
-            "matching or capturing a field that holds a fact reference is not \
-             implemented yet; it needs cross-fact navigation",
+            format!(
+                "reading {what} through a fact reference is not implemented yet; it needs \
+                 cross-fact navigation"
+            ),
         );
     }
 
-    fn nested_generator(&mut self, node: NodeId) {
-        self.report(
-            node,
-            Code::NyiNestedGenerator,
-            "a fact pattern here would be a generator of its own, which is not \
-             implemented yet; write it as its own statement",
-        );
+    /// Record the read of a hoisted generator's row.
+    fn read_hoisted(&mut self, node: NodeId, occurrences: &mut Occurrences) {
+        if let Some(row) = self.hoisted_row(node) {
+            occurrences.read(row);
+        }
     }
 
     /// Walk the head for the variables it reads, reporting anything unprojectable.
@@ -589,14 +716,16 @@ impl Flattener<'_> {
             }
 
             ExprKind::Access(..) | ExprKind::Select(..) => {
-                match self.ast.store().kind(self.chain_root(node)) {
+                let root = self.chain_root(node);
+
+                match self.ast.store().kind(root) {
                     ExprKind::Var(symbol) => occurrences.read(*symbol),
-                    ExprKind::Fact(..) => self.nested_generator(node),
+                    ExprKind::Fact(..) => self.read_hoisted(root, occurrences),
                     _ => self.not_projectable(node),
                 }
             }
 
-            ExprKind::Fact(..) => self.nested_generator(node),
+            ExprKind::Fact(..) => self.read_hoisted(node, occurrences),
 
             // A prefix is a pattern, not a value; a wildcard was rejected at
             // typecheck; the rest are deferred constructs it also reported.
@@ -634,7 +763,16 @@ impl Flattener<'_> {
     /// reader — nothing has bound it yet — and the second is what makes this the
     /// check on the order rather than on the query.
     fn safe(&mut self, collected: &Collected, order: &[usize]) -> bool {
-        let mut bound: Vec<Symbol> = vec![];
+        // A folded constant is bound **before any level runs**, and range
+        // restriction is satisfied: `X = 42` gives `X` exactly one value, which is
+        // what the check is for — that a variable ranges over something finite. It
+        // needs no ordering either, since nothing it depends on can move.
+        let mut bound: Vec<Symbol> = self
+            .bindings
+            .iter()
+            .filter(|(_, slot)| matches!(slot, Slot::Const(_)))
+            .map(|(symbol, _)| *symbol)
+            .collect();
         let mut ok = true;
 
         for &stmt in order {
@@ -724,7 +862,7 @@ impl Flattener<'_> {
 
         Some(Plan {
             nvars: order.len(),
-            body: body.into(),
+            body: body.into_iter().map(Step::Scan).collect(),
             head: head?,
         })
     }
@@ -781,41 +919,18 @@ impl Flattener<'_> {
                         },
                     ));
                 }
-                Some(slot) => self.matched(node, &slot, address, path, level),
+                Some(slot) => self.matched(node, &slot, ty, address, path, level),
             },
 
-            ExprKind::Access(..) | ExprKind::Select(..) => {
+            ExprKind::Access(..) | ExprKind::Select(..) | ExprKind::Fact(..) => {
                 if let Some(slot) = self.resolve(node) {
-                    self.matched(node, &slot, address, path, level);
+                    self.matched(node, &slot, ty, address, path, level);
                 }
             }
 
             // A literal, a string prefix, or a record of them.
             _ => match self.constant(node, ty) {
-                Some(Const::Bytes(bytes)) => {
-                    if level.building {
-                        level.parts.push(SeekKeyPart::Bytes(bytes.into()));
-                    } else {
-                        level.residuals.push(Residual {
-                            path: path.clone(),
-                            op: ResidualOp::EqConst(bytes.into()),
-                        });
-                    }
-                }
-
-                // A prefix narrows to a *range*, so it can end a seek but nothing
-                // may follow it in one: the bytes after it are not the field's.
-                Some(Const::Prefix(bytes)) => {
-                    if level.building {
-                        level.parts.push(SeekKeyPart::Bytes(bytes.into()));
-                        level.building = false;
-                    } else {
-                        level.residuals.push(Residual {
-                            path: path.clone(),
-                            op: ResidualOp::Prefix(bytes.into()),
-                        });
-                    }
-                }
+                Some(constant) => Self::narrow_by(constant, path, level),
 
                 // Not fully determined: a record giving only some of its fields.
                 // Those become residuals and captures one step deeper, and the
@@ -841,10 +956,15 @@ impl Flattener<'_> {
 
     /// A field matched against something already bound: a splice while the seek is
     /// still being built, a residual once it is closed.
+    ///
+    /// `ty` is the field's **declared** type, which is what says whether the bytes
+    /// there are a value or a reference — the one thing a register's contents cannot
+    /// tell you.
     fn matched(
         &mut self,
         node: NodeId,
         slot: &Slot,
+        ty: &PredicateTy,
         address: Address,
         path: &FieldPath,
         level: &mut Level,
@@ -885,15 +1005,119 @@ impl Flattener<'_> {
                 }
             }
 
-            // Both are reported by `collect`, which sees the field's declared type
-            // before any of this; reported here too so that no path can decline to
-            // build a plan without saying why.
-            Slot::Row { .. } => self.report_fact_field(node),
+            // **A join through a reference.** The field holds an id, and the bound
+            // row *is* that id, so the compare is against the register's identity.
+            // Its key bytes would be the wrong thing entirely — see
+            // [`SeekKeyPart::RegisterFactId`].
+            Slot::Row {
+                address: from,
+                predicate,
+            } => match ty {
+                PredicateTy::Fact(referenced) if referenced == predicate => {
+                    if level.building {
+                        level.parts.push(SeekKeyPart::RegisterFactId(*from));
+                    } else {
+                        level.residuals.push(Residual {
+                            path: path.clone(),
+                            op: ResidualOp::EqRegisterFactId(*from),
+                        });
+                    }
+                }
+
+                // A row where the field is not a reference to *its* predicate.
+                // Typecheck unifies `Fact(p)` only with `Fact(p)`, so this is
+                // unreachable — reported rather than declined so that no path can
+                // refuse a plan without saying why.
+                _ => self.report(
+                    node,
+                    Code::RejectTypeMismatch,
+                    "this field does not hold a reference to that fact",
+                ),
+            },
+
+            // A **folded constant** at a key field: narrowed exactly as the literal
+            // written in place would be. This is the arm that makes
+            // `Z = 1; test.Bar {id = Z}` a seek rather than a scan.
+            //
+            // `None` means the literal does not encode against this field's type,
+            // which typecheck rejects first — reported rather than declined so no
+            // path can refuse a plan without saying why.
+            Slot::Const(folded) => match self.constant(*folded, ty) {
+                Some(constant) => Self::narrow_by(constant, path, level),
+                None => self.report(
+                    node,
+                    Code::RejectTypeMismatch,
+                    "this constant is not a value of that field's type",
+                ),
+            },
+
+            // Reported by `collect` too, which sees the field's declared type before
+            // any of this; reported here for the same reason.
             Slot::Value { .. } => self.report(
                 node,
                 Code::NyiValueMatch,
                 "matching on a fact's value is not implemented yet",
             ),
+        }
+    }
+
+    /// Narrow this level by a constant: a seek component while the prefix is still
+    /// building, a residual once it has closed.
+    ///
+    /// Shared by the two ways a constant reaches a key field — written there, or
+    /// bound to a variable and folded — so that `Z = 1; test.Bar {id = Z}` narrows
+    /// exactly as `test.Bar {id = 1}` does rather than by a parallel code path.
+    fn narrow_by(constant: Const, path: &FieldPath, level: &mut Level) {
+        match constant {
+            Const::Bytes(bytes) => {
+                if level.building {
+                    level.parts.push(SeekKeyPart::Bytes(bytes.into()));
+                } else {
+                    level.residuals.push(Residual {
+                        path: path.clone(),
+                        op: ResidualOp::EqConst(bytes.into()),
+                    });
+                }
+            }
+
+            // A prefix narrows to a *range*, so it can end a seek but nothing may
+            // follow it in one: the bytes after it are not the field's.
+            Const::Prefix(bytes) => {
+                if level.building {
+                    level.parts.push(SeekKeyPart::Bytes(bytes.into()));
+                    level.building = false;
+                } else {
+                    level.residuals.push(Residual {
+                        path: path.clone(),
+                        op: ResidualOp::Prefix(bytes.into()),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Whether `node` is a pattern a bind can **fold** — one whose value is known
+    /// without running anything.
+    ///
+    /// A scalar literal, or a record built entirely of foldable things, however
+    /// deeply. A record on the *left* of a bind is `pattern = pattern` unification
+    /// and typecheck defers it before flatten sees it; a record on the right of a
+    /// plain variable bind is not unification at all, just a constant with fields,
+    /// and folding it is the same substitution as a scalar.
+    ///
+    /// Two things are deliberately not foldable. A string **prefix** denotes a
+    /// range rather than a value, so there is nothing for a variable bound to one to
+    /// be. And a record mentioning a **captured** variable — `{a = 1, b = Y}` — is a
+    /// value that differs per row, so it is not a constant at all: that is the
+    /// derived bind this phase leaves unlowered, and the nearest thing in the
+    /// language to a producer for [`Step::Derive`].
+    fn is_foldable(&self, node: NodeId) -> bool {
+        match self.ast.store().kind(node) {
+            ExprKind::Lit(Literal::Int(_) | Literal::Str(_)) => true,
+            ExprKind::Record(fields) => {
+                fields.iter().all(|(_, pattern)| self.is_foldable(*pattern))
+            }
+            _ => false,
         }
     }
 
@@ -904,6 +1128,16 @@ impl Flattener<'_> {
     /// given, because the encoding is positional: a missing field would leave the
     /// bytes of the ones after it in the wrong place.
     fn constant(&self, node: NodeId, ty: &PredicateTy) -> Option<Const> {
+        // A variable bound to a literal *is* that literal here, which is what makes
+        // `Z = 1; test.Bar {id = Z}` seek the same bytes `{id = 1}` does rather than
+        // splice a register. Resolved before the match so every arm below — records
+        // included — sees through the binding.
+        if let ExprKind::Var(symbol) = self.ast.store().kind(node)
+            && let Some(Slot::Const(folded)) = self.lookup(*symbol)
+        {
+            return self.constant(folded, ty);
+        }
+
         match (self.ast.store().kind(node), ty) {
             (ExprKind::Lit(Literal::Int(value)), PredicateTy::Int) => {
                 let mut out = vec![];
@@ -956,19 +1190,29 @@ impl Flattener<'_> {
         match self.ast.store().kind(node) {
             ExprKind::Var(symbol) => self.lookup(*symbol),
 
-            ExprKind::Access(FieldRef::Value, base) => {
-                // Only a *row* has a value side. A fact-typed field denotes a row
-                // too, and reading its value is a fetch — but a variable cannot be
-                // bound to one yet (`collect` reports `nyi/fact-field` first), so
-                // this returns quietly. Whoever allows that capture owes this arm a
-                // diagnostic; the `debug_assert` in `flatten_ordered` is what will
-                // say so.
-                let Slot::Row { address, predicate } = self.resolve(*base)? else {
-                    return None;
-                };
-                let ty = self.schema.get(predicate)?.value()?.ty.clone();
+            // A hoisted generator, which by now is a level with a row of its own.
+            ExprKind::Fact(..) => self.hoisted_slot(node),
 
-                Some(Slot::Value { address, ty })
+            ExprKind::Access(FieldRef::Value, base) => {
+                // Only a *row* has a value side that is one point read away. A
+                // captured reference denotes a row too, but reaching its value means
+                // finding the fact first — the deferred half.
+                match self.resolve(*base)? {
+                    Slot::Row { address, predicate } => {
+                        let ty = self.schema.get(predicate)?.value()?.ty.clone();
+                        Some(Slot::Value { address, ty })
+                    }
+                    Slot::Field {
+                        ty: PredicateTy::Fact(_),
+                        ..
+                    } => {
+                        self.report_through_reference(node, "the value");
+                        None
+                    }
+                    // Typecheck rejects `.value` on anything else: a field's type has
+                    // no value side, and a value's is not a fact.
+                    _ => None,
+                }
             }
 
             ExprKind::Access(FieldRef::Key(name), base) => {
@@ -996,22 +1240,17 @@ impl Flattener<'_> {
                                 ty: field_ty,
                             })
                         }
-                        // Reading a field *of* a referenced fact is a fetch.
+                        // Reading a field *of* a referenced fact is a second lookup.
                         PredicateTy::Fact(_) => {
-                            self.report(
-                                node,
-                                Code::NyiFactField,
-                                "reading a field through a fact reference is not implemented \
-                                 yet; it needs cross-fact navigation",
-                            );
+                            self.report_through_reference(node, "a field");
                             None
                         }
                         _ => None,
                     },
 
-                    // Reading a field of a scalar value: typecheck rejects it, since
-                    // a value's type has no fields.
-                    Slot::Value { .. } => None,
+                    // Reading a field of a scalar: typecheck rejects both, since
+                    // neither a value's type nor a literal's has fields.
+                    Slot::Value { .. } | Slot::Const(_) => None,
                 }
             }
 
@@ -1043,15 +1282,21 @@ impl Flattener<'_> {
                 Some(Project::Record(out.into()))
             }
 
-            ExprKind::Var(_) | ExprKind::Access(..) => match self.resolve(node)? {
-                // A variable bound to a whole row projects its identity: the row
-                // itself is not bytes in the register, the fact id is.
-                Slot::Row { address, .. } => Some(Project::FactRef(address)),
-                Slot::Field { address, path, ty } => {
-                    Some(Project::RegisterField { address, path, ty })
+            ExprKind::Var(_) | ExprKind::Access(..) | ExprKind::Fact(..) => {
+                match self.resolve(node)? {
+                    // A variable bound to a whole row projects its identity: the row
+                    // itself is not bytes in the register, the fact id is.
+                    Slot::Row { address, .. } => Some(Project::FactRef(address)),
+                    Slot::Field { address, path, ty } => {
+                        Some(Project::RegisterField { address, path, ty })
+                    }
+                    Slot::Value { address, ty } => Some(Project::Value { address, ty }),
+                    // Substitution: project the literal the variable was bound to,
+                    // which is the same `Project::Lit` the head would have got had
+                    // the literal been written here.
+                    Slot::Const(folded) => self.project(folded),
                 }
-                Slot::Value { address, ty } => Some(Project::Value { address, ty }),
-            },
+            }
 
             _ => None,
         }
@@ -1104,13 +1349,15 @@ fn field_of(ty: &PredicateTy, name: Symbol) -> Option<(usize, PredicateTy)> {
 mod tests {
     use super::*;
     use crate::focus::{
+        compile::Compilation,
         corpus,
         cst::CstNode,
-        fixtures::{collect_rows, compose, i64_field, str_field},
+        fixture,
+        fixtures::{collect_rows, i64_field, run_with_suspends, str_field},
         lower::lower,
         mem_store::MemStore,
         parse::parse,
-        plan::{Project, Residual, ResidualOp, SeekKey, SeekKeyPart},
+        plan::{FactId, Project, Residual, ResidualOp, SeekKey, SeekKeyPart},
         tuple::Value,
         ty,
     };
@@ -1165,8 +1412,8 @@ mod tests {
         );
 
         let plan = match order {
-            None => flatten(&ast, &schema, &interner, &mut diagnostics),
-            Some(order) => flatten_in_order(&ast, &schema, &interner, &mut diagnostics, order),
+            None => flatten(&ast, &schema, &mut interner, &mut diagnostics),
+            Some(order) => flatten_in_order(&ast, &schema, &mut interner, &mut diagnostics, order),
         };
 
         Flattened {
@@ -1200,7 +1447,7 @@ mod tests {
         let _typed = ty::check(&ast, &schema, &interner, &mut diagnostics);
         assert!(!diagnostics.has_errors(), "{source:?} must typecheck");
 
-        dependencies(&ast, &schema, &interner, &mut diagnostics).expect("a collectable query")
+        dependencies(&ast, &schema, &mut interner, &mut diagnostics).expect("a collectable query")
     }
 
     // ---- rendering a plan --------------------------------------------------
@@ -1215,7 +1462,16 @@ mod tests {
         let schema = corpus::schema();
         let mut out = vec![];
 
-        for (level, generator) in plan.body.iter().enumerate() {
+        for step in plan.body.iter() {
+            let generator = match step {
+                Step::Scan(generator) => generator,
+                // A derived bind, which binds a value rather than a level.
+                Step::Derive(derived) => {
+                    out.push(format!("{} = <computed>", derived.bind));
+                    continue;
+                }
+            };
+
             let name = schema
                 .get(generator.access.predicate_id)
                 .and_then(|p| p.name())
@@ -1234,6 +1490,8 @@ mod tests {
                             SeekKeyPart::RegisterField { address, path } => {
                                 format!("{address}.{path}")
                             }
+                            // `r0#` — the row's identity, not any field of it.
+                            SeekKeyPart::RegisterFactId(address) => format!("{address}#"),
                         })
                         .collect::<Vec<_>>()
                         .join(" ")
@@ -1249,6 +1507,7 @@ mod tests {
                     ResidualOp::EqRegisterField { address, path: at } => {
                         format!("{path} == {address}.{at}")
                     }
+                    ResidualOp::EqRegisterFactId(address) => format!("{path} == {address}#"),
                 })
                 .collect::<Vec<_>>();
 
@@ -1266,7 +1525,6 @@ mod tests {
                 .join(",");
 
             out.push(format!("{binds} <- {name} {access}{residuals}"));
-            let _ = level;
         }
 
         out.push(format!("head {}", project(&plan.head, interner)));
@@ -1283,6 +1541,7 @@ mod tests {
                 format!("{address}.{path}:{}", render_ty(ty))
             }
             Project::Value { address, ty } => format!("{address}.value:{}", render_ty(ty)),
+            Project::Computed(address) => format!("{address}="),
             Project::Record(fields) => format!(
                 "{{{}}}",
                 fields
@@ -1329,7 +1588,10 @@ mod tests {
 
         assert_eq!(plan.nvars, 1);
         assert_eq!(plan.body.len(), 1);
-        assert_eq!(plan.body[0].binds.as_ref(), [Address::new(0)]);
+        assert_eq!(
+            plan.level(0).expect("a level").binds.as_ref(),
+            [Address::new(0)]
+        );
         assert_eq!(
             describe(plan, &flattened.interner),
             lines(&["r0 <- test.Foo scan", "head r0"])
@@ -1404,7 +1666,7 @@ mod tests {
             describe(plan, &flattened.interner),
             lines(&["r0 <- test.Foo seek[k]", "head r0"])
         );
-        match &plan.body[0].access.seek_key {
+        match &plan.level(0).expect("a level").access.seek_key {
             SeekKey::Prefix(bytes) => assert_eq!(bytes.as_ref(), i64_field(1).as_slice()),
             other => panic!("expected a constant prefix, got {other:?}"),
         }
@@ -1415,7 +1677,7 @@ mod tests {
     fn a_scalar_key_constant_is_the_whole_seek() {
         let flattened = compile("X where X = test.Count -42");
 
-        match &flattened.plan().body[0].access.seek_key {
+        match &flattened.plan().level(0).expect("a level").access.seek_key {
             SeekKey::Prefix(bytes) => assert_eq!(bytes.as_ref(), i64_field(-42).as_slice()),
             other => panic!("expected a constant prefix, got {other:?}"),
         }
@@ -1433,7 +1695,7 @@ mod tests {
             describe(plan, &flattened.interner),
             lines(&["r0 <- test.Foo scan where 1 == k", "head r0.0:int"])
         );
-        match &plan.body[0].residuals[0].op {
+        match &plan.level(0).expect("a level").residuals[0].op {
             ResidualOp::EqConst(bytes) => assert_eq!(bytes.as_ref(), str_field("a").as_slice()),
             other => panic!("expected a constant residual, got {other:?}"),
         }
@@ -1455,7 +1717,7 @@ mod tests {
 
         let mut expected = str_field("abc");
         expected.pop().expect("a terminated string");
-        match &plan.body[0].access.seek_key {
+        match &plan.level(0).expect("a level").access.seek_key {
             SeekKey::Prefix(bytes) => assert_eq!(bytes.as_ref(), expected.as_slice()),
             other => panic!("expected a prefix seek, got {other:?}"),
         }
@@ -1475,7 +1737,7 @@ mod tests {
 
         let mut expected = str_field("a");
         expected.pop().expect("a terminated string");
-        match &plan.body[0].residuals[0].op {
+        match &plan.level(0).expect("a level").residuals[0].op {
             ResidualOp::Prefix(bytes) => assert_eq!(bytes.as_ref(), expected.as_slice()),
             other => panic!("expected a prefix residual, got {other:?}"),
         }
@@ -1566,6 +1828,251 @@ mod tests {
         );
     }
 
+    // ---- reaching a fact through a reference ---------------------------------
+
+    /// **A join through a reference.** The bound row's *identity* is what a
+    /// fact-typed field holds, so the splice is its fact id — not its key bytes,
+    /// which is the trap — and it narrows the scan like any other leading constant.
+    /// No store read is involved, so [I6](../../../docs/invariants.md#i6) stays
+    /// structural.
+    #[test]
+    fn a_bound_row_splices_its_fact_id_into_the_seek() {
+        assert_eq!(
+            shape("P where P = test.Foo {id = 1}; test.Ref {of = P}"),
+            lines(&[
+                "r0 <- test.Foo seek[k]",
+                "r1 <- test.Ref seek[r0#]",
+                "head r0",
+            ]),
+        );
+    }
+
+    /// The same compare once the seek prefix has closed: a capture at the leading
+    /// field ends it, so the reference filters rows as they come instead.
+    #[test]
+    fn a_reference_after_an_open_field_becomes_a_residual() {
+        assert_eq!(
+            shape("{a = X} where P = test.Foo {id = 1}; test.Link {at = X, of = P}"),
+            lines(&[
+                "r0 <- test.Foo seek[k]",
+                "r1 <- test.Link scan where 1 == r0#",
+                "head {a = r1.0:int}",
+            ]),
+        );
+    }
+
+    /// A reference **captured**, which reads no second fact: the field's bytes are a
+    /// fact id, and projecting them is a `Value::FactRef` naming the row.
+    #[test]
+    fn a_fact_typed_field_may_be_captured_and_projected() {
+        assert_eq!(
+            shape("X where test.Ref {of = X}"),
+            lines(&["r0 <- test.Ref scan", "head r0.0:fact(0)"]),
+            "`fact(0)` is `test.Foo` — the predicate the field is declared against",
+        );
+    }
+
+    /// Two references to the same fact meet as **bytes**, with no fact id in the
+    /// plan at all: a captured reference is a key field like any other, so the
+    /// existing field compare is already the right operator.
+    #[test]
+    fn two_references_to_one_fact_compare_as_fields() {
+        assert_eq!(
+            shape("X where test.Ref {of = X}; test.Link {at = 1, of = X}"),
+            lines(&[
+                "r0 <- test.Ref scan",
+                "r1 <- test.Link seek[k r0.0]",
+                "head r0.0:fact(0)",
+            ]),
+        );
+    }
+
+    /// Which occurrence *captures* a reference depends on whether the variable is a
+    /// row somewhere: `P = test.Foo …` binds a row, so `of = P` can only read it —
+    /// and a read constrains the order, exactly as `Y.name` does.
+    #[test]
+    fn a_row_variable_at_a_reference_field_is_a_read() {
+        let schema = corpus::schema();
+        let deps = deps_of("P where P = test.Foo {id = 1}; test.Ref {of = P}");
+
+        assert_eq!(deps.antichains(), Some(vec![vec![0], vec![1]]));
+        assert!(deps.respects(&[0, 1]));
+        assert!(!deps.respects(&[1, 0]));
+
+        // Reorder being the identity, the other spelling has to be refused — and it
+        // never reaches flatten to be refused *here*: binding a row variable that a
+        // reference field has already mentioned is a `pattern = pattern`, which
+        // typecheck defers.
+        let mut compilation =
+            Compilation::new("P where test.Ref {of = P}; P = test.Foo {id = 1}", &schema);
+        assert!(compilation.plan().is_none());
+        assert_eq!(
+            compilation.diagnostics().codes().collect::<Vec<_>>(),
+            ["nyi/bind-unification"],
+        );
+    }
+
+    /// A reference field with no row behind it is a plain capture, so either
+    /// statement may bind it and the order is free.
+    #[test]
+    fn two_reference_fields_sharing_a_variable_are_one_antichain() {
+        let deps = deps_of("X where test.Ref {of = X}; test.Link {at = 1, of = X}");
+
+        assert_eq!(deps.antichains(), Some(vec![vec![0, 1]]));
+        assert!(deps.respects(&[0, 1]));
+        assert!(deps.respects(&[1, 0]));
+    }
+
+    // ---- hoisting a nested generator ----------------------------------------
+
+    /// A fact pattern written *inside* another is a generator of its own, so it
+    /// becomes **its own loop level**, bound to a row nobody named, and the field it
+    /// stood in matches that row's id.
+    ///
+    /// The hoisted level comes first: the field reads it, so it has to be bound by
+    /// then — which is the same rule every other read follows.
+    #[test]
+    fn a_nested_fact_pattern_becomes_its_own_level() {
+        assert_eq!(
+            shape("X where X = test.Ref {of = test.Foo {id = 1}}"),
+            lines(&[
+                "r0 <- test.Foo seek[k]",
+                "r1 <- test.Ref seek[r0#]",
+                "head r1",
+            ]),
+        );
+    }
+
+    /// Hoisting is **recursive**, innermost first: each generator is a level before
+    /// the one that names it, so a two-hop chain reads outwards.
+    #[test]
+    fn hoisting_nests() {
+        assert_eq!(
+            shape("X where X = test.Deep {via = test.Ref {of = test.Foo {id = 1}}}"),
+            lines(&[
+                "r0 <- test.Foo seek[k]",
+                "r1 <- test.Ref seek[r0#]",
+                "r2 <- test.Deep seek[r1#]",
+                "head r2",
+            ]),
+        );
+    }
+
+    /// A hoisted generator is a pattern like any other, so it can capture — and what
+    /// it captures is projectable.
+    #[test]
+    fn a_hoisted_generator_captures_its_own_fields() {
+        assert_eq!(
+            shape("X where test.Ref {of = test.Foo {name = X}}"),
+            lines(&[
+                "r0 <- test.Foo scan",
+                "r1 <- test.Ref seek[r0#]",
+                "head r0.1:str",
+            ]),
+        );
+    }
+
+    /// ...and it can *read* an outer capture, which orders it after the statement
+    /// that binds one.
+    #[test]
+    fn a_hoisted_generator_may_read_an_outer_capture() {
+        assert_eq!(
+            shape("X where test.Node {id = X}; test.Ref {of = test.Foo {id = X}}"),
+            lines(&[
+                "r0 <- test.Node scan",
+                "r1 <- test.Foo seek[r0.0]",
+                "r2 <- test.Ref seek[r1#]",
+                "head r0.0:int",
+            ]),
+            "the hoisted level lands between the statement it reads and the one that \
+             names it",
+        );
+    }
+
+    /// **A fact pattern in the head** is the same construct in the other position:
+    /// hoisted into a level, and projected as the fact it names.
+    #[test]
+    fn a_fact_pattern_in_the_head_is_hoisted_too() {
+        assert_eq!(
+            shape("test.Bar {id = 1} where test.Foo _"),
+            lines(&["r0 <- test.Foo scan", "r1 <- test.Bar seek[k]", "head r1",]),
+            "the head's generator is the last level: it can read every capture, and \
+             nothing reads it",
+        );
+        assert_eq!(
+            shape("{a = test.Bar {id = 1}} where test.Foo _"),
+            lines(&[
+                "r0 <- test.Foo scan",
+                "r1 <- test.Bar seek[k]",
+                "head {a = r1}",
+            ]),
+        );
+    }
+
+    /// A field read *of* a hoisted generator, which is how one writes "the name of
+    /// the fact matching this" without a second variable.
+    ///
+    /// Parenthesised because dot binds tighter than application: without the group
+    /// this is `test.Foo ({id = 1}.name)`, and the field is looked for on the record.
+    #[test]
+    fn a_hoisted_generators_field_may_be_read() {
+        assert_eq!(
+            shape("(test.Foo {id = 1}).name where test.Bar _"),
+            lines(&[
+                "r0 <- test.Bar scan",
+                "r1 <- test.Foo seek[k]",
+                "head r1.1:str",
+            ]),
+        );
+    }
+
+    /// **Hoisting is exactly the rewrite it claims to be.** The nested spelling and
+    /// the two-statement spelling of the same query compile to the *same plan*, down
+    /// to which field seeks and which register each level reads.
+    ///
+    /// This is the whole warrant for hoisting being flatten-local: if the two agreed
+    /// only on their answers, the nested form would be a second way of running a
+    /// query. They agree on the plan, so it is a spelling.
+    #[test]
+    fn the_nested_spelling_is_the_two_statement_one() {
+        assert_eq!(
+            shape("X where X = test.Ref {of = test.Foo {id = 1}}"),
+            shape("X where P = test.Foo {id = 1}; X = test.Ref {of = P}"),
+        );
+        assert_eq!(
+            shape("X where test.Ref {of = test.Foo {name = X}}"),
+            shape("X where P = test.Foo {name = X}; test.Ref {of = P}"),
+        );
+        assert_eq!(
+            shape("X where X = test.Deep {via = test.Ref {of = test.Foo {id = 1}}}"),
+            shape(
+                "X where P = test.Foo {id = 1}; Q = test.Ref {of = P}; \
+                 X = test.Deep {via = Q}"
+            ),
+        );
+
+        // ...and the same rows, which is the claim a reader actually cares about.
+        assert_eq!(
+            rows("X where test.Ref {of = test.Foo {name = X}}"),
+            rows("X where P = test.Foo {name = X}; test.Ref {of = P}"),
+        );
+    }
+
+    /// The hoisted row is a **read** of the level it introduces, so the dependency
+    /// graph says the order is forced rather than free.
+    #[test]
+    fn a_hoisted_generator_constrains_the_order() {
+        let deps = deps_of("X where X = test.Ref {of = test.Foo {id = 1}}");
+
+        assert_eq!(deps.len(), 2, "one statement became two levels");
+        assert_eq!(deps.antichains(), Some(vec![vec![0], vec![1]]));
+        assert!(deps.respects(&[0, 1]));
+        assert!(!deps.respects(&[1, 0]));
+
+        let flattened = compile_in_order("X where X = test.Ref {of = test.Foo {id = 1}}", &[1, 0]);
+        assert_eq!(flattened.codes(), ["reject/unbound-variable"]);
+    }
+
     // ---- safety, and the four rejections ------------------------------------
 
     /// **Range restriction.** A variable no generator captures has no values to
@@ -1636,43 +2143,113 @@ mod tests {
 
     // ---- the deferred constructs -------------------------------------------
 
-    /// Binding a variable to something no generator produced is a *derived bind*,
-    /// which needs Phase 6's value slots.
+    /// Binding a variable to a value **a row produced** is still a derived bind.
+    ///
+    /// The line moved in Phase 6: a *literal* bind folds (see
+    /// [`a_value_bind_returns_the_value`]), because its value is known before
+    /// anything runs and substituting it is what the query means. This one is not
+    /// foldable — `X.name` is a different row's field on every iteration — so it
+    /// needs a value that is computed while the plan runs, and nothing lowers one
+    /// yet. `Y` would most likely become another *substitution* (an alias for a
+    /// field of `X`'s register) rather than a value slot, which is why the derive
+    /// step still has no producer in the language.
     #[test]
     fn a_computed_bind_is_not_implemented_yet() {
-        for source in [
-            "X where X = 42",
-            "X where X = test.Foo _; Y = X.name; test.Name Y",
-        ] {
-            assert_eq!(compile(source).codes(), ["nyi/value-bind"], "{source:?}");
+        assert_eq!(
+            compile("X where X = test.Foo _; Y = X.name; test.Name Y").codes(),
+            ["nyi/value-bind"],
+        );
+    }
+
+    /// The folding rule's edges: what a bind may fold, and what it may not.
+    #[test]
+    fn a_constant_bind_folds_however_deep_it_is() {
+        // A string folds as readily as an int.
+        assert_eq!(rows("X where X = \"ann\""), strs(&["ann"]));
+
+        // A *prefix* is not a value — it denotes a range, so there is nothing for a
+        // variable bound to it to be.
+        assert_eq!(compile("X where X = \"a\"..").codes(), ["nyi/value-bind"]);
+
+        // A record of constants is a constant. The left side is a plain variable, so
+        // this is an ordinary bind and not the `pattern = pattern` unification a
+        // record on the *left* would be — that one typecheck defers, and the corpus
+        // pins it, before flatten is reached.
+        assert_eq!(
+            rows("X where X = {inner = 1}"),
+            vec![Value::Record(Box::new([(
+                "inner".to_owned(),
+                Value::Int(1)
+            )]))],
+        );
+
+        // ...to any depth, and field order is the schema's rather than the source's,
+        // since lowering sorts them.
+        assert_eq!(
+            rows("X where X = {extra = 2, inner = 1}"),
+            rows("X where X = {inner = 1, extra = 2}"),
+        );
+
+        // A record mentioning a **captured** variable is not a constant: its value
+        // differs per row. That is the derived bind this phase leaves unlowered.
+        assert_eq!(
+            compile("X where test.Nested {outer = {inner = Y}}; X = {inner = Y}").codes(),
+            ["nyi/value-bind"],
+        );
+    }
+
+    /// **The trap a folded record walks past.** A record inside a field keeps its
+    /// `MARK_RECORD` wrapper; a *stored key* is flat. Folding reaches
+    /// [`constant`](Flattener::constant), whose record arm writes the wrapped form —
+    /// which is right here and would be wrong for a whole key.
+    ///
+    /// It is safe because `key` destructures the top-level record itself and emits
+    /// field by field, so a whole key never reaches `constant`; and a bare variable
+    /// as a whole key is `nyi/whole-key` from `collect` before any of this. Pinned
+    /// because both halves are invisible from the fold's own code, and getting it
+    /// wrong reads the wrong bytes with no error — it matches nothing.
+    #[test]
+    fn a_folded_record_narrows_a_nested_field_and_still_matches() {
+        assert_eq!(
+            rows("X where X = {inner = 1}; test.Nested {outer = X}").len(),
+            1
+        );
+
+        // The written form is the oracle: a fold must reach the *same row*, which
+        // projecting the matched fact's identity says exactly.
+        assert_eq!(
+            rows("R where X = {inner = 1}; R = test.Nested {outer = X}"),
+            rows("R where R = test.Nested {outer = {inner = 1}}"),
+        );
+        assert_eq!(
+            rows("R where R = test.Nested {outer = {inner = 1}}").len(),
+            1,
+            "the oracle has to match something for the comparison to mean anything",
+        );
+
+        // And it is a seek, not a scan-and-filter: `outer` is the leading key field.
+        let flattened = compile("X where X = {inner = 1}; test.Nested {outer = X}");
+        match &flattened.plan().level(0).expect("a level").access.seek_key {
+            SeekKey::Prefix(bytes) => assert!(!bytes.is_empty(), "a constant prefix"),
+            SeekKey::Composite(parts) => assert!(
+                matches!(parts.first(), Some(SeekKeyPart::Bytes(_))),
+                "the fold must reach the seek prefix, got {parts:?}",
+            ),
         }
     }
 
-    /// A fact pattern away from the top level of a statement is a generator that
-    /// would have to be hoisted into its own loop level.
+    /// A reference may be **captured, projected and matched**; what stays deferred
+    /// is reading *through* one, on either side of the fact it names.
+    ///
+    /// **The trap this closes:** a register holds its own row's key bytes, so
+    /// splicing those where a fact id belongs would compare a key against an id and
+    /// quietly match nothing. The splice is off `Register::fact_id` for exactly that
+    /// reason.
     #[test]
-    fn a_nested_generator_is_not_implemented_yet() {
+    fn reading_through_a_reference_is_not_implemented_yet() {
         for source in [
-            "test.Bar {id = 1} where test.Foo _",
-            "X where test.Ref {of = test.Foo _}",
-        ] {
-            assert_eq!(
-                compile(source).codes(),
-                ["nyi/nested-generator"],
-                "{source:?}"
-            );
-        }
-    }
-
-    /// A fact-typed field holds a reference, and a register holds its own row —
-    /// so matching or capturing one needs cross-fact navigation. **The trap this
-    /// closes:** splicing the register's key bytes would compare a row's key
-    /// against a fact id and quietly match nothing.
-    #[test]
-    fn a_fact_typed_field_is_not_implemented_yet() {
-        for source in [
-            "X where test.Ref {of = X}",
-            "X where X = test.Foo _; test.Ref {of = X}",
+            "X.name where test.Ref {of = X}",
+            "X.value where test.Ref {of = X}",
         ] {
             assert_eq!(compile(source).codes(), ["nyi/fact-field"], "{source:?}");
         }
@@ -1756,59 +2333,21 @@ mod tests {
 
     // ---- running what it produced ------------------------------------------
 
-    /// Facts for the corpus schema, so a plan can be *run* rather than only
-    /// inspected.
-    ///
-    /// | predicate | facts |
-    /// |---|---|
-    /// | `test.Foo {id, name}` | `(1, "ann")`, `(2, "bob")`, `(3, "ann")` — values `"one"`, `"two"`, `"three"` |
-    /// | `test.Edge {from, to}` | `(1, 2)`, `(1, 3)`, `(2, 3)` |
-    /// | `test.Node {id}` | `2`, `3` |
-    /// | `test.Nested {outer = {inner}}` | `1`, `7` |
-    /// | `test.Name` | `"ann"`, `"anna"`, `"bob"` |
-    /// | `test.Count` | `-42`, `7` |
+    /// The shared [`fixture`](crate::focus::fixture)'s facts, in memory — the same
+    /// rows the corpus gate runs against a real store and the same rows the shell
+    /// serves, so a shape asserted here and an answer asserted there are about one
+    /// database.
     fn store() -> MemStore {
         let mut store = MemStore::new();
-        let schema = corpus::schema();
-        let id = |name: &str| schema.find_position(name).expect(name).0;
 
-        for (i, (n, name, value)) in [(1i64, "ann", "one"), (2, "bob", "two"), (3, "ann", "three")]
-            .into_iter()
-            .enumerate()
+        for fixture::Fact {
+            predicate,
+            key,
+            value,
+            sequence,
+        } in fixture::facts()
         {
-            store.insert_valued(
-                id("test.Foo"),
-                compose(&[&i64_field(n), &str_field(name)]),
-                i as u64 + 1,
-                str_field(value),
-            );
-        }
-
-        for (i, (from, to)) in [(1i64, 2i64), (1, 3), (2, 3)].into_iter().enumerate() {
-            store.insert(
-                id("test.Edge"),
-                compose(&[&i64_field(from), &i64_field(to)]),
-                i as u64 + 1,
-            );
-        }
-
-        for (i, n) in [2i64, 3].into_iter().enumerate() {
-            store.insert(id("test.Node"), i64_field(n), i as u64 + 1);
-        }
-
-        for (i, n) in [1i64, 7].into_iter().enumerate() {
-            let mut key = vec![crate::focus::tuple::MARK_RECORD];
-            key.extend_from_slice(&i64_field(n));
-            key.push(crate::focus::tuple::MARK_TERM);
-            store.insert(id("test.Nested"), key, i as u64 + 1);
-        }
-
-        for (i, s) in ["ann", "anna", "bob"].into_iter().enumerate() {
-            store.insert(id("test.Name"), str_field(s), i as u64 + 1);
-        }
-
-        for (i, n) in [-42i64, 7].into_iter().enumerate() {
-            store.insert(id("test.Count"), i64_field(n), i as u64 + 1);
+            store.insert_valued(predicate, key, sequence, value);
         }
 
         store
@@ -1868,21 +2407,16 @@ mod tests {
             ints(&[1, 7])
         );
 
-        // A string prefix, as a narrowed scan.
-        assert_eq!(rows("X where X = test.Name \"ann\".."), {
-            let flattened = compile("X where X = test.Name \"ann\"..");
-            let plan = flattened.plan().clone();
-            let out = collect_rows(store(), plan, &flattened.interner).expect("run");
-            assert_eq!(out.len(), 2, "\"ann\" and \"anna\", not \"bob\"");
-            out
-        });
+        // A string prefix, as a narrowed scan: `"ann"` and `"anna"`, not `"abc"`
+        // before them or `"bob"` after.
+        assert_eq!(rows("X where X = test.Name \"ann\"..").len(), 2);
 
         // A negative literal, which the seek has to encode order-preservingly.
         assert_eq!(rows("X.value where X = test.Foo _").len(), 3);
         assert_eq!(
-            rows("Y where test.Count Y").len(),
-            2,
-            "a scalar key binds its one field"
+            rows("Y where test.Count Y"),
+            ints(&[i64::MIN, -42, 7, 1_000]),
+            "a scalar key binds its one field",
         );
 
         // A record head.
@@ -1890,6 +2424,176 @@ mod tests {
             rows("{a = X, b = Y} where test.Foo {id = X, name = Y}").len(),
             3
         );
+
+        // A join *through a reference*, spliced as a fact id.
+        assert_eq!(
+            rows("P.name where P = test.Foo {id = 1}; test.Ref {of = P}"),
+            strs(&["ann"]),
+        );
+        assert_eq!(
+            rows("P.name where P = test.Foo {id = 3}; test.Ref {of = P}"),
+            strs(&[]),
+            "nothing references `(3, \"ann\")`",
+        );
+
+        // The same compare as a residual, behind an open field — and two referrers
+        // to one fact, so the bound row comes back once per reference to it.
+        assert_eq!(
+            rows("P.name where P = test.Foo {id = 2}; test.Link {at = _, of = P}"),
+            strs(&["bob", "bob"]),
+        );
+        assert_eq!(
+            rows("X where P = test.Foo {id = 2}; test.Link {at = X, of = P}"),
+            ints(&[11, 12]),
+        );
+
+        // A reference captured and projected, which names a fact rather than
+        // reading it.
+        let foo = |sequence| {
+            let schema = corpus::schema();
+            let predicate = schema.find_position("test.Foo").expect("test.Foo").0;
+            Value::FactRef(FactId::new(predicate, sequence).expect("id"))
+        };
+        assert_eq!(rows("X where test.Ref {of = X}"), vec![foo(1), foo(2)]);
+
+        // A nested generator, hoisted: the idiomatic spelling of the join above.
+        assert_eq!(
+            rows("X where test.Ref {of = test.Foo {name = X}}"),
+            strs(&["ann", "bob"]),
+            "`(3, \"ann\")` is referenced by nothing, so its name is not a row",
+        );
+
+        // Two hops, innermost first.
+        assert_eq!(
+            rows("X where test.Deep {via = test.Ref {of = test.Foo {name = X}}}"),
+            strs(&["ann", "bob"]),
+        );
+
+        // A generator in the head, which is a level like any other — and one that
+        // matches nothing empties the answer, because it is a level.
+        assert_eq!(rows("test.Bar {id = 1} where test.Foo {id = 1}").len(), 1);
+        assert_eq!(
+            rows("test.Bar {id = 99} where test.Foo {id = 1}"),
+            vec![],
+            "no such `test.Bar` exists, so nothing survives the last level",
+        );
+    }
+
+    // ---- Phase 6: derived binds (red, pending the `Slot` promotion) ---------
+    //
+    // Phase 6's acceptance criteria, as tests, written before the machine that
+    // satisfies them ([`PLAN.md`](../../PLAN.md) Phase 6). They are deliberately
+    // written **through the driver** — focus text in, rows out — and name no plan
+    // type that does not exist yet, so they compile today, fail today for the
+    // right reason (`nyi/value-bind`, reported by `collect`), and go green when
+    // the feature lands rather than when a test is rewritten. That also means the
+    // still-open question of *how* a derived bind sits in the `Plan` IR cannot be
+    // pre-judged by its own acceptance test.
+    //
+    // Un-ignore each as its leaf lands; the ledger
+    // (`cargo test -- --ignored --list`) is what says the phase is unfinished.
+
+    /// The smallest derived bind there is: a variable bound to a value no
+    /// generator produced.
+    ///
+    /// Also the shape with **no generator at all**: the bind folds away entirely,
+    /// leaving a plan with no steps, which answers exactly one row.
+    #[test]
+    fn a_value_bind_returns_the_value() {
+        assert_eq!(rows("X where X = 42"), ints(&[42]));
+        assert_eq!(rows("X where X = \"ann\""), strs(&["ann"]));
+    }
+
+    /// A folded bind **narrowing a scan**: the constant reaches the key field by
+    /// substitution, so it seeks or filters exactly as the literal written in place
+    /// would — which is the point of folding rather than binding a register.
+    ///
+    /// Whether it lands in the seek prefix or in a residual is sargeability's
+    /// ordinary decision about *that field*, not a fact about the fold.
+    #[test]
+    fn a_folded_bind_narrows_a_seek() {
+        assert_eq!(rows("Z where Z = 1; test.Bar {id = Z}"), ints(&[1]));
+        assert_eq!(
+            rows("Z where Z = 99; test.Bar {id = Z}"),
+            vec![],
+            "no `test.Bar` has id 99, so the spliced seek finds nothing",
+        );
+        assert_eq!(
+            rows("X where Z = 1; test.Edge {from = Z, to = X}"),
+            ints(&[2, 3]),
+            "edges (1,2) and (1,3), reached by a seek on a derived value",
+        );
+    }
+
+    /// A fold must leave **resume** exactly as it was.
+    ///
+    /// It should, by construction: a folded constant is in the plan's bytes and its
+    /// head, not in a register, so there is nothing for a cursor to carry and
+    /// nothing to recompute. That is the argument, and this is the check on it —
+    /// resume == uninterrupted at every cut point over plans built from folded
+    /// binds, including one the head reads beside a captured field.
+    ///
+    /// The purity invariant's own guard is
+    /// `iter::a_derive_is_recomputed_across_every_cut_point`, which drives a real
+    /// [`Step::Derive`](crate::focus::plan::Step) from a hand-built plan — nothing
+    /// in the language lowers one, so nothing here can reach it.
+    /// A query whose **every** binding folded has no levels, so it cannot be
+    /// suspended past — and reports `Done` when asked to suspend rather than
+    /// handing back a cursor that would re-emit its row.
+    ///
+    /// The rows are the point of the assertion; the zero round-trips are the rule.
+    #[test]
+    fn a_query_with_no_levels_answers_without_suspending() {
+        let flattened = compile("X where X = 42");
+        let plan = flattened.plan().clone();
+
+        assert_eq!(plan.levels(), 0, "everything folded, so there is no loop");
+        assert!(plan.body.is_empty(), "...and so no step either");
+
+        let mut mk = || (store(), plan.clone());
+        let cuts = std::collections::BTreeSet::from([1]);
+        let (rows, suspends) = run_with_suspends(&mut mk, &flattened.interner, &cuts).expect("run");
+
+        assert_eq!(rows, ints(&[42]), "the row is still the answer");
+        assert_eq!(
+            suspends, 0,
+            "a plan with no levels reports Done at a suspend request, since an \
+             empty cursor would restart it and re-emit the row",
+        );
+    }
+
+    #[test]
+    fn resume_is_unaffected_by_a_folded_bind() {
+        for source in [
+            // Recomputed before the level whose seek reads it.
+            "X where Z = 1; test.Edge {from = Z, to = X}",
+            // Recomputed at a level *under* a fact binding, so the cut points fall
+            // either side of a backtrack.
+            "{a = X, b = Z} where test.Edge {from = X, to = _}; Z = 7",
+        ] {
+            let flattened = compile(source);
+            let plan = flattened.plan().clone();
+            let interner = &flattened.interner;
+
+            let model = collect_rows(store(), plan.clone(), interner).expect("run");
+            assert!(
+                !model.is_empty(),
+                "{source:?} must produce rows for a cut point to mean anything",
+            );
+
+            for k in 1..=model.len() {
+                let mut mk = || (store(), plan.clone());
+                let cuts = std::collections::BTreeSet::from([k]);
+                let (rows, suspends) = run_with_suspends(&mut mk, interner, &cuts).expect("resume");
+
+                assert_eq!(suspends, 1, "{source:?}: schedule {{{k}}} never suspended");
+                assert_eq!(
+                    rows, model,
+                    "{source:?}: suspending after row {k} changed the run — the \
+                     derived bind did not recompute to the same value",
+                );
+            }
+        }
     }
 
     /// **Every order of the body gives the same rows** — the executable form of
@@ -1971,7 +2675,7 @@ pub mod proptest {
             proptest::{FieldTy, FieldVal},
         },
         schema::{Predicate, PredicateId, PredicateTy, Schema},
-        tuple::{MARK_RECORD, MARK_TERM, Value},
+        tuple::{MARK_RECORD, MARK_TERM, Value, fact_ref_bytes},
     };
 
     /// Bounds are tight for the same reason the executor's are: the reorderability
@@ -1993,6 +2697,15 @@ pub mod proptest {
     /// every join is unique and nothing ever matches twice.
     const VARS: usize = 3;
 
+    /// The predicate a **fact-typed field** points at. Always the first one, and only
+    /// the *others* may have such a field, so the reference graph is acyclic by
+    /// construction: `gen.P0` is the referenced predicate and never a referrer.
+    ///
+    /// Cycles are not wrong — a fact database is full of them — but a generator that
+    /// drew them would have to draw facts in dependency order to keep every reference
+    /// resolvable, and nothing here needs that to reach the plan shapes.
+    const REFERENCED: PredicateId = PredicateId(0);
+
     /// Row variables (`R0`, `R1`) — a whole row bound by `R = gen.P {…}`. A
     /// separate pool from the field variables, because a row and a field value are
     /// different types and mixing the namespaces would draw queries that cannot
@@ -2009,11 +2722,13 @@ pub mod proptest {
     /// case exists.
     const PREFIXES: [&str; 3] = ["", "a", "b"];
 
-    /// A generated key field's type: a scalar, or a record of scalars.
+    /// A generated key field's type: a scalar, a record of scalars, or a **reference**
+    /// to a fact of [`REFERENCED`].
     #[derive(Debug, Clone)]
     enum GenTy {
         Scalar(FieldTy),
         Record(Vec<FieldTy>),
+        Ref,
     }
 
     /// A value of a [`GenTy`].
@@ -2021,6 +2736,9 @@ pub mod proptest {
     enum GenVal {
         Scalar(FieldVal),
         Record(Vec<FieldVal>),
+        /// A reference to fact number `n` of [`REFERENCED`] — the *sequence*, since a
+        /// whole [`FactId`] is that plus which predicate it belongs to.
+        Ref(u64),
     }
 
     impl GenVal {
@@ -2038,7 +2756,13 @@ pub mod proptest {
                     out.push(MARK_TERM);
                     out
                 }
+                GenVal::Ref(sequence) => fact_ref_bytes(self.fact_id(*sequence)).to_vec(),
             }
+        }
+
+        /// The whole id a reference sequence names.
+        fn fact_id(&self, sequence: u64) -> FactId {
+            FactId::new(REFERENCED, sequence).expect("a spec fact id")
         }
 
         /// This field as a projected row carries it. A record's field *names* come
@@ -2054,6 +2778,7 @@ pub mod proptest {
                         .map(|(g, field)| (format!("g{g}"), field.to_value()))
                         .collect(),
                 ),
+                GenVal::Ref(sequence) => Value::FactRef(self.fact_id(*sequence)),
             }
         }
 
@@ -2069,13 +2794,25 @@ pub mod proptest {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
+                // A reference has no literal spelling — it names a fact, and focus has
+                // no syntax for a fact id. `resolve_leaf` never draws a constant at a
+                // reference position for exactly that reason.
+                GenVal::Ref(_) => unreachable!("a fact reference is never written as a constant"),
             }
         }
 
         fn scalar(&self) -> Option<&FieldVal> {
             match self {
                 GenVal::Scalar(val) => Some(val),
-                GenVal::Record(_) => None,
+                GenVal::Record(_) | GenVal::Ref(_) => None,
+            }
+        }
+
+        /// The fact this value references, if it is one.
+        fn reference(&self) -> Option<u64> {
+            match self {
+                GenVal::Ref(sequence) => Some(*sequence),
+                _ => None,
             }
         }
     }
@@ -2093,6 +2830,15 @@ pub mod proptest {
         /// A variable. Whether this *captures* or *reads* depends on the order the
         /// statements run in, which is exactly why the spec does not say.
         Var(usize),
+        /// A **row variable at a reference field** — `f1 = R0`, the join through a
+        /// reference. Only ever a read: the row is bound elsewhere, and this field
+        /// holds its id.
+        ///
+        /// The one leaf that constrains the order, which is why [`orders`] exists
+        /// rather than every permutation being valid.
+        ///
+        /// [`orders`]: QueryAndStore::orders
+        Row(usize),
     }
 
     /// A whole key field's pattern.
@@ -2191,6 +2937,7 @@ pub mod proptest {
                                             .map(|(g, sub)| (nested[g], sub.predicate_ty()))
                                             .collect(),
                                     ),
+                                    GenTy::Ref => PredicateTy::Fact(REFERENCED),
                                 };
                                 (fields[f], ty)
                             })
@@ -2322,9 +3069,38 @@ pub mod proptest {
             (0..self.stmts.len()).collect()
         }
 
-        /// Every permutation of the body — all of which are valid orders.
+        /// Every **safe** order of the body.
+        ///
+        /// Every permutation, except where a reference field names a row: `f1 = R0`
+        /// reads `R0`, so the statement binding it has to come first. Field variables
+        /// impose no such constraint — either occurrence may capture — which is why
+        /// this is the identity filter it is and not a topological sort.
         pub fn orders(&self) -> Vec<Vec<usize>> {
             permutations(&self.identity())
+                .into_iter()
+                .filter(|order| self.respects(order))
+                .collect()
+        }
+
+        /// Whether `order` binds every row before a reference field reads it.
+        fn respects(&self, order: &[usize]) -> bool {
+            let mut bound: Vec<usize> = vec![];
+
+            for &stmt in order {
+                let spec = &self.stmts[stmt];
+
+                for pat in &spec.fields {
+                    if let FieldPat::Leaf(Leaf::Row(row)) = pat
+                        && !bound.contains(row)
+                    {
+                        return false;
+                    }
+                }
+
+                bound.extend(spec.row);
+            }
+
+            true
         }
 
         /// **The model.** Nested loops over the facts, in `order`, binding a
@@ -2436,6 +3212,7 @@ pub mod proptest {
             Leaf::Const(val) => Some(val.source()),
             Leaf::Prefix(prefix) => Some(format!("{prefix:?}..")),
             Leaf::Var(var) => Some(format!("V{var}")),
+            Leaf::Row(row) => Some(format!("R{row}")),
         }
     }
 
@@ -2495,6 +3272,16 @@ pub mod proptest {
                     }
                 }
             }
+
+            // The field references a fact; the row variable is bound to one. They
+            // match when they are the same fact — which the model states as the
+            // *identity* it is, never as the key bytes.
+            Leaf::Row(row) => match (value.reference(), env.rows[*row]) {
+                (Some(sequence), Some((predicate, index))) => {
+                    PredicateId(predicate as u32) == REFERENCED && index as u64 + 1 == sequence
+                }
+                _ => false,
+            },
         }
     }
 
@@ -2560,19 +3347,19 @@ pub mod proptest {
         field: u8,
     }
 
-    /// A constant that actually occurs at that field of that predicate, so the
-    /// statement matches something. Falls back to the domain for an empty
+    /// A whole **record** field's constant, taken from a fact that actually has it so
+    /// the statement matches something. Falls back to the domain for an empty
     /// predicate.
-    fn constant_for(facts: &[Fact], field: usize, ty: &GenTy, pick: u8) -> GenVal {
+    ///
+    /// Record-only: a scalar's constant comes from [`resolve_leaf`], and a reference
+    /// has no literal to be a constant of.
+    fn constant_for(facts: &[Fact], field: usize, subs: &[FieldTy], pick: u8) -> GenVal {
         match facts.len() {
-            0 => match ty {
-                GenTy::Scalar(scalar) => GenVal::Scalar(FieldVal::of(*scalar, pick)),
-                GenTy::Record(subs) => GenVal::Record(
-                    subs.iter()
-                        .map(|scalar| FieldVal::of(*scalar, pick))
-                        .collect(),
-                ),
-            },
+            0 => GenVal::Record(
+                subs.iter()
+                    .map(|scalar| FieldVal::of(*scalar, pick))
+                    .collect(),
+            ),
             len => facts[pick as usize % len].key[field].clone(),
         }
     }
@@ -2636,10 +3423,22 @@ pub mod proptest {
         }
     }
 
+    /// A reference position: unconstrained, or **this bound row**.
+    ///
+    /// Weighted so that two draws in three name a row where one is available — the
+    /// splice and its residual form are what the census is here to reach, and an
+    /// unconstrained reference field reaches neither.
+    fn resolve_ref_leaf(draw: &LeafDraw, referencing: &[usize]) -> Leaf {
+        match (draw.kind % 3, referencing.len()) {
+            (_, 0) | (0, _) => Leaf::Wildcard,
+            (_, len) => Leaf::Row(referencing[draw.var as usize % len]),
+        }
+    }
+
     fn resolve(
         npredicates: usize,
         predicates: Vec<PredicateDraw>,
-        facts: Vec<Vec<Vec<u8>>>,
+        facts_drawn: Vec<Vec<Vec<u8>>>,
         var_tys: Vec<u8>,
         stmts: Vec<StmtDraw>,
         heads: Vec<HeadDraw>,
@@ -2647,9 +3446,23 @@ pub mod proptest {
         let schema: Vec<PredSpec> = predicates
             .iter()
             .take(npredicates)
-            .map(|draw| PredSpec {
+            .enumerate()
+            .map(|(p, draw)| PredSpec {
                 fields: (0..draw.arity)
                     .map(|f| {
+                        // Every predicate other than the referenced one ends its key
+                        // with a **reference**, rather than drawing for it. Left to a
+                        // draw, a reference join needs four independent coincidences
+                        // (two predicates, a reference field, a statement over the
+                        // referrer, and an earlier row bound over the referenced
+                        // predicate) and the census reached the residual form twice in
+                        // 300 runs. Last rather than first, so an open field can
+                        // precede it: leading is the seek splice, behind an open field
+                        // is its residual — and a one-field key gives the leading case.
+                        if PredicateId(p as u32) != REFERENCED && f + 1 == draw.arity {
+                            return GenTy::Ref;
+                        }
+
                         // Every third field is a record, so nesting is reached
                         // often without crowding out the flat case the cache
                         // serves.
@@ -2672,51 +3485,61 @@ pub mod proptest {
             })
             .collect();
 
-        let facts: Vec<Vec<Fact>> = schema
-            .iter()
-            .zip(facts)
-            .map(|(spec, drawn)| {
-                let mut facts: Vec<Fact> = drawn
-                    .iter()
-                    .map(|picks| Fact {
-                        key: spec
-                            .fields
-                            .iter()
-                            .enumerate()
-                            .map(|(f, ty)| match ty {
-                                GenTy::Scalar(scalar) => {
-                                    GenVal::Scalar(FieldVal::of(*scalar, picks[f]))
-                                }
-                                GenTy::Record(subs) => GenVal::Record(
-                                    subs.iter()
-                                        .enumerate()
-                                        .map(|(g, scalar)| {
-                                            // A sub-field varies with its position
-                                            // so a record is not all one value.
-                                            FieldVal::of(*scalar, picks[f].wrapping_add(g as u8))
-                                        })
-                                        .collect(),
-                                ),
-                            })
-                            .collect(),
-                        value: None,
-                    })
-                    .collect();
+        // Built in predicate order rather than mapped, because a reference field has
+        // to name a fact that *exists*: `REFERENCED` is predicate 0, so its facts are
+        // already settled by the time a referrer's are drawn. A dangling reference is
+        // a legal database state, but one drawn at random would make every join
+        // through a reference empty and the battery would exercise nothing.
+        let mut facts: Vec<Vec<Fact>> = Vec::with_capacity(schema.len());
 
-                // One key, one fact — a repeated draw would otherwise shadow an
-                // earlier fact.
-                facts.sort();
-                facts.dedup();
+        for (spec, drawn) in schema.iter().zip(facts_drawn) {
+            let referenced = facts.first().map_or(0, Vec::len);
 
-                // The value follows from the fact's position, so it needs no draw
-                // of its own and cannot make two facts differ only in their value.
-                for (i, fact) in facts.iter_mut().enumerate() {
-                    fact.value = spec.value.map(|ty| FieldVal::of(ty, i as u8));
-                }
+            let mut built: Vec<Fact> = drawn
+                .iter()
+                .map(|picks| Fact {
+                    key: spec
+                        .fields
+                        .iter()
+                        .enumerate()
+                        .map(|(f, ty)| match ty {
+                            GenTy::Scalar(scalar) => {
+                                GenVal::Scalar(FieldVal::of(*scalar, picks[f]))
+                            }
+                            GenTy::Record(subs) => GenVal::Record(
+                                subs.iter()
+                                    .enumerate()
+                                    .map(|(g, scalar)| {
+                                        // A sub-field varies with its position
+                                        // so a record is not all one value.
+                                        FieldVal::of(*scalar, picks[f].wrapping_add(g as u8))
+                                    })
+                                    .collect(),
+                            ),
+                            // Sequences are 1-based ([I11]), so this is the pick
+                            // resolved over however many facts predicate 0 has.
+                            GenTy::Ref => {
+                                GenVal::Ref(picks[f] as u64 % referenced.max(1) as u64 + 1)
+                            }
+                        })
+                        .collect(),
+                    value: None,
+                })
+                .collect();
 
-                facts
-            })
-            .collect();
+            // One key, one fact — a repeated draw would otherwise shadow an
+            // earlier fact.
+            built.sort();
+            built.dedup();
+
+            // The value follows from the fact's position, so it needs no draw
+            // of its own and cannot make two facts differ only in their value.
+            for (i, fact) in built.iter_mut().enumerate() {
+                fact.value = spec.value.map(|ty| FieldVal::of(ty, i as u8));
+            }
+
+            facts.push(built);
+        }
 
         let var_tys: Vec<FieldTy> = var_tys.iter().map(|&pick| FieldTy::of(pick)).collect();
 
@@ -2730,11 +3553,29 @@ pub mod proptest {
 
             // A row variable is bound by at most one statement: binding one twice
             // is `nyi/bind-unification`.
-            let row = match draw.row % 2 {
-                0 => None,
-                _ => (0..ROWS).find(|r| !bound_rows.contains(&Some(*r))),
-            };
+            //
+            // A statement over `REFERENCED` always binds one, where the draw would
+            // otherwise leave it anonymous: a row variable is the **only** way a query
+            // can name a fact, so a reference join cannot be drawn at all unless the
+            // referenced fact is bound somewhere. Without this the census reached a
+            // fact-id splice in 2% of runs and its residual form in none.
+            let wants_row = draw.row % 2 != 0 || PredicateId(predicate as u32) == REFERENCED;
+            let row = wants_row
+                .then(|| (0..ROWS).find(|r| !bound_rows.contains(&Some(*r))))
+                .flatten();
             bound_rows.push(row);
+
+            // The rows a reference field in *this* statement may name: bound by an
+            // earlier statement (so the identity order is safe) and over the predicate
+            // references point at. `bound_rows` already has this statement's own row
+            // appended, which is why the zip stops one short of it.
+            let referencing: Vec<usize> = bound_rows
+                .iter()
+                .zip(&resolved)
+                .filter_map(|(row, spec): (&Option<usize>, &StmtSpec)| {
+                    row.filter(|_| PredicateId(spec.predicate as u32) == REFERENCED)
+                })
+                .collect();
 
             let mut here = BTreeSet::new();
             let mut fields = Vec::with_capacity(spec.fields.len());
@@ -2753,13 +3594,19 @@ pub mod proptest {
                         },
                     )),
 
+                    // A reference field. There is no literal for a fact id, so the
+                    // only patterns are "don't constrain it" and "it is this bound
+                    // row" — which is the whole point: the row's id is the only way
+                    // to name a fact in a query.
+                    GenTy::Ref => FieldPat::Leaf(resolve_ref_leaf(&draw.leaf, &referencing)),
+
                     // A record field: matched whole as a constant (which can extend
                     // a seek prefix), or field by field (which cannot, and puts
                     // nested paths in the residuals).
                     GenTy::Record(subs) if draw.whole => FieldPat::Leaf(Leaf::Const(constant_for(
                         &facts[predicate],
                         f,
-                        ty,
+                        subs,
                         draw.leaf.constant,
                     ))),
 
@@ -2939,10 +3786,10 @@ mod battery {
         lower::lower,
         parse::parse,
         plan::{
-            FactId, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart,
+            FactId, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart, Step,
             proptest::{arb_interruption_schedule, cut_points},
         },
-        schema::{LocalInterner, Schema},
+        schema::{LocalInterner, PredicateTy, Schema},
         store::FjallDb,
         tuple::Value,
         ty,
@@ -2968,7 +3815,7 @@ mod battery {
             diagnostics.codes().collect::<Vec<_>>()
         );
 
-        let plan = flatten_in_order(&ast, schema, &interner, &mut diagnostics, order);
+        let plan = flatten_in_order(&ast, schema, &mut interner, &mut diagnostics, order);
 
         assert!(
             !diagnostics.has_errors(),
@@ -3084,6 +3931,9 @@ mod battery {
         several_residuals: bool,
         value_projection: bool,
         fact_ref_projection: bool,
+        fact_id_splice: bool,
+        fact_id_residual: bool,
+        reference_capture: bool,
     }
 
     impl Shapes {
@@ -3102,6 +3952,12 @@ mod battery {
                 (self.several_residuals, "more than one residual on a level"),
                 (self.value_projection, "a `Project::Value`"),
                 (self.fact_ref_projection, "a `Project::FactRef`"),
+                (self.fact_id_splice, "a `SeekKeyPart::RegisterFactId`"),
+                (self.fact_id_residual, "a `ResidualOp::EqRegisterFactId`"),
+                (
+                    self.reference_capture,
+                    "a captured reference (`Project::RegisterField` of a `Fact` type)",
+                ),
             ] {
                 if !present {
                     out.push(what);
@@ -3112,7 +3968,15 @@ mod battery {
         }
 
         fn observe(&mut self, plan: &Plan) {
-            for generator in plan.body.iter() {
+            for step in plan.body.iter() {
+                // The census is about the shapes a *scan* can take; a derive step
+                // has no seek and no residuals. When the generator learns to draw
+                // one, it gets its own census entry rather than being folded in
+                // here, since "reached a derive step" is a different claim.
+                let Step::Scan(generator) = step else {
+                    continue;
+                };
+
                 match &generator.access.seek_key {
                     SeekKey::Prefix(bytes) => self.constant_seek |= !bytes.is_empty(),
                     SeekKey::Composite(parts) => {
@@ -3124,6 +3988,7 @@ mod battery {
                                 SeekKeyPart::RegisterField { path, .. } => {
                                     self.nested_path |= !path.is_flat();
                                 }
+                                SeekKeyPart::RegisterFactId(_) => self.fact_id_splice = true,
                             }
                         }
                     }
@@ -3138,6 +4003,7 @@ mod battery {
                         ResidualOp::EqRegisterField { path, .. } => {
                             self.nested_path |= !path.is_flat();
                         }
+                        ResidualOp::EqRegisterFactId(_) => self.fact_id_residual = true,
                         ResidualOp::EqConst(_) => {}
                     }
                 }
@@ -3148,9 +4014,16 @@ mod battery {
 
         fn observe_head(&mut self, head: &Project) {
             match head {
+                // A derived bind's output. Not a census entry yet: the query
+                // generator draws no derived binds, so claiming coverage of one
+                // would be claiming what nothing checks.
+                Project::Computed(_) => {}
                 Project::Value { .. } => self.value_projection = true,
                 Project::FactRef(_) => self.fact_ref_projection = true,
-                Project::RegisterField { path, .. } => self.nested_path |= !path.is_flat(),
+                Project::RegisterField { path, ty, .. } => {
+                    self.nested_path |= !path.is_flat();
+                    self.reference_capture |= matches!(ty, PredicateTy::Fact(_));
+                }
                 Project::Record(fields) => {
                     for (_, field) in fields.iter() {
                         self.observe_head(field);
@@ -3316,6 +4189,7 @@ mod battery {
         let mut with_const = 0;
         let mut with_wildcard = 0;
         let mut rows_total = 0;
+        let mut through_a_reference = 0;
 
         for _ in 0..RUNS {
             let spec = arb_query_and_store()
@@ -3324,6 +4198,16 @@ mod battery {
                 .current();
             let source = spec.source();
             let rows = spec.expected();
+
+            // The census says a reference join is *reached*; this says how often, so
+            // the batteries that run over these draws are known not to be relying on
+            // a handful of cases. It needed the generator to reserve a key field for
+            // a reference to get this far — left to chance it was under 1%.
+            let mut shapes = Shapes::default();
+            shapes.observe(&plan_of(&spec.schema(), &source, &spec.identity()).0);
+            if shapes.fact_id_splice || shapes.fact_id_residual {
+                through_a_reference += 1;
+            }
 
             if spec.statements() > 1 {
                 multi_statement += 1;
@@ -3369,6 +4253,10 @@ mod battery {
         assert!(
             rows_total > RUNS * 2,
             "{rows_total} rows over {RUNS} queries is too thin"
+        );
+        assert!(
+            through_a_reference * 25 > RUNS,
+            "only {through_a_reference}/{RUNS} queries follow a reference"
         );
     }
 }

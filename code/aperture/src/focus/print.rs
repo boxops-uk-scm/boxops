@@ -20,7 +20,9 @@
 use std::fmt::Write as _;
 
 use crate::focus::{
-    schema::{LocalInterner, Schema, Symbol},
+    iter::Address,
+    plan::{FieldPath, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart, Step},
+    schema::{LocalInterner, PredicateTy, Schema, Symbol},
     syntax::{Ast, ExprKind, FieldRef, Literal, NodeId, NodeSpan, Query, QueryStmt, narrow_offset},
 };
 
@@ -47,6 +49,172 @@ enum Level {
 /// Render `ast` as focus source.
 pub fn print(ast: &Ast, schema: &Schema, interner: &LocalInterner) -> String {
     spanned(ast, schema, interner).text
+}
+
+/// Render a compiled [`Plan`] for a person to read: one line per loop level, then
+/// the head.
+///
+/// A **third** rendering, and the only one that is not about a tree. It exists
+/// because the plan is where a query's cost lives — which field narrowed the scan,
+/// which one only filters, which register a level reads — and none of that is visible
+/// in the source it came from. Fields are named from the schema rather than shown as
+/// indices, since `of = r0#` is the answer to "did it follow the reference?" and
+/// `1 = r0#` is not.
+///
+/// Constants render as `<const>`: what matters here is *where* a constant went, and
+/// decoding one back to a literal would need the field's type threaded through every
+/// arm to say something the query already says.
+#[must_use]
+pub fn plan(plan: &Plan, schema: &Schema, interner: &LocalInterner) -> String {
+    let mut out = String::new();
+
+    // Numbered over *scan* steps: a level is a loop, and a derived bind is not one.
+    let mut level = 0;
+
+    for step in plan.body.iter() {
+        let generator = match step {
+            Step::Scan(generator) => generator,
+            // A derived bind names the register it computes, since it has no
+            // predicate to be about and no scan to narrow.
+            Step::Derive(derived) => {
+                let _ = writeln!(out, "  {} = <computed>", derived.bind);
+                continue;
+            }
+        };
+
+        let predicate = schema.get(generator.access.predicate_id);
+        let name = predicate.as_ref().and_then(|p| p.name()).unwrap_or("?");
+        let key_ty = predicate.as_ref().map(|p| p.key().ty);
+        let field = |path: &FieldPath| field_name(key_ty, path, schema);
+
+        let _ = write!(out, "  {} <- {name}", Address::new(level));
+
+        match &generator.access.seek_key {
+            SeekKey::Prefix(bytes) if bytes.is_empty() => out.push_str(" scan"),
+            SeekKey::Prefix(_) => out.push_str(" seek[<const>]"),
+            SeekKey::Composite(parts) => {
+                let parts: Vec<String> = parts
+                    .iter()
+                    .map(|part| match part {
+                        SeekKeyPart::Bytes(_) => "<const>".to_owned(),
+                        SeekKeyPart::RegisterField { address, path } => {
+                            format!("{address}.{}", field(path))
+                        }
+                        SeekKeyPart::RegisterFactId(address) => format!("{address}#"),
+                    })
+                    .collect();
+
+                let _ = write!(out, " seek[{}]", parts.join(" "));
+            }
+        }
+
+        for Residual { path, op } in generator.residuals.iter() {
+            let at = field(path);
+
+            let _ = match op {
+                ResidualOp::EqConst(_) => write!(out, "\n       where {at} == <const>"),
+                ResidualOp::Prefix(_) => write!(out, "\n       where {at} starts with <const>"),
+                ResidualOp::EqRegisterField { address, path } => {
+                    write!(out, "\n       where {at} == {address}.{}", field(path))
+                }
+                ResidualOp::EqRegisterFactId(address) => {
+                    write!(out, "\n       where {at} == {address}#")
+                }
+            };
+        }
+
+        out.push('\n');
+        level += 1;
+    }
+
+    let _ = write!(
+        out,
+        "  head {}",
+        projection(plan, &plan.head, schema, interner)
+    );
+    out
+}
+
+/// One projection, as the row it produces reads.
+///
+/// Takes the whole plan because a projection names a field of a *register*, and which
+/// predicate that register holds is recorded by the level that binds it — so the field
+/// has a name here as much as in a seek, just one indirection further away.
+fn projection(plan: &Plan, project: &Project, schema: &Schema, interner: &LocalInterner) -> String {
+    // Found by asking which level *binds* this register, rather than by indexing
+    // the body with the register number. Those were the same number while every
+    // register came from a level of its own; a derived bind writes a register with
+    // no level behind it, so indexing would name an unrelated predicate's fields.
+    let key_of = |address: &Address| {
+        plan.body
+            .iter()
+            .filter_map(|step| match step {
+                Step::Scan(generator) => Some(generator),
+                Step::Derive(_) => None,
+            })
+            .find(|generator| generator.binds.contains(address))
+            .and_then(|generator| schema.get(generator.access.predicate_id))
+    };
+
+    match project {
+        Project::Lit(value) => format!("{value:?}"),
+        // A row's identity, which is what a reference to it holds.
+        Project::FactRef(address) => format!("{address}#"),
+        Project::RegisterField { address, path, .. } => {
+            let predicate = key_of(address);
+            let key_ty = predicate.as_ref().map(|p| p.key().ty);
+
+            format!("{address}.{}", field_name(key_ty, path, schema))
+        }
+        Project::Value { address, .. } => format!("{address}.value"),
+        // A computed value, which no predicate's field names.
+        Project::Computed(address) => format!("{address}="),
+        Project::Record(fields) => format!(
+            "{{{}}}",
+            fields
+                .iter()
+                .map(|(name, field)| format!(
+                    "{} = {}",
+                    interner.try_resolve(*name).unwrap_or("?"),
+                    projection(plan, field, schema, interner)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// A field path as the schema names it — `of`, or `outer.inner` for a nested step.
+///
+/// Falls back to the indices when the type is not to hand — a malformed plan naming a
+/// register no level binds, or a field past the key's arity. Naming what can be named
+/// is worth more than naming nothing.
+fn field_name(key_ty: Option<&PredicateTy>, path: &FieldPath, schema: &Schema) -> String {
+    let Some(mut ty) = key_ty else {
+        return path.to_string();
+    };
+
+    let mut names = vec![];
+
+    for index in std::iter::once(path.field_idx()).chain(path.steps().iter().copied()) {
+        let PredicateTy::Record(fields) = ty else {
+            // A scalar key is one field and has no name of its own.
+            return if names.is_empty() {
+                path.to_string()
+            } else {
+                names.join(".")
+            };
+        };
+
+        let Some((name, field_ty)) = fields.get(index) else {
+            return path.to_string();
+        };
+
+        names.push(schema.interner().resolve(*name).unwrap_or("?").to_owned());
+        ty = field_ty;
+    }
+
+    names.join(".")
 }
 
 /// Render `ast` as focus source, keeping the range each node's text occupies.

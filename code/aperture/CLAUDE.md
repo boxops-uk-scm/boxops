@@ -18,12 +18,16 @@ invariants by number, and where to read the rest. It is deliberately tight.
 - The build sequence: [`PLAN.md`](PLAN.md)
 
 **Module map.** `src/focus/` is the live engine + language — all new work lands here.
-`src/main.rs` is the `aperture` shell: a scaffold for the Phase 5 REPL that typechecks what
-you type against a real store, and stops at a type because calling `plan()` at the prompt is
-Phase 5's task — keep logic out of it. `src/lens/` is a superseded first attempt (not
-compiled) kept only as a reference to re-implement into `focus`, then delete file-by-file. `src/focus.rs` is the module list plus a
-commented-out graveyard (~20 live lines; only the transport-codec sketch is worth keeping).
-See [chapter 1](docs/01-concepts.md).
+`src/main.rs` is the `aperture` shell: it compiles and runs what you type against a real store
+seeded with a **code index** (files → modules → declarations → references), written through the
+fact API; `:plan` shows the plan. Keep logic out of it — the plan renderer it needed lives in
+`focus::print`. **`focus::fact` is how a fact is written by hand**: a well-typed value whose
+key fields are named, resolved against the schema (`FjallDb::put`), because `put_fact` takes
+bytes and three of its preconditions fail silently — see
+[chapter 3](docs/03-storage-model.md#writing-a-fact-by-hand). `focus::fixture` is the fixture
+database the corpus and the batteries share.
+`src/focus.rs` is the module list plus a commented-out graveyard (~20 live lines; only the
+transport-codec sketch is worth keeping). See [chapter 1](docs/01-concepts.md).
 
 ---
 
@@ -67,7 +71,8 @@ in-memory `MemStore` (`focus::mem_store`) **for tests only**. The focus grammar 
 ## Architecture, in one breath
 
 `lex → parse → typecheck → flatten → reorder` compiles focus text to a **`Plan` IR** (the
-fixed contract); the executor runs the plan as a **nested loop** (`enumerate` over a frame
+fixed contract — an ordered `[Step]`, a scan to iterate or a value to compute); the executor
+runs the plan as a **nested loop** (`enumerate` over a frame
 stack) against two sorted column families (`keys` = index, `entities` = identity), and can
 **suspend to a bytes-only `Cursor` and resume exactly**. Deep dives:
 [storage](docs/03-storage-model.md) · [executor](docs/04-executor.md) ·
@@ -97,6 +102,7 @@ Know these by number — they are the guardrails every change is checked against
 | [I11](docs/invariants.md#i11) | `FactId` is stable, unique, never reused within a DB. | [3](docs/03-storage-model.md) |
 | [I12](docs/invariants.md#i12) | Both column families are written atomically. | [3](docs/03-storage-model.md) |
 | [I13](docs/invariants.md#i13) | The DB's schema is embedded and frozen at create. | [6](docs/06-types-and-schema.md) |
+| [I14](docs/invariants.md#i14) | A derived bind is a pure function of the fact bindings. | [7](docs/07-compilation.md) |
 
 **Operational invariants `ops-I1`–`ops-I10`** (lifecycle, single-writer, reproducibility,
 one-write-funnel) are a **separate namespace** — always written `ops-Ix` — and live in
@@ -132,11 +138,29 @@ decoded data.
 
 ## Scope, phases & open decisions
 
-- **Build order and current state:** [`PLAN.md`](PLAN.md). One construct left on the list is a
-  deliberate machine change (not additive) — **derived facts**, which has its own phase
-  ([Phase 6](PLAN.md)); everything else deferred is additive and must not reshape the machine.
-  The **`FactRef` marker** was the other, and is **done**: its own marker `0x51` in the codec,
-  so it gates nothing.
+- **Build order and current state:** [`PLAN.md`](PLAN.md). Both sanctioned machine changes are
+  **done**: the **`FactRef` marker** (its own marker `0x51` in the codec) and **dynamic
+  derivation** ([Phase 6](PLAN.md) — a register holds a `Slot`, a plan's body is a sequence of
+  `Step`s, and a derive step is recomputed on resume rather than saved,
+  [I14](docs/invariants.md#i14)). Everything else deferred is additive and must not reshape the
+  machine. **Stored** derivation — a derived predicate written as facts — is
+  [Phase 8b](PLAN.md), gated on the schema DSL: it needs nothing from the machine change, and
+  cannot be built before a derived predicate can be *declared*.
+- **A constant bind folds.** `X = 42` — and a record of constants to any depth — is substituted
+  at every use, taking no register and no step; a plan whose every bind folded has no steps and
+  means exactly one row. Nothing in focus lowers a `Step::Derive` yet, so that machinery is
+  exercised by hand-built plans; its first producer will be a primitive or a subquery. Do not
+  "simplify" it away — its resume behaviour is the expensive thing to get wrong later
+  ([chapter 7](docs/07-compilation.md#folding-a-constant-bind)).
+- **Additive is not the same as small.** The constructs that parse and typecheck-as-deferred
+  but have no engine — `|`, `never`, `!`, subqueries — are **[Phase 6b](PLAN.md)**, and
+  **union types** are [Phase 8](PLAN.md) (a union cannot be declared before schemas parse, and
+  [I10](docs/invariants.md#i10) freezes its discriminants on disk once one is written). Neither
+  reshapes the machine, but disjunction extends the resume `Cursor`, so both carry acceptance
+  criteria rather than a bullet. Phase 6b is sequenced *after* Phase 6 on purpose: both touch the
+  resume token, so edit it once and re-prove [I4](docs/invariants.md#i4) once. (Phase 6 left
+  `Cursor` a `Vec<Register>` in the end — only *fact* slots are ever saved, since a derive step is
+  recomputed — but it did change what a cursor entry is counted against.)
 - **Unsettled decisions:** [`docs/open-decisions.md`](docs/open-decisions.md) — two, both from
   comparing the design against Glean: **multiplicity** (arrays vs one fact per element — decide
   before the Phase 8 schema DSL fixes how schemas are written) and **primitives** (arithmetic,
@@ -145,8 +169,10 @@ decoded data.
   (`nyi/repeated-variable`, Phase 4), the `pattern = pattern` *scope* is settled at typecheck
   (the feature itself stays deferred), and cancellation counting rows examined is settled in
   the executor.
-- **What flatten defers** — a value bind, a nested generator, a fact-typed field, matching on a
-  value, a whole record key — each has a code and a corpus entry
+- **What flatten defers** — a value bind, reading *through* a fact reference, matching on a
+  value, a whole record key, an intra-row repeat — each has a code and a corpus entry
   ([chapter 7](docs/07-compilation.md#what-flatten-defers-and-why)). `nyi/fact-field` is the
-  load-bearing one: a register holds its own row, so splicing it into a field that holds a
-  `FactId` would compare a key against an id and quietly match nothing.
+  load-bearing one, and it is now a *split* rather than a blanket: **following** a reference is
+  supported (the splice is off `Register::fact_id`), reaching the fact it names is not. The
+  danger the split guards is that a register also holds its own row's key bytes — splicing
+  those where an id belongs would compare a key against an id and quietly match nothing.

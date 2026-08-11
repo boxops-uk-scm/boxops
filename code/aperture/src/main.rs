@@ -1,43 +1,60 @@
 //! `aperture` — an interactive shell for the focus language.
 //!
 //! Reads a focus query, highlights it as you type from the same `logos` lexer the
-//! compiler uses, and reports what the front end makes of it: lex and parse
-//! errors, names lowering cannot resolve, and the type typecheck infers for the
-//! head.
+//! compiler uses, **compiles it to a [`Plan`] and runs it** — reporting whatever the
+//! front end found on the way: lex and parse errors, names lowering cannot resolve,
+//! the type typecheck infers for the head, and then the rows.
 //!
-//! It runs against a **real** [`FjallDb`] in a scratch directory, seeded at
-//! startup from the schema below — so the names a query resolves against, and the
-//! rows `:facts` prints, are the ones actually on disk. The schema is built
-//! around **fact references**: the relations point at the entities by `FactId`
-//! rather than repeating their keys, which is what `:facts` resolves back to
-//! `demo.City "Cambridge"` when it prints a row.
+//! It runs against a **real** [`FjallDb`] in a scratch directory, seeded at startup
+//! with the index of a small crate — files, modules, declarations, references and
+//! imports — so the names a query resolves against and the rows it returns are the ones
+//! actually on disk. `:plan` shows what a query compiled to without running it, which is
+//! where its cost is visible: which field narrowed the scan, which one only filters, and
+//! which register a level reads.
 //!
-//! # What it cannot do yet
+//! The schema is a **code index** because that is the canonical shape for a fact
+//! database: one fact per thing, and everything about a thing pointing at it by
+//! [`FactId`](aperture::focus::plan::FactId) rather than repeating it. A reference is
+//! also the one thing whose plan does not read like its source — following one splices
+//! an *id*, so `to = r0#` is the answer to "did it follow the reference, or compare the
+//! wrong bytes?".
 //!
-//! **Run your query.** Compiling one to a [`Plan`] and executing it — with the
-//! `:commands` that show a plan — is what Phase 5 wires up at this prompt; for now
-//! a query gets as far as a type and stops, and the shell says so rather than
-//! pretending. `:facts` runs a plan this program builds by hand, which is the honest
-//! way to show the store, executor and codec underneath all working.
+//! The facts themselves are written as **well-typed Rust values** through
+//! [`focus::fact`](aperture::focus::fact), which is what a hand-written deriver would
+//! do: a plain struct, named fields, and the schema deciding the encoding order. The
+//! `Fact` impls below deliberately list their fields in the order that reads well rather
+//! than the order the schema declares, because getting that wrong by hand writes a fact
+//! nobody can find.
+//!
+//! # What it does not do
+//!
+//! **Anything a wire client could not.** The product shell is remote-first
+//! ([operations §5](../docs/aperture-cli-design.md)), so this holds no state a wire
+//! session cannot reproduce: no cursors kept between lines, no cached compilations.
+//! Phase 9 re-points the interactive front at the wire client, and everything here
+//! survives that except which store it opens.
 
-use std::{borrow::Cow, collections::BTreeMap, path::Path, sync::Arc};
+use std::{borrow::Cow, path::Path, sync::Arc};
 
 use aperture::focus::{
     compile::Compilation,
     error::ApertureError,
+    fact::{Fact, ToValue, record},
     iter::{Address, Executor, Iteratee, Stream},
     lexer::{Token, tokenize},
-    plan::{Access, FactId, FactStore, FieldPath, Generator, Plan, Project, SeekKey},
+    plan::{Access, FactId, FactStore, FieldPath, Generator, Plan, Project, SeekKey, Step},
+    print,
     schema::{LocalInterner, Predicate, PredicateId, PredicateTy, Schema, SchemaInterner, Symbol},
     store::{FjallDb, FjallStore},
     syntax::Ty,
-    tuple::{TupleEncoder, Value, decode_key},
+    tuple::{Value, decode_key},
 };
+use lasso::Rodeo;
+
 use codespan_reporting::term::{
     self,
     termcolor::{ColorChoice, StandardStream},
 };
-use lasso::Rodeo;
 use rustyline::{
     Context, Editor, Helper,
     completion::Completer,
@@ -53,68 +70,81 @@ const PROMPT: &str = "focus> ";
 
 // ---- the schema, and the facts that back it --------------------------------
 
-/// A key or value field, before encoding.
-enum Field<'a> {
-    Int(i64),
-    Str(&'a str),
-    /// A reference to another fact, by the id its write returned.
-    Ref(FactId),
-}
+/// A predicate id **is** its position in the schema, and a `Fact` field names one — so
+/// the ids of the predicates that are *pointed at* have to be written down before the
+/// vector that defines them. `predicate_ids_are_positions` checks the whole list,
+/// including the two nothing points at.
+const FILE: PredicateId = PredicateId(0);
+const MODULE: PredicateId = PredicateId(1);
+const DECL: PredicateId = PredicateId(2);
 
-/// A predicate id **is** its position in the schema — and a `Fact` field names
-/// one, so the ids have to be written down before the vector that defines them.
-/// `predicate_ids_are_positions` checks each against the name it is meant to be.
-const PERSON: PredicateId = PredicateId(0);
-const KNOWS: PredicateId = PredicateId(1);
-const CITY: PredicateId = PredicateId(2);
-const LIVES_IN: PredicateId = PredicateId(3);
-
-/// The schema this shell resolves names against.
+/// The schema this shell resolves names against: **a code index**, which is the
+/// canonical shape for a fact database — one fact per thing, and everything about a
+/// thing pointing at it rather than repeating it.
 ///
-/// Record fields are listed **sorted by name**, as everywhere: a record's field
-/// order is part of its encoding.
+/// Record fields are listed **sorted by name**, as everywhere: a record's field order
+/// is part of its encoding. The `Fact` impls below deliberately do *not* list them in
+/// that order, because a hand-written deriver has no reason to know it — see
+/// [`focus::fact`](aperture::focus::fact).
 ///
-/// Two predicates are *entities* — `demo.Person` and `demo.City` — and the two
-/// relations refer to them by [`PredicateTy::Fact`] rather than by repeating a
-/// key. That is the shape a fact database is for: a reference is a `FactId`,
-/// encoded under its own marker (`0x51`), so `demo.LivesIn` names the very row
-/// `demo.City` wrote, and a reference to a city that was never written cannot be
-/// spelled. It is also what gives a query something to walk: the `person` of a
-/// `demo.LivesIn` fact *is* a person, so `.value` on it reads that person's name
-/// with no join written out by hand.
+/// What each predicate is here to show:
+///
+/// | predicate | shows |
+/// |---|---|
+/// | `src.File` | a **scalar** key — a path is one string, and needs no record |
+/// | `src.Module` | a **reference**, so a module names its file rather than repeating the path |
+/// | `src.Decl` | a **value side**, so `D.value` has something to read, plus a second reference |
+/// | `src.Ref` | a **nested record** key field, and a reference behind an open one |
+/// | `src.Import` | two references to one predicate, which is what a graph edge is |
 fn demo_schema() -> Schema {
     let mut rodeo = Rodeo::new();
     let mut sym = |name: &str| rodeo.get_or_intern(name);
 
     let predicates = vec![
-        // A person is identified by id, and their name is the value side — so
-        // `X.value` has something to read.
         Predicate {
-            name: sym("demo.Person"),
-            key: PredicateTy::Record(Arc::from([(sym("id"), PredicateTy::Int)])),
-            value: Some(PredicateTy::Str),
-        },
-        Predicate {
-            name: sym("demo.Knows"),
-            key: PredicateTy::Record(Arc::from([
-                (sym("from"), PredicateTy::Fact(PERSON)),
-                (sym("to"), PredicateTy::Fact(PERSON)),
-            ])),
-            value: None,
-        },
-        // A bare scalar key, so not every predicate here is a record — and a
-        // referable fact all the same: what a reference names is a *fact*, whatever
-        // shape its key has.
-        Predicate {
-            name: sym("demo.City"),
+            name: sym("src.File"),
             key: PredicateTy::Str,
             value: None,
         },
         Predicate {
-            name: sym("demo.LivesIn"),
+            name: sym("src.Module"),
             key: PredicateTy::Record(Arc::from([
-                (sym("city"), PredicateTy::Fact(CITY)),
-                (sym("person"), PredicateTy::Fact(PERSON)),
+                (sym("file"), PredicateTy::Fact(FILE)),
+                (sym("name"), PredicateTy::Str),
+            ])),
+            value: None,
+        },
+        // The value side is the declaration's *kind* — `fn`, `struct` — because it is
+        // the one thing a query would want without matching on it, and a value cannot
+        // be matched ([I6](../docs/invariants.md#i6)).
+        Predicate {
+            name: sym("src.Decl"),
+            key: PredicateTy::Record(Arc::from([
+                (sym("line"), PredicateTy::Int),
+                (sym("module"), PredicateTy::Fact(MODULE)),
+                (sym("name"), PredicateTy::Str),
+            ])),
+            value: Some(PredicateTy::Str),
+        },
+        Predicate {
+            name: sym("src.Ref"),
+            key: PredicateTy::Record(Arc::from([
+                (
+                    sym("at"),
+                    PredicateTy::Record(Arc::from([
+                        (sym("col"), PredicateTy::Int),
+                        (sym("line"), PredicateTy::Int),
+                    ])),
+                ),
+                (sym("to"), PredicateTy::Fact(DECL)),
+            ])),
+            value: None,
+        },
+        Predicate {
+            name: sym("src.Import"),
+            key: PredicateTy::Record(Arc::from([
+                (sym("from"), PredicateTy::Fact(MODULE)),
+                (sym("to"), PredicateTy::Fact(MODULE)),
             ])),
             value: None,
         },
@@ -123,99 +153,183 @@ fn demo_schema() -> Schema {
     Schema::new(rodeo.into_reader(), Arc::from(predicates))
 }
 
-fn put_field(enc: &mut TupleEncoder<'_>, field: &Field<'_>) {
-    match field {
-        Field::Int(value) => enc.put_i64(*value),
-        Field::Str(value) => enc.put_str(value),
-        Field::Ref(id) => enc.put_fact_id(*id),
+// ---- the facts, as well-typed values ---------------------------------------
+//
+// Each of these is what a hand-written deriver emits: a plain struct, named fields,
+// and `db.put` doing the rest. None of them lists its fields in the schema's sorted
+// order, and none of them has to — that is what `focus::fact` checks and reorders,
+// and getting it wrong by hand writes a fact nobody can find.
+
+struct File(&'static str);
+
+impl Fact for File {
+    const PREDICATE: &'static str = "src.File";
+
+    /// A scalar key is one value, not a record of one.
+    fn key(&self) -> Value {
+        self.0.to_value()
     }
 }
 
-/// Encode a record key — the shape of every predicate here bar `demo.City`.
-///
-/// The fields go in **back to back, with no record wrapper of their own**: a
-/// stored key is a tuple of the key type's top-level fields
-/// ([chapter 3](../docs/03-storage-model.md)), which is what lets a seek extend a
-/// prefix by whole fields and lets the executor reach field *k* by skipping the *k*
-/// before it. A record *inside* a field does keep its wrapper, because there it is
-/// one value among others and has to be skippable as one.
-fn record_key(fields: &[Field<'_>]) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut enc = TupleEncoder::new(&mut out);
+struct Module {
+    name: &'static str,
+    file: FactId,
+}
 
-    for field in fields {
-        put_field(&mut enc, field);
+impl Fact for Module {
+    const PREDICATE: &'static str = "src.Module";
+
+    fn key(&self) -> Value {
+        record([
+            ("name", self.name.to_value()),
+            ("file", self.file.to_value()),
+        ])
+    }
+}
+
+struct Decl {
+    module: FactId,
+    name: &'static str,
+    line: i64,
+    kind: &'static str,
+}
+
+impl Fact for Decl {
+    const PREDICATE: &'static str = "src.Decl";
+
+    fn key(&self) -> Value {
+        record([
+            ("module", self.module.to_value()),
+            ("name", self.name.to_value()),
+            ("line", self.line.to_value()),
+        ])
     }
 
-    out
+    fn value(&self) -> Option<Value> {
+        Some(self.kind.to_value())
+    }
 }
 
-/// Encode a bare scalar, for a key or a value.
-fn scalar(field: &Field<'_>) -> Vec<u8> {
-    let mut out = Vec::new();
-    put_field(&mut TupleEncoder::new(&mut out), field);
-    out
+/// A position in a file — a **nested record**, so it implements [`ToValue`] rather
+/// than [`Fact`]: it is part of a key, not a fact of its own.
+struct Pos {
+    line: i64,
+    col: i64,
 }
 
-/// Write the facts the schema describes, returning how many.
+impl ToValue for Pos {
+    fn to_value(&self) -> Value {
+        record([("line", self.line.to_value()), ("col", self.col.to_value())])
+    }
+}
+
+struct Reference {
+    to: FactId,
+    at: Pos,
+}
+
+impl Fact for Reference {
+    const PREDICATE: &'static str = "src.Ref";
+
+    fn key(&self) -> Value {
+        record([("to", self.to.to_value()), ("at", self.at.to_value())])
+    }
+}
+
+struct Import {
+    from: FactId,
+    to: FactId,
+}
+
+impl Fact for Import {
+    const PREDICATE: &'static str = "src.Import";
+
+    fn key(&self) -> Value {
+        record([("from", self.from.to_value()), ("to", self.to.to_value())])
+    }
+}
+
+/// Write the index of a small crate, returning how many facts.
 ///
-/// Every key is distinct: a key is written once ([`FjallDb::put_fact`]).
-///
-/// The entities go first, because a reference is to a fact and the id that names
-/// it is what [`FjallDb::put_fact`] hands back — so `demo.Knows` and
-/// `demo.LivesIn` cannot be written until the people and cities they point at
-/// exist. Referential integrity here is a consequence of the order, not a check.
-fn seed(db: &FjallDb) -> Result<usize, ApertureError> {
-    let mut written = 0;
-    let mut put = |predicate, key: Vec<u8>, value: Vec<u8>| -> Result<FactId, ApertureError> {
-        let id = db.put_fact(predicate, &key, &value)?;
-        written += 1;
-        Ok(id)
+/// **The id a write returns is what a reference to that fact is**, which is why this
+/// reads as it does: a file, then the module in it, then the declarations in that.
+/// Referential integrity is a consequence of the order rather than a check — nothing
+/// can point at a fact that has not been written, because there is no id for it yet.
+fn seed(db: &FjallDb, schema: &Schema) -> Result<usize, ApertureError> {
+    let mut index = Index {
+        db,
+        schema,
+        written: 0,
     };
 
-    let mut people = BTreeMap::new();
-    for (id, name) in [
-        (1, "Ada Lovelace"),
-        (2, "Grace Hopper"),
-        (3, "Alan Turing"),
-        (4, "Edsger Dijkstra"),
+    let main_rs = index.put(&File("src/main.rs"))?;
+    let store_rs = index.put(&File("src/store.rs"))?;
+    let query_rs = index.put(&File("src/query.rs"))?;
+
+    let main = index.put(&Module {
+        name: "main",
+        file: main_rs,
+    })?;
+    let store = index.put(&Module {
+        name: "store",
+        file: store_rs,
+    })?;
+    let query = index.put(&Module {
+        name: "query",
+        file: query_rs,
+    })?;
+
+    let mut decl = |module, name, line, kind| {
+        index.put(&Decl {
+            module,
+            name,
+            line,
+            kind,
+        })
+    };
+
+    let run = decl(main, "run", 30, "fn")?;
+    decl(main, "main", 12, "fn")?;
+    let store_struct = decl(store, "Store", 8, "struct")?;
+    let open = decl(store, "open", 20, "fn")?;
+    decl(query, "Query", 5, "struct")?;
+    let execute = decl(query, "execute", 40, "fn")?;
+
+    for (to, line, col) in [
+        (run, 13, 5),
+        (open, 14, 9),
+        (execute, 15, 5),
+        (store_struct, 22, 12),
+        (open, 41, 17),
     ] {
-        let fact = put(
-            PERSON,
-            record_key(&[Field::Int(id)]),
-            scalar(&Field::Str(name)),
-        )?;
-        people.insert(id, fact);
+        index.put(&Reference {
+            to,
+            at: Pos { line, col },
+        })?;
     }
 
-    let mut cities = BTreeMap::new();
-    for name in ["Amsterdam", "Baltimore", "Cambridge"] {
-        let fact = put(CITY, scalar(&Field::Str(name)), vec![])?;
-        cities.insert(name, fact);
+    for (from, to) in [(main, store), (main, query), (query, store)] {
+        index.put(&Import { from, to })?;
     }
 
-    for (from, to) in [(1, 2), (1, 3), (2, 3), (3, 4)] {
-        put(
-            KNOWS,
-            record_key(&[Field::Ref(people[&from]), Field::Ref(people[&to])]),
-            vec![],
-        )?;
-    }
+    Ok(index.written)
+}
 
-    for (place, id) in [
-        ("Cambridge", 1),
-        ("Baltimore", 2),
-        ("Cambridge", 3),
-        ("Amsterdam", 4),
-    ] {
-        put(
-            LIVES_IN,
-            record_key(&[Field::Ref(cities[place]), Field::Ref(people[&id])]),
-            vec![],
-        )?;
-    }
+/// The index under construction: what a write needs, plus a count for the banner.
+///
+/// A struct rather than a closure because [`put`](Index::put) is generic over the
+/// fact, and a closure cannot be.
+struct Index<'a> {
+    db: &'a FjallDb,
+    schema: &'a Schema,
+    written: usize,
+}
 
-    Ok(written)
+impl Index<'_> {
+    fn put<F: Fact>(&mut self, fact: &F) -> Result<FactId, ApertureError> {
+        self.written += 1;
+        self.db.put(self.schema, fact)
+    }
 }
 
 // ---- highlighting ----------------------------------------------------------
@@ -454,15 +568,18 @@ fn render_predicate_ty(ty: &PredicateTy, schema: &Schema, interner: &SchemaInter
 
 // ---- the front end ---------------------------------------------------------
 
-/// Compile `source` as far as the front end goes, and say what it found.
+/// **Compile `source` and run it**, printing the rows it answers with.
 ///
-/// The sequencing, the interner and the rendering all belong to
-/// [`Compilation`] now — the shell's job is to decide what to print, which is
-/// the type when the query is clean and nothing extra when it is not, since the
-/// diagnostics have already said it.
-fn check(source: &str, schema: &Schema) {
+/// The sequencing, the interner and the diagnostic rendering all belong to
+/// [`Compilation`] — the shell's job is to decide what to print. A query with a fault
+/// has already said so through its diagnostics, so there is nothing to add; a clean
+/// one gets its type, then its rows.
+///
+/// `plan()` returning `None` with an empty sink would be a bug in the front end
+/// rather than in the query, and this says so instead of printing nothing.
+fn run(source: &str, db: &FjallDb, schema: &Schema) {
     let mut compilation = Compilation::new(source, schema);
-    compilation.check();
+    let plan = compilation.plan();
 
     let writer = StandardStream::stdout(ColorChoice::Auto);
     let _ = compilation.render(&mut writer.lock(), &term::Config::default());
@@ -471,34 +588,86 @@ fn check(source: &str, schema: &Schema) {
         return;
     }
 
-    match compilation.head_ty() {
-        Some(head) => {
-            println!("  : {}", render_ty(head, schema, compilation.interner()));
-            println!("  (typechecked — running it is Phase 5, which wires `plan()` in here)");
+    if let Some(head) = compilation.head_ty() {
+        println!("  : {}", render_ty(head, schema, compilation.interner()));
+    }
+
+    let Some(plan) = plan else {
+        println!("  (no plan, and no diagnostic saying why — that is a compiler bug)");
+        return;
+    };
+
+    print_rows(db, schema, compilation.interner(), plan);
+}
+
+/// Run a plan to completion and print each row, resolving references to the facts
+/// they name.
+fn print_rows(db: &FjallDb, schema: &Schema, interner: &LocalInterner, plan: Plan) {
+    let rows = Executor::new(db.reader(), plan).enumerate(
+        Vec::<Value>::new(),
+        |mut acc, mut row| {
+            acc.push(row.to_value(interner)?);
+            Ok(Stream::Continue(acc))
+        },
+        &CancellationToken::new(),
+    );
+
+    match rows {
+        Err(error) => println!("  {error}"),
+        Ok(Iteratee::Done(rows) | Iteratee::Suspended(rows, _)) => {
+            // A reader of its own, opened after the scan has finished: resolving a
+            // reference is a point read, and this is not the scan loop.
+            let store = db.reader();
+
+            for row in &rows {
+                println!(
+                    "  {}",
+                    render_value(&store, schema, interner, row, MAX_REF_DEPTH)
+                );
+            }
+            println!("  {} row(s)", rows.len());
         }
-        None => println!("  (the head was not annotated)"),
+    }
+}
+
+/// Show the plan a query compiles to, without running it — where its cost lives.
+fn print_plan(source: &str, schema: &Schema) {
+    let mut compilation = Compilation::new(source, schema);
+    let plan = compilation.plan();
+
+    let writer = StandardStream::stdout(ColorChoice::Auto);
+    let _ = compilation.render(&mut writer.lock(), &term::Config::default());
+
+    match plan {
+        Some(plan) => println!("{}", print::plan(&plan, schema, compilation.interner())),
+        None if compilation.diagnostics().has_errors() => {}
+        None => println!("  (no plan, and no diagnostic saying why — that is a compiler bug)"),
     }
 }
 
 // ---- commands --------------------------------------------------------------
 
-/// The queries `:help` offers, which `help_examples_typecheck` checks: a shell
-/// that suggests a query it then rejects is worse than one that suggests none.
+/// Queries `:help` offers, each of which `every_help_example_returns_its_rows`
+/// runs against the seeded index: a shell that advertises a query it cannot answer is
+/// worse than one that advertises none, and that is exactly what it was doing before
+/// a query could be run at all.
 ///
-/// Both are about references. A field typed `Fact` is written as the fact itself —
-/// `demo.Person {id = 1}` — so a key nests the pattern that names it; and reading
-/// through one is `.value`, which needs no join because a reference already *is*
-/// the row.
-const EXAMPLES: [&str; 2] = [
-    "X.value where demo.Knows {from = demo.Person {id = 1}, to = X}",
-    "P.value where demo.LivesIn {city = demo.City \"Cambridge\", person = P}",
+/// Between them they reach everything a reference-shaped schema needs — a scalar key,
+/// a value side, a nested record field, a captured reference, and a chain of
+/// generators written nested, which is how one actually writes a traversal.
+const EXAMPLES: [&str; 4] = [
+    "D.name where D = src.Decl {module = src.Module {file = src.File \"src/store.rs\"}}",
+    "D.value where D = src.Decl {name = \"open\"}",
+    "L where src.Ref {at = {line = L}, to = src.Decl {name = \"open\"}}",
+    "M where src.Import {from = M, to = src.Module {name = \"store\"}}",
 ];
 
 fn print_help() {
-    println!("  <query>          typecheck a focus query, e.g.");
+    println!("  <query>          compile and run a focus query, e.g.");
     for example in EXAMPLES {
         println!("                     {example}");
     }
+    println!("  :plan <query>    the plan it compiles to, without running it");
     println!("  :schema          the predicates this shell knows");
     println!("  :facts <name>    rows stored for a predicate, read through the executor");
     println!("  :help            this");
@@ -563,7 +732,7 @@ fn scan_plan(
 
     Plan {
         nvars: 1,
-        body: Box::new([Generator {
+        body: Step::scans([Generator {
             access: Access {
                 predicate_id: id,
                 seek_key: SeekKey::Prefix(Box::new([])),
@@ -666,7 +835,7 @@ fn shell(dir: &Path) -> Result<(), ApertureError> {
 
     let db = FjallDb::open(dir)?;
     db.create_predicates((0..schema.len()).map(|index| PredicateId(index as u32)))?;
-    let written = seed(&db)?;
+    let written = seed(&db, &schema)?;
 
     println!("aperture — a focus shell");
     println!("{written} facts in {}\n", dir.display());
@@ -690,14 +859,16 @@ fn shell(dir: &Path) -> Result<(), ApertureError> {
 
                 match line.split_once(char::is_whitespace) {
                     Some((":facts", name)) => print_facts(&db, &schema, name.trim()),
+                    Some((":plan", query)) => print_plan(query.trim(), &schema),
                     _ if line == ":facts" => println!("  :facts needs a predicate — try :schema"),
+                    _ if line == ":plan" => println!("  :plan needs a query — try :help"),
                     _ if line == ":schema" => print_schema(&schema),
                     _ if line == ":help" => print_help(),
                     _ if line == ":quit" || line == ":q" => return Ok(()),
                     _ if line.starts_with(':') => {
                         println!("  no such command: {line} — try :help");
                     }
-                    _ => check(&line, &schema),
+                    _ => run(&line, &db, &schema),
                 }
             }
 
@@ -743,6 +914,136 @@ mod tests {
         out
     }
 
+    /// Run a query the way the prompt does: compile it, execute it against a real
+    /// store, and hand back the rows.
+    fn ask(db: &FjallDb, schema: &Schema, source: &str) -> Vec<Value> {
+        let mut compilation = Compilation::new(source, schema);
+        let plan = compilation
+            .plan()
+            .unwrap_or_else(|| panic!("{source}:\n{}", compilation.render_to_string()));
+
+        let rows = Executor::new(db.reader(), plan)
+            .enumerate(
+                Vec::<Value>::new(),
+                |mut acc, mut row| {
+                    acc.push(row.to_value(compilation.interner())?);
+                    Ok(Stream::Continue(acc))
+                },
+                &CancellationToken::new(),
+            )
+            .expect("run");
+
+        let (Iteratee::Done(rows) | Iteratee::Suspended(rows, _)) = rows;
+        rows
+    }
+
+    /// A database of this test's own, seeded exactly as the shell seeds its own.
+    fn seeded(suffix: &str) -> (FjallDb, std::path::PathBuf) {
+        let dir = scratch_dir().with_extension(suffix);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let schema = demo_schema();
+        let db = FjallDb::open(&dir).expect("open");
+        db.create_predicates((0..schema.len()).map(|i| PredicateId(i as u32)))
+            .expect("create");
+        seed(&db, &schema).expect("seed");
+
+        (db, dir)
+    }
+
+    /// **Phase 5's acceptance criterion, at the prompt's own path: typing a query
+    /// returns rows, end to end, through the real compiler and the real executor
+    /// against a real store.**
+    ///
+    /// Everything the shell could do before this stopped at a type. What makes it a
+    /// test of the *shell* rather than of the compiler is the store: these rows came
+    /// off disk, out of keyspaces the seed wrote, through a plan nobody built by hand.
+    #[test]
+    fn typing_a_query_returns_rows() {
+        let (db, dir) = seeded("test-run");
+        let schema = demo_schema();
+
+        // A scalar key, and a whole-predicate scan behind it.
+        assert_eq!(
+            ask(&db, &schema, "P where src.File P"),
+            ["src/main.rs", "src/query.rs", "src/store.rs"].map(|s| Value::Str(s.to_owned())),
+            "files come back in key order, which is the order they sort in",
+        );
+
+        // The value side: one point read per surviving row.
+        assert_eq!(
+            ask(
+                &db,
+                &schema,
+                "D.value where D = src.Decl {name = \"Store\"}"
+            ),
+            [Value::Str("struct".to_owned())],
+        );
+
+        // **A join through a reference**, which is what a fact database is for and
+        // what this phase made expressible.
+        assert_eq!(
+            ask(
+                &db,
+                &schema,
+                "D.name where D = src.Decl {module = src.Module {name = \"query\"}}"
+            ),
+            ["Query", "execute"].map(|s| Value::Str(s.to_owned())),
+        );
+
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every example `:help` offers **runs, and answers this**.
+    ///
+    /// It used to be enough that they typechecked, and that was the gap this phase
+    /// found: both previous examples were nested generators over fact-typed fields, so
+    /// they typechecked and then had no plan. Recording the rows rather than only
+    /// "not empty" is what makes this a test of the examples rather than of the store.
+    #[test]
+    fn every_help_example_returns_its_rows() {
+        let (db, dir) = seeded("test-examples");
+        let schema = demo_schema();
+
+        let expected = [
+            // What is declared in `store.rs` — two hops, written nested.
+            vec!["Store", "open"],
+            // The kind of the declaration named `open`.
+            vec!["fn"],
+            // Where `open` is referenced: a nested record field captured behind a
+            // reference compare.
+            vec!["14", "41"],
+            // Which modules import `store` — a reference captured and projected, so
+            // these are the facts themselves rather than anything read out of them.
+            vec!["src.Module#1", "src.Module#3"],
+        ];
+
+        for (source, want) in EXAMPLES.iter().zip(expected) {
+            let got: Vec<String> = ask(&db, &schema, source)
+                .iter()
+                .map(|row| match row {
+                    Value::Str(s) => s.clone(),
+                    Value::Int(n) => n.to_string(),
+                    Value::FactRef(id) => format!(
+                        "{}#{}",
+                        schema
+                            .get(id.predicate())
+                            .and_then(|p| p.name())
+                            .unwrap_or("?"),
+                        id.sequence()
+                    ),
+                    other => format!("{other:?}"),
+                })
+                .collect();
+
+            assert_eq!(got, want, "{source}");
+        }
+
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The ids the `Fact` fields refer to have to be the predicates they are named
     /// for. A predicate id is a *position*, so inserting one into the middle of
     /// `demo_schema` silently repoints every reference — this is what says so.
@@ -750,37 +1051,35 @@ mod tests {
     fn predicate_ids_are_positions() {
         let schema = demo_schema();
 
-        for (name, id) in [
-            ("demo.Person", PERSON),
-            ("demo.Knows", KNOWS),
-            ("demo.City", CITY),
-            ("demo.LivesIn", LIVES_IN),
-        ] {
+        for (position, name) in [
+            "src.File",
+            "src.Module",
+            "src.Decl",
+            "src.Ref",
+            "src.Import",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = PredicateId(position as u32);
             let found = schema.find_position(name).map(|(id, _)| id);
-            assert_eq!(found, Some(id), "{name} is not at {}", id.0);
+
+            assert_eq!(found, Some(id), "{name} is not at {position}");
         }
-    }
 
-    /// Every example the shell prints parses, lowers and typechecks against the
-    /// schema it seeds — `:help` is advice, and wrong advice is worse than none.
-    #[test]
-    fn help_examples_typecheck() {
-        let schema = demo_schema();
-
-        for source in EXAMPLES {
-            let mut compilation = Compilation::new(source, &schema);
-            compilation.check();
-
-            assert!(
-                compilation.diagnostics().is_empty(),
-                "{source}:\n{}",
-                compilation.render_to_string()
-            );
-            assert!(
-                compilation.head_ty().is_some(),
-                "{source}: the head was not annotated"
-            );
-        }
+        // ...and the ones a `Fact` field names are the ones it means.
+        assert_eq!(
+            schema.find_position("src.File").map(|(id, _)| id),
+            Some(FILE)
+        );
+        assert_eq!(
+            schema.find_position("src.Module").map(|(id, _)| id),
+            Some(MODULE)
+        );
+        assert_eq!(
+            schema.find_position("src.Decl").map(|(id, _)| id),
+            Some(DECL)
+        );
     }
 
     /// A line wrong in two ways prints both faults, in the order they were
@@ -817,7 +1116,7 @@ mod tests {
         let db = FjallDb::open(&dir).expect("open");
         db.create_predicates((0..schema.len()).map(|i| PredicateId(i as u32)))
             .expect("create");
-        let written = seed(&db).expect("seed");
+        let written = seed(&db, &schema).expect("seed");
 
         assert!(written > 0);
         for index in 0..schema.len() {
@@ -864,7 +1163,7 @@ mod tests {
         let db = FjallDb::open(&dir).expect("open");
         db.create_predicates((0..schema.len()).map(|i| PredicateId(i as u32)))
             .expect("create");
-        seed(&db).expect("seed");
+        seed(&db, &schema).expect("seed");
 
         /// Collect the references anywhere in a projected row.
         fn refs(value: &Value, out: &mut Vec<FactId>) {

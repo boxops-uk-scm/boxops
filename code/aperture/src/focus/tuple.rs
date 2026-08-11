@@ -22,6 +22,15 @@ pub const MARK_INT_POS_MAX: u8 = 0x50;
 
 pub const MARK_FACT_REF: u8 = 0x51;
 
+/// The encoded width of a fact-typed field: the marker, then a fixed-width id.
+///
+/// Fixed-width rather than the integer codec's variable width, so a reference sorts
+/// as a band of its own after every integer ([I1]) and can be compared without a
+/// decode.
+///
+/// [I1]: ../../../docs/invariants.md#i1
+pub const FACT_REF_FIELD_LEN: usize = 1 + size_of::<u64>();
+
 pub const MARK_TERM: u8 = 0x00;
 pub const MARK_ESCAPE: u8 = 0xFF;
 
@@ -34,6 +43,19 @@ pub const NULL: u8 = 0x00;
 #[inline]
 pub fn int_width(mag: u64) -> usize {
     8 - (mag.leading_zeros() / 8) as usize
+}
+
+/// A fact reference as a key field, on the stack.
+///
+/// The single definition of the encoding — [`TupleEncoder::put_fact_id`] writes these
+/// bytes, and the executor's residual compares against them without allocating, which
+/// is what keeps the hot loop allocation-free ([I9](../../../docs/invariants.md#i9)).
+#[must_use]
+pub fn fact_ref_bytes(id: FactId) -> [u8; FACT_REF_FIELD_LEN] {
+    let mut out = [0u8; FACT_REF_FIELD_LEN];
+    out[0] = MARK_FACT_REF;
+    out[1..].copy_from_slice(&id.raw().to_be_bytes());
+    out
 }
 
 pub fn put_i64(out: &mut Vec<u8>, val: i64) {
@@ -406,6 +428,100 @@ pub fn strinc(prefix: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Encode `value` against its declared type, positionally: a record's fields are
+/// written in **declared order** — the schema's, which is what the read path walks —
+/// and the value's are taken in the order they are in.
+///
+/// **Not the encoder for a fact's key.** A record encoded here keeps its wrapper, which
+/// is right for a *value* and for a record nested inside a key field, and wrong for the
+/// key itself: a stored key is its top-level fields back to back with no wrapper
+/// ([chapter 3]), so a key written through this one is a key no query can find — the
+/// seek builds the flat form and the two never meet. [`encode_key`] is the one that
+/// knows the difference.
+///
+/// It checks arity but *not* field names, because a tuple has none — so a caller
+/// holding a record whose fields might be in any order owes it a pass through
+/// [`fact::encode`](crate::focus::fact::encode), which resolves names against the
+/// schema and hands back a value already in this order.
+///
+/// [chapter 3]: ../../../docs/03-storage-model.md#a-stored-key-is-flat
+pub fn encode_typed(ty: &PredicateTy, value: &Value) -> Result<Vec<u8>, StoreCodecError> {
+    let mut out = Vec::new();
+    encode_typed_at(&mut TupleEncoder::new(&mut out), ty, value)?;
+    Ok(out)
+}
+
+/// Encode a fact's **key**, which is flat.
+///
+/// A stored key is the key type's top-level fields back to back with no wrapper of
+/// their own, while a record *inside* a field keeps its wrapper — there it is one value
+/// among others and has to be skippable as one ([chapter 3]). So a record key is not
+/// [`encode_typed`] of a record: that writes a marker and a terminator the read path
+/// does not expect, and every field index lands one byte late.
+///
+/// A **scalar** key is one field and needs none of this — the same asymmetry a query
+/// meets as `nyi/whole-key`.
+///
+/// [chapter 3]: ../../../docs/03-storage-model.md#a-stored-key-is-flat
+pub fn encode_key(ty: &PredicateTy, value: &Value) -> Result<Vec<u8>, StoreCodecError> {
+    let (PredicateTy::Record(field_tys), Value::Record(fields)) = (ty, value) else {
+        return encode_typed(ty, value);
+    };
+
+    if field_tys.len() != fields.len() {
+        return Err(StoreCodecError::BadRecord);
+    }
+
+    let mut out = Vec::new();
+    let mut enc = TupleEncoder::new(&mut out);
+
+    for ((_, field_ty), (_, field_value)) in field_tys.iter().zip(fields.iter()) {
+        encode_typed_at(&mut enc, field_ty, field_value)?;
+    }
+
+    Ok(out)
+}
+
+/// [`encode_typed`] into an encoder already in progress — a field of a record.
+pub fn encode_typed_at(
+    enc: &mut TupleEncoder<'_>,
+    ty: &PredicateTy,
+    value: &Value,
+) -> Result<(), StoreCodecError> {
+    match (ty, value) {
+        (PredicateTy::Int, Value::Int(i)) => {
+            enc.put_i64(*i);
+            Ok(())
+        }
+
+        (PredicateTy::Str, Value::Str(s)) => {
+            enc.put_str(s);
+            Ok(())
+        }
+
+        (PredicateTy::Fact(_), Value::FactRef(id)) => {
+            enc.put_fact_id(*id);
+            Ok(())
+        }
+
+        (PredicateTy::Record(field_tys), Value::Record(field_values)) => {
+            if field_tys.len() != field_values.len() {
+                return Err(StoreCodecError::BadRecord);
+            }
+
+            enc.record(|enc| {
+                for ((_, field_ty), (_, field_value)) in field_tys.iter().zip(field_values.iter()) {
+                    encode_typed_at(enc, field_ty, field_value)?;
+                }
+
+                Ok(())
+            })
+        }
+
+        _ => Err(StoreCodecError::BadRecord),
+    }
+}
+
 pub trait TupleEncode {
     fn tuple_encode(&self, enc: &mut TupleEncoder<'_>) -> Result<(), StoreCodecError>;
 }
@@ -476,8 +592,7 @@ impl<'a> TupleEncoder<'a> {
     }
 
     pub fn put_fact_id(&mut self, id: FactId) {
-        self.out.push(MARK_FACT_REF);
-        self.out.extend_from_slice(&id.raw().to_be_bytes());
+        self.out.extend_from_slice(&fact_ref_bytes(id));
     }
 
     pub fn record<R>(
@@ -1119,16 +1234,14 @@ pub mod proptest {
     /// Encode a value against its type using the storage encoder — the encoder
     /// the read path decodes; used to build stores and to drive round-trip
     /// properties.
+    ///
+    /// Kept as names of their own so the codec batteries read as codec batteries;
+    /// both are [`encode_typed`] and [`encode_typed_at`].
     pub fn encode_typed_for_test(
         ty: &PredicateTy,
         value: &Value,
     ) -> Result<Vec<u8>, StoreCodecError> {
-        let mut out = Vec::new();
-        let mut enc = TupleEncoder::new(&mut out);
-
-        encode_typed_at_for_test(&mut enc, ty, value)?;
-
-        Ok(out)
+        encode_typed(ty, value)
     }
 
     pub fn encode_typed_at_for_test(
@@ -1136,40 +1249,7 @@ pub mod proptest {
         ty: &PredicateTy,
         value: &Value,
     ) -> Result<(), StoreCodecError> {
-        match (ty, value) {
-            (PredicateTy::Int, Value::Int(i)) => {
-                enc.put_i64(*i);
-                Ok(())
-            }
-
-            (PredicateTy::Str, Value::Str(s)) => {
-                enc.put_str(s);
-                Ok(())
-            }
-
-            (PredicateTy::Fact(_), Value::FactRef(id)) => {
-                enc.put_fact_id(*id);
-                Ok(())
-            }
-
-            (PredicateTy::Record(field_tys), Value::Record(field_values)) => {
-                if field_tys.len() != field_values.len() {
-                    return Err(StoreCodecError::BadRecord);
-                }
-
-                enc.record(|enc| {
-                    for ((_, field_ty), (_, field_value)) in
-                        field_tys.iter().zip(field_values.iter())
-                    {
-                        encode_typed_at_for_test(enc, field_ty, field_value)?;
-                    }
-
-                    Ok(())
-                })
-            }
-
-            _ => Err(StoreCodecError::BadRecord),
-        }
+        encode_typed_at(enc, ty, value)
     }
 
     /// The independent order oracle: compares two values field-by-field per the
