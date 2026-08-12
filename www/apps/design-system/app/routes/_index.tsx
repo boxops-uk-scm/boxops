@@ -40,6 +40,7 @@ import {
   ToolsMenu,
   AvatarGroup,
   Sitemap,
+  TextInput,
   ProfileMenu,
   UncontrolledProfileMenu,
 } from '@boxops/ui';
@@ -313,6 +314,12 @@ const styles = stylex.create({
   // stays inside its pane on this split-screen page. The sitemap scrolls itself past that.
   sideNavOverview: {
     maxWidth: 'min(620px, 90vw)',
+  },
+  textInputStage: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+    alignItems: 'flex-start',
   },
   avatarRow: {
     display: 'flex',
@@ -1431,6 +1438,30 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
       <Heading isContent>Sitemap</Heading>
       <section {...stylex.props(styles.row, styles.componentStage)}>
         <Sitemap routes={SITEMAP_ROUTES} />
+      </section>
+      {/* Scaffold only — every style slot is still empty, so this is deliberately unstyled. It is
+          here to exercise the wiring: the label points at the control, the states carry through as
+          data attributes, and the message appears only once the field is invalid. */}
+      <Heading isContent>Text Input</Heading>
+      <section {...stylex.props(styles.textInputStage, styles.componentStage)}>
+        <TextInput label="Full name" name="fullName" placeholder="Ada Lovelace" />
+        <TextInput label="Unix name" name="unixName" description="How you are addressed in tooling." />
+        <TextInput
+          label="Budget"
+          name="budget"
+          startContent={<Icon as={Phosphor.CurrencyGbpIcon} />}
+          endContent={({ focused }) => (focused ? <Icon as={Phosphor.PencilSimpleIcon} /> : null)}
+        />
+        <TextInput label="Employee id" name="employeeId" disabled defaultValue="user-1" />
+        <TextInput
+          label="Email"
+          name="email"
+          type="email"
+          required
+          validationMode="onBlur"
+          error="Enter an address that exists."
+          validate={(value) => (String(value).includes('@') ? null : 'That is not an email address.')}
+        />
       </section>
     </>
   );

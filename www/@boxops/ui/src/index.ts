@@ -48,3 +48,6 @@ export {
 export { AvatarGroup } from './AvatarGroup';
 export { Sitemap, SitemapSection, SitemapItem } from './Sitemap';
 export { ProfileMenu, UncontrolledProfileMenu } from './ProfileMenu';
+
+// --- new in v3, with no v1 or v2 ancestor ---
+export { TextInput } from './TextInput';
