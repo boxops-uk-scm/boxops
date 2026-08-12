@@ -1282,9 +1282,6 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
             <AvatarImage src={src} alt={`Generated portrait ${i + 1}`} />
           </Avatar>
         ))}
-        <Avatar hasVignette variants={{ size: 'L' }}>
-          <AvatarInitials initials="VG" />
-        </Avatar>
         <Avatar darkenOnHover variants={{ size: 'L' }}>
           <AvatarInitials initials="HV" />
         </Avatar>
@@ -1298,11 +1295,11 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
         <Avatar status="available" variants={{ size: 'XXL' }}>
           <AvatarImage src={AVATAR_IMAGES[1]} alt="" />
         </Avatar>
-        <Avatar hasVignette variants={{ size: 'XXL' }}>
-          <AvatarImage src={AVATAR_IMAGES[2]} alt="" />
-        </Avatar>
         <Avatar darkenOnHover variants={{ size: 'XXL' }}>
           <AvatarImage src={AVATAR_IMAGES[0]} alt="" />
+        </Avatar>
+        <Avatar variants={{ size: 'XXL' }}>
+          <AvatarImage src={AVATAR_IMAGES[1]} alt="" />
         </Avatar>
       </section>
       <Heading isContent>List</Heading>

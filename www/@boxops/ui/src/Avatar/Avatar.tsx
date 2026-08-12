@@ -43,14 +43,6 @@ const baseStyles = stylex.create({
       backgroundColor: vars.overlayColor,
     },
   },
-  // Longhands throughout: StyleX silently drops several shorthands, so none are relied on here.
-  vignette: {
-    '::before': {
-      borderWidth: '2px',
-      borderStyle: 'solid',
-      borderColor: backgroundColor.overlay,
-    },
-  },
   darkenOnHover: {
     [vars.overlayColor]: {
       default: null,
@@ -85,7 +77,7 @@ const STATUS_DOT_STATUS = {
 const Avatar = Object.assign(
   React.memo(
     React.forwardRef<React.ComponentRef<'div'>, Avatar.Props>(function Avatar(
-      { status, hasVignette, darkenOnHover, children, variants, xstyle, ...rest },
+      { status, darkenOnHover, children, variants, xstyle, ...rest },
       ref,
     ) {
       const size = variants?.size ?? 'XS';
@@ -94,7 +86,6 @@ const Avatar = Object.assign(
       const styles = [
         baseStyles.base,
         bx.useVariantStyle<Avatar.Variants>(variantStyles, variants, { size: 'XS' }),
-        hasVignette && baseStyles.vignette,
         darkenOnHover && baseStyles.darkenOnHover,
         bx.useComponentStyleWithState<Avatar.State>(state, xstyle),
       ];
@@ -130,8 +121,6 @@ namespace Avatar {
   export interface Props extends bx.VariantComponentPropsWithState<'div', Variants, State> {
     /** Renders a dot in the bottom-right corner. Sized from the avatar's own size. */
     status?: Status;
-    /** Draws an inner border, for avatars over busy media. */
-    hasVignette?: boolean;
     darkenOnHover?: boolean;
   }
 }

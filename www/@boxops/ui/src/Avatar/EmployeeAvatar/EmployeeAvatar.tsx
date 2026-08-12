@@ -87,7 +87,7 @@ const EmployeeAvatar = Object.assign(
       return (
         <PreviewCard.Root>
           <PreviewCard.Trigger render={<span {...stylex.props(baseStyles.trigger)} />}>
-            <Avatar ref={ref} hasVignette={user.avatarUrl != null} xstyle={composedStyle} {...rest}>
+            <Avatar ref={ref} xstyle={composedStyle} {...rest}>
               {user.avatarUrl ? (
                 <AvatarImage src={user.avatarUrl} alt="" />
               ) : user.initials ? (

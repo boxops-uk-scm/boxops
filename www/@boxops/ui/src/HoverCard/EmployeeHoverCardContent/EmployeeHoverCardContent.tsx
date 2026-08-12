@@ -82,7 +82,7 @@ const EmployeeHoverCardContent = Object.assign(
             <Avatar
               variants={{ size: 'XXXL' }}
               status={user.status ? AVATAR_STATUS[user.status] : undefined}
-              hasVignette={user.avatarUrl != null}
+             
             >
               {user.avatarUrl ? (
                 <AvatarImage src={user.avatarUrl} alt="" />
