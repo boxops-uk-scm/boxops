@@ -42,6 +42,10 @@ import {
   ToolsMenu,
   Notification,
   NotificationMenu,
+  AvatarGroup,
+  Sitemap,
+  ProfileMenu,
+  UncontrolledProfileMenu,
 } from '@boxops/ui';
 import { vars as metadataListVars } from '@boxops/ui/MetadataList/vars.stylex';
 import { palette } from '@boxops/ui/palette.stylex';
@@ -1435,9 +1439,104 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
           }
         />
       </section>
+      <Heading isContent>Avatar Group</Heading>
+      <section {...stylex.props(styles.row, styles.componentStage)}>
+        <Flexbox variants={{ direction: 'column', gap: 'M' }}>
+          {(['XS', 'M', 'XL'] as const).map((size) => (
+            <Flexbox key={size} variants={{ alignItems: 'center', gap: 'M' }}>
+              <Text variants={{ color: 'subtle' }}>{size}</Text>
+              <AvatarGroup variants={{ size }}>
+                {TEAM_FACES.map((src) => (
+                  <Avatar key={src}>
+                    <AvatarImage src={src} alt="" />
+                  </Avatar>
+                ))}
+              </AvatarGroup>
+            </Flexbox>
+          ))}
+          {/* Seven people, four slots — the rest become a chip. */}
+          <Flexbox variants={{ alignItems: 'center', gap: 'M' }}>
+            <Text variants={{ color: 'subtle' }}>+N</Text>
+            <AvatarGroup variants={{ size: 'M' }}>
+              {[...TEAM_FACES, 'AL', 'GH', 'AT'].map((face) => (
+                <Avatar key={face}>
+                  {face.startsWith('/') ? <AvatarImage src={face} alt="" /> : <AvatarInitials initials={face} />}
+                </Avatar>
+              ))}
+            </AvatarGroup>
+          </Flexbox>
+        </Flexbox>
+      </section>
+      <Heading isContent>Profile Menu</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <UncontrolledProfileMenu
+          name="Thomas Bates"
+          statusMessage="Consolidating v1 and v2"
+          defaultStatus="available"
+          actions={PROFILE_ACTIONS}
+          onEditStatus={() => {}}
+          avatar={
+            <Avatar variants={{ size: 'M' }} status="available">
+              <AvatarImage src="/avatar-1.jpg" alt="" />
+            </Avatar>
+          }
+        />
+      </section>
+      <Heading isContent>Sitemap</Heading>
+      <section {...stylex.props(styles.row, styles.componentStage)}>
+        <Sitemap routes={SITEMAP_ROUTES} />
+      </section>
     </>
   );
 }
+
+/** Stands in for what a router would hand over. Plain data, which is the whole point. */
+const SITEMAP_ROUTES: Sitemap.Route[] = [
+  {
+    type: 'group',
+    label: 'Primitives',
+    children: [
+      { type: 'page', href: '/text', title: 'Text', description: 'Body copy, at every size the ramp defines.' },
+      { type: 'page', href: '/icon', title: 'Icon', description: 'The Phosphor set, themed and sized by context.' },
+      { type: 'page', href: '/button', title: 'Button', description: 'Four appearances, three sizes, a loading state.' },
+      { type: 'page', href: '/badge', title: 'Badge', description: 'Short status, in nine non-semantic tints.' },
+    ],
+  },
+  {
+    type: 'group',
+    label: 'Layout',
+    children: [
+      { type: 'page', href: '/flexbox', title: 'Flexbox', description: 'The layout primitive everything else composes.' },
+      { type: 'page', href: '/card', title: 'Card', description: 'A surface, with an optional header and footer.' },
+      { type: 'page', href: '/divider', title: 'Divider', description: 'A rule, horizontal or vertical.' },
+    ],
+  },
+  {
+    type: 'group',
+    label: 'People',
+    children: [
+      { type: 'page', href: '/avatar', title: 'Avatar', description: 'A face, initials or an icon — with a status dot.' },
+      { type: 'page', href: '/employee-link', title: 'Employee Link', description: 'A name and a face that reveal a card.' },
+      { type: 'page', href: '/profile-menu', title: 'Profile Menu', description: 'Who is signed in, and where they can go.' },
+    ],
+  },
+  // Loose pages: no group, so the map gives them one.
+  { type: 'page', href: '/tokens', title: 'Tokens', description: 'Every design token, light against dark.' },
+  { type: 'page', href: '/changelog', title: 'Changelog', description: 'What each consolidation batch brought over.' },
+];
+
+const PROFILE_ACTIONS: ProfileMenu.Props['actions'] = [
+  { label: 'Available until 5:00 pm', icon: Phosphor.ClockIcon, endIcon: Phosphor.CaretRightIcon },
+  { label: 'Status Tool', icon: Phosphor.BroadcastIcon, endIcon: Phosphor.ArrowSquareOutIcon },
+  { label: 'Intern Profile', icon: Phosphor.UserCircleIcon, endIcon: Phosphor.ArrowSquareOutIcon },
+  { label: 'Workplace Profile', icon: Phosphor.UserCircleIcon, endIcon: Phosphor.ArrowSquareOutIcon },
+  { label: 'Status Settings', icon: Phosphor.GearIcon },
+  'separator',
+  { label: 'Dark Mode', icon: Phosphor.MoonIcon },
+  { label: 'Do Not Disturb', icon: Phosphor.ProhibitInsetIcon },
+];
+
+const TEAM_FACES = ['/avatar-1.jpg', '/avatar-2.jpg', '/avatar-3.jpg', '/avatar-4.jpg'];
 
 // The two panes are spelled out rather than shared through a component: `createTheme` brands each
 // theme with its own symbol, so a single `theme` prop cannot be typed to accept both.

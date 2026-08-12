@@ -43,3 +43,8 @@ export {
   SEVHoverCardContent,
   OncallHoverCardContent,
 } from './HoverCard';
+
+// --- consolidated from v1/v2 — batch 2 (2026-08-12), the last of them ---
+export { AvatarGroup } from './AvatarGroup';
+export { Sitemap, SitemapSection, SitemapItem } from './Sitemap';
+export { ProfileMenu, UncontrolledProfileMenu } from './ProfileMenu';
