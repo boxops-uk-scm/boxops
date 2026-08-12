@@ -238,10 +238,24 @@ const baseStyles = stylex.create({
     lineHeight: '20px',
     textAlign: 'start',
   },
-  statusIcon: {
+  /**
+   * The trailing slot, held open whether or not there is a state to report.
+   *
+   * Reserved unconditionally, because the alternatives both misbehave in ways other libraries have
+   * already found. Adding the icon only when a state appears reflows the field mid-typing, which is
+   * the jump this exists to avoid. Laying it over the value instead — Carbon's approach — hides the
+   * end of what somebody typed, which is filed against them as a bug: the value they need to fix is
+   * the value covered up. A slot that is always there costs 20px of a field's inner width, buys
+   * both, and lines every field in a form up on the same trailing edge.
+   *
+   * Sized to `Icon`'s `M`, which is what goes in it.
+   */
+  statusSlot: {
     display: 'inline-flex',
     alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
+    inlineSize: '20px',
   },
 });
 
@@ -331,11 +345,11 @@ const TextInput = Object.assign(
                       );
                     }}
                   />
-                  {effectiveStatus && (
-                    <span {...stylex.props(baseStyles.statusIcon)}>
+                  <span {...stylex.props(baseStyles.statusSlot)}>
+                    {effectiveStatus && (
                       <Icon as={STATUS_ICON[effectiveStatus]} weight="fill" xstyle={statusIconStyles[effectiveStatus]} />
-                    </span>
-                  )}
+                    )}
+                  </span>
                   {effectiveStatus === 'error' ? (
                     // `Field.Error` decides its own visibility from validity and registers itself as
                     // the control's description. `match` forces it open for an error the caller is
