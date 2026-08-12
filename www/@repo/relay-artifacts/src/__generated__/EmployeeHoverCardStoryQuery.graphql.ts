@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<ee41ecc5cd69f8017f0d372684090bba>>
+ * @generated SignedSource<<dd2989dd8dea2c3c83a443de3b0140f8>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -214,12 +214,12 @@ return {
     ]
   },
   "params": {
-    "cacheID": "877671289d82a1db10490bc48539825f",
+    "cacheID": "7f6c2b5f9c0ef06daba23bec2e796949",
     "id": null,
     "metadata": {},
     "name": "EmployeeHoverCardStoryQuery",
     "operationKind": "query",
-    "text": "query EmployeeHoverCardStoryQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    id\n    fullName\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n"
+    "text": "query EmployeeHoverCardStoryQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    id\n    fullName\n    ...EmployeeHoverCard_fragment\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n\nfragment EmployeeHoverCard_fragment on EntUser {\n  id\n}\n"
   }
 };
 })();

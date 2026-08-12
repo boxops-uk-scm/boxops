@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<35464a8c8574b146b69a14de0da2b62d>>
+ * @generated SignedSource<<e2410f4b6f87bc6172db39a6e684b436>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -24,6 +24,7 @@ export type EmployeeHoverCardContent_fragment$data = {
   readonly reportsTo: {
     readonly fullName: string;
     readonly id: string;
+    readonly " $fragmentSpreads": FragmentRefs<"EmployeeHoverCard_fragment">;
   } | null | undefined;
   readonly startedAt: string | null | undefined;
   readonly status: UserStatus | null | undefined;
@@ -117,7 +118,12 @@ return {
       "plural": false,
       "selections": [
         (v0/*: any*/),
-        (v1/*: any*/)
+        (v1/*: any*/),
+        {
+          "args": null,
+          "kind": "FragmentSpread",
+          "name": "EmployeeHoverCard_fragment"
+        }
       ],
       "storageKey": null
     },
@@ -155,6 +161,6 @@ return {
 };
 })();
 
-(node as any).hash = "d55dbae6dc821fde4ccc30d73245de2f";
+(node as any).hash = "90802c189c91e11723f267a3dabf2726";
 
 export default node;

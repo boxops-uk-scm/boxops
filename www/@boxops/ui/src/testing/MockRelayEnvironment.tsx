@@ -12,6 +12,8 @@ import {
   type PayloadData,
 } from 'relay-runtime';
 
+import { type SeedPayload } from './seedPayload';
+
 /**
  * Renders a component tree against a Relay store built by hand, with no network and no server.
  *
@@ -44,15 +46,23 @@ export function MockRelayEnvironment<TQuery extends OperationType>({
   query,
   variables,
   data,
+  seed,
   children,
 }: MockRelayEnvironment.Props<TQuery>) {
   const environment = React.useMemo(() => {
     const env = createMockEnvironment();
+
+    // Seeded first: these are records the story's own query never asks for, so nothing yet depends
+    // on them. Committing them up front means the store is whole before anything reads it.
+    for (const extra of seed ?? []) {
+      env.commitPayload(createOperationDescriptor(getRequest(extra.query), extra.variables), extra.data);
+    }
+
     // `PayloadData` is Relay's untyped record bag; the generated response type is a narrowing
     // of it, and the cast is the only place that looseness is allowed in.
     env.commitPayload(createOperationDescriptor(getRequest(query), variables), data as PayloadData);
     return env;
-  }, [query, variables, data]);
+  }, [query, variables, data, seed]);
 
   return (
     <RelayEnvironmentProvider environment={environment}>
@@ -90,6 +100,12 @@ namespace MockRelayEnvironment {
      * describe the underlying data at all.
      */
     data: TQuery['rawResponse'];
+    /**
+     * Further payloads to write before the story's own, for records it reaches only by interaction
+     * — a hover card that queries by id, say. The network throws, so anything not seeded here
+     * fails loudly the moment somebody points at it.
+     */
+    seed?: readonly SeedPayload[];
     children: (data: TQuery['response']) => React.ReactNode;
   }
 }

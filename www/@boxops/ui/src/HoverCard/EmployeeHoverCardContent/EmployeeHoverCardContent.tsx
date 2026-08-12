@@ -16,6 +16,7 @@ import { vars as metadataListVars } from '../../MetadataList/vars.stylex';
 import { Text } from '../../Text';
 import { iconColor } from '../../tokens.stylex';
 import * as bx from '../../types';
+import EmployeeHoverCard from '../EmployeeHoverCard/EmployeeHoverCard';
 
 import type { EmployeeHoverCardContent_fragment$key } from '@repo/relay-artifacts/src/__generated__/EmployeeHoverCardContent_fragment.graphql';
 
@@ -33,6 +34,8 @@ const fragment = graphql`
     reportsTo {
       id
       fullName
+      # The manager gets a card of their own, so the chain can be walked upwards.
+      ...EmployeeHoverCard_fragment
     }
     location
     timezone
@@ -111,7 +114,10 @@ const EmployeeHoverCardContent = Object.assign(
                 <Flexbox variants={{ direction: 'column', gap: 'XS' }}>
                   {user.reportsTo ? (
                     <Text>
-                      Reports to <Link href={`/employee/${user.reportsTo.id}`}>{user.reportsTo.fullName}</Link>
+                      Reports to{' '}
+                      <EmployeeHoverCard fragmentRef={user.reportsTo}>
+                        <Link href={`/employee/${user.reportsTo.id}`}>{user.reportsTo.fullName}</Link>
+                      </EmployeeHoverCard>
                     </Text>
                   ) : (
                     <Text variants={{ color: 'subtle' }}>No reporting line</Text>

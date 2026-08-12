@@ -3,24 +3,19 @@ import { MockRelayEnvironment } from '@boxops/ui/testing';
 import { graphql } from 'relay-runtime';
 
 import { GRACE } from './fixtures';
+import { PEOPLE } from './PeopleSeed';
 
 import type { DiffHoverCardStoryQuery } from '@repo/relay-artifacts/src/__generated__/DiffHoverCardStoryQuery.graphql';
 
 const query = graphql`
-  query DiffHoverCardStoryQuery($number: Int!, $personId: ID!) @raw_response_type {
+  query DiffHoverCardStoryQuery($number: Int!) @raw_response_type {
     diff(number: $number) {
       ...DiffHoverCardContent_fragment
-    }
-    # Seeds the lazy query the person's link issues on hover. In a real client that is a request;
-    # here it must already be in the store, or the mock network throws.
-    user(id: $personId) {
-      ...EmployeeHoverCardContent_fragment
     }
   }
 `;
 
 const data: DiffHoverCardStoryQuery['rawResponse'] = {
-  user: GRACE,
   diff: {
     id: 'diff-1',
     number: 91724,
@@ -36,7 +31,7 @@ const data: DiffHoverCardStoryQuery['rawResponse'] = {
 
 export function DiffHoverCardStory() {
   return (
-    <MockRelayEnvironment<DiffHoverCardStoryQuery> query={query} variables={{ number: 91724, personId: GRACE.id }} data={data}>
+    <MockRelayEnvironment<DiffHoverCardStoryQuery> query={query} variables={{ number: 91724 }} data={data} seed={PEOPLE}>
       {({ diff }) => (diff ? <Card><DiffHoverCardContent fragmentRef={diff} /></Card> : null)}
     </MockRelayEnvironment>
   );

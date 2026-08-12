@@ -3,6 +3,7 @@ import { MockRelayEnvironment } from '@boxops/ui/testing';
 import { graphql } from 'relay-runtime';
 
 import { ADA } from './fixtures';
+import { PEOPLE } from './PeopleSeed';
 
 import type { EmployeeLinkStoryQuery } from '@repo/relay-artifacts/src/__generated__/EmployeeLinkStoryQuery.graphql';
 
@@ -21,7 +22,7 @@ const data: EmployeeLinkStoryQuery['rawResponse'] = { user: ADA };
 
 export function EmployeeLinkStory() {
   return (
-    <MockRelayEnvironment<EmployeeLinkStoryQuery> query={query} variables={{ id: 'user-1' }} data={data}>
+    <MockRelayEnvironment<EmployeeLinkStoryQuery> query={query} variables={{ id: 'user-1' }} data={data} seed={PEOPLE}>
       {({ user }) => (user ? <EmployeeLink fragmentRef={user} /> : null)}
     </MockRelayEnvironment>
   );

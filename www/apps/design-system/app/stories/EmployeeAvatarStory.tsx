@@ -2,6 +2,9 @@ import { EmployeeAvatar } from '@boxops/ui';
 import { MockRelayEnvironment } from '@boxops/ui/testing';
 import { graphql } from 'relay-runtime';
 
+import { ADA } from './fixtures';
+import { PEOPLE } from './PeopleSeed';
+
 import type { EmployeeAvatarStoryQuery } from '@repo/relay-artifacts/src/__generated__/EmployeeAvatarStoryQuery.graphql';
 
 /**
@@ -21,28 +24,11 @@ const query = graphql`
   }
 `;
 
-const data: EmployeeAvatarStoryQuery['rawResponse'] = {
-  user: {
-    id: 'user-1',
-    fullName: 'Ada Lovelace',
-    unixName: 'alovelace',
-    initials: 'AL',
-    email: 'alovelace@boxops.co.uk',
-    phoneNumber: '+44 20 7946 0958',
-    avatarUrl: '/avatar-1.jpg',
-    organization: 'Analytical Engines',
-    jobTitle: 'Principal Engineer',
-    reportsTo: { id: 'user-2', fullName: 'Charles Babbage' },
-    location: 'London, UK',
-    timezone: 'Europe/London',
-    startedAt: '2021-03-01T09:00:00.000Z',
-    status: 'AVAILABLE',
-  },
-};
+const data: EmployeeAvatarStoryQuery['rawResponse'] = { user: ADA };
 
 export function EmployeeAvatarStory() {
   return (
-    <MockRelayEnvironment<EmployeeAvatarStoryQuery> query={query} variables={{ id: 'user-1' }} data={data}>
+    <MockRelayEnvironment<EmployeeAvatarStoryQuery> query={query} variables={{ id: 'user-1' }} data={data} seed={PEOPLE}>
       {({ user }) => (user ? <EmployeeAvatar fragmentRef={user} variants={{ size: 'L' }} /> : null)}
     </MockRelayEnvironment>
   );

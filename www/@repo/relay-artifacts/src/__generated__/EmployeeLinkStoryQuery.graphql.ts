@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<62accb054d624ccbe21943b086e453f3>>
+ * @generated SignedSource<<a1e4ce9170ddfd24f059d5a9291b127c>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -219,12 +219,12 @@ return {
     ]
   },
   "params": {
-    "cacheID": "116257073742281de2bcffc76353e03e",
+    "cacheID": "9228bf5853012de6dacfabde03151681",
     "id": null,
     "metadata": {},
     "name": "EmployeeLinkStoryQuery",
     "operationKind": "query",
-    "text": "query EmployeeLinkStoryQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeLink_fragment\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeAvatarVisual_fragment on EntUser {\n  id\n  initials\n  avatarUrl\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    id\n    fullName\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n\nfragment EmployeeHoverCard_fragment on EntUser {\n  id\n}\n\nfragment EmployeeLink_fragment on EntUser {\n  id\n  fullName\n  ...EmployeeAvatarVisual_fragment\n  ...EmployeeHoverCard_fragment\n}\n"
+    "text": "query EmployeeLinkStoryQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeLink_fragment\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeAvatarVisual_fragment on EntUser {\n  id\n  initials\n  avatarUrl\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    id\n    fullName\n    ...EmployeeHoverCard_fragment\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n\nfragment EmployeeHoverCard_fragment on EntUser {\n  id\n}\n\nfragment EmployeeLink_fragment on EntUser {\n  id\n  fullName\n  ...EmployeeAvatarVisual_fragment\n  ...EmployeeHoverCard_fragment\n}\n"
   }
 };
 })();

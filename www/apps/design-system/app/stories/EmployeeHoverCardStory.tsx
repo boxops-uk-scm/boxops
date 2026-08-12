@@ -2,6 +2,9 @@ import { Card, EmployeeHoverCardContent } from '@boxops/ui';
 import { MockRelayEnvironment } from '@boxops/ui/testing';
 import { graphql } from 'relay-runtime';
 
+import { ADA } from './fixtures';
+import { PEOPLE } from './PeopleSeed';
+
 import type { EmployeeHoverCardStoryQuery } from '@repo/relay-artifacts/src/__generated__/EmployeeHoverCardStoryQuery.graphql';
 
 const query = graphql`
@@ -14,30 +17,11 @@ const query = graphql`
 
 // Query-shaped, and typed against the generated operation — a field that drifts from the schema is
 // a compile error here rather than a blank patch in the UI.
-const data: EmployeeHoverCardStoryQuery['rawResponse'] = {
-  user: {
-    id: 'user-1',
-    fullName: 'Ada Lovelace',
-    unixName: 'alovelace',
-    initials: 'AL',
-    email: 'alovelace@boxops.co.uk',
-    phoneNumber: '+44 20 7946 0958',
-    avatarUrl: '/avatar-1.jpg',
-    organization: 'Analytical Engines',
-    jobTitle: 'Principal Engineer',
-    // `id` is required because `EntUser` implements `Node`: Relay adds it to every selection
-    // so the record can be normalized and shared. The harness catches its absence.
-    reportsTo: { id: 'user-2', fullName: 'Charles Babbage' },
-    location: 'London, UK',
-    timezone: 'Europe/London',
-    startedAt: '2021-03-01T09:00:00.000Z',
-    status: 'AVAILABLE',
-  },
-};
+const data: EmployeeHoverCardStoryQuery['rawResponse'] = { user: ADA };
 
 export function EmployeeHoverCardStory() {
   return (
-    <MockRelayEnvironment<EmployeeHoverCardStoryQuery> query={query} variables={{ id: 'user-1' }} data={data}>
+    <MockRelayEnvironment<EmployeeHoverCardStoryQuery> query={query} variables={{ id: 'user-1' }} data={data} seed={PEOPLE}>
       {({ user }) =>
         user ? (
           // Stands in for the hover card's content slot until `EmployeeAvatar`, which owns the
