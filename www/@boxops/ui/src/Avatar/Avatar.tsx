@@ -41,6 +41,10 @@ const baseStyles = stylex.create({
       pointerEvents: 'none',
       borderRadius: '50%',
       backgroundColor: vars.overlayColor,
+      // Raised above the face. Generated content is a positioned descendant like the image wrapper
+      // is, and positioned descendants paint in tree order — so without this the overlay sits
+      // *under* the photograph and only shows through an avatar drawn from initials.
+      zIndex: 1,
     },
   },
   darkenOnHover: {
@@ -49,10 +53,13 @@ const baseStyles = stylex.create({
       ':hover': backgroundColor.overlay,
     },
   },
+  // Above the hover overlay: whether somebody is available is a fact about them, not part of the
+  // picture, so it should not dim along with the face.
   status: {
     position: 'absolute',
     right: 0,
     bottom: 0,
+    zIndex: 2,
   },
 });
 
