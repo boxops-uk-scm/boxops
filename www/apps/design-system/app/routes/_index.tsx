@@ -1459,9 +1459,18 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
           type="email"
           required
           validationMode="onBlur"
-          error="Enter an address that exists."
           validate={(value) => (String(value).includes('@') ? null : 'That is not an email address.')}
         />
+        {/* Asserted by the caller rather than found by validation — the three states, side by side. */}
+        <TextInput label="Cost centre" name="costCentre" defaultValue="CC-0000" status="error" message="No such cost centre." />
+        <TextInput
+          label="Start date"
+          name="startDate"
+          defaultValue="2019-04-01"
+          status="warning"
+          message="More than five years ago."
+        />
+        <TextInput label="Rota" name="rota" defaultValue="design-system-platform" status="success" message="Rota found." />
       </section>
     </>
   );
