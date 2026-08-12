@@ -31,5 +31,8 @@
     "react-dom@19.2.4": {
       "unplugged": true
     }
+  },
+  "resolutions": {
+    "@types/relay-runtime": "20.1.1"
   }
 }

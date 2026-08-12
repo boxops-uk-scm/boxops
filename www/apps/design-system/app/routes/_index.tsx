@@ -62,6 +62,8 @@ import { SSR as Phosphor } from '@phosphor-icons/react';
 import * as stylex from '@stylexjs/stylex';
 import React from 'react';
 
+import { EmployeeHoverCardStory } from '../stories/EmployeeHoverCardStory';
+
 export function meta() {
   return [{ title: 'Text' }];
 }
@@ -80,6 +82,9 @@ const styles = stylex.create({
   },
   pane: {
     inlineSize: '100%',
+    // Without this a grid item's automatic minimum is its content, so one wide component in either
+    // pane stops both from shrinking and forces the page to scroll sideways.
+    minInlineSize: 0,
     minBlockSize: '100dvb',
     backgroundColor: backgroundColor.surface,
     // `Text` inherits its colour, so the pane establishes the body ink for each scheme.
@@ -200,7 +205,10 @@ const styles = stylex.create({
   metadataList: {
     [metadataListVars.columns]: {
       default: 2,
-      '@media (max-width: 800px)': 1,
+      // Doubled from the original 800px because the page is now two panes: the query measures the
+      // viewport, but the grid only ever gets half of it, so it stayed at two columns well past the
+      // width where they fit and pushed the page into a horizontal scroll.
+      '@media (max-width: 1600px)': 1,
     },
   },
   wrapRow: {
@@ -1363,6 +1371,10 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
       <Heading isContent>Tools Menu</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>
         <ToolsMenu items={TOOLS_MENU_ITEMS} />
+      </section>
+      <Heading isContent>Employee Hover Card</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <EmployeeHoverCardStory />
       </section>
       <Heading isContent>Meeting Menu</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>

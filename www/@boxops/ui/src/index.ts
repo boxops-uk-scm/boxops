@@ -35,3 +35,4 @@ export { Banner, UncontrolledBanner } from './Banner';
 export { MeetingMenu, MeetingMenuItem } from './MeetingMenu';
 export { ToolsMenu } from './ToolsMenu';
 export { Notification, NotificationMenu } from './Notification';
+export { EmployeeHoverCardContent } from './HoverCard';
