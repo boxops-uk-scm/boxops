@@ -1,45 +1,76 @@
+import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 import { useFragment } from 'react-relay';
 import { graphql } from 'relay-runtime';
 
-import { EmployeeAvatar } from '../../Avatar';
+import EmployeeAvatarVisual from '../../Avatar/EmployeeAvatar/EmployeeAvatarVisual';
 import { Flexbox } from '../../Flexbox';
+import EmployeeHoverCard from '../../HoverCard/EmployeeHoverCard/EmployeeHoverCard';
 import { Text } from '../../Text';
 import Link from '../Link';
 
 import type { EmployeeLink_fragment$key } from '@repo/relay-artifacts/src/__generated__/EmployeeLink_fragment.graphql';
 
 /**
- * Deliberately does not spread `EmployeeHoverCardContent_fragment`, which the v2 source did.
+ * Spreads the avatar's *visual* fragment rather than `EmployeeAvatar_fragment`, and owns the hover
+ * card itself, so the trigger covers the face and the name together — hovering either reveals the
+ * same card. Using `EmployeeAvatar` here would bring its own trigger and nest one card inside
+ * another, with only the face opening it.
  *
- * `EmployeeAvatar` fetches the hover card's fields through its own query when someone actually
- * hovers. Spreading them here would pull all of it eagerly for every link on the page, which is
- * the cost that design exists to avoid.
+ * The card's fields are still fetched on hover, by `EmployeeHoverCard`; nothing is pulled eagerly
+ * for a page full of links.
  */
 const fragment = graphql`
   fragment EmployeeLink_fragment on EntUser {
     id
     fullName
-    ...EmployeeAvatar_fragment
+    ...EmployeeAvatarVisual_fragment
+    ...EmployeeHoverCard_fragment
   }
 `;
 
-const EmployeeLink = React.memo(
-  React.forwardRef<React.ComponentRef<'div'>, EmployeeLink.Props>(function EmployeeLink(
-    { fragmentRef, xstyle, ...rest },
-    ref,
-  ) {
-    const user = useFragment(fragment, fragmentRef);
+const baseStyles = stylex.create({
+  row: {
+    display: 'inline-flex',
+    alignItems: 'center',
+  },
+});
 
-    return (
-      <Flexbox ref={ref} variants={{ gap: 'XS', alignItems: 'center' }} xstyle={xstyle} {...rest}>
-        <EmployeeAvatar fragmentRef={user} darkenOnHover />
-        <Text>
-          <Link href={`/employee/${user.id}`}>{user.fullName}</Link>
-        </Text>
-      </Flexbox>
-    );
-  }),
+const EmployeeLink = Object.assign(
+  React.memo(
+    React.forwardRef<React.ComponentRef<'div'>, EmployeeLink.Props>(function EmployeeLink(
+      { fragmentRef, xstyle, ...rest },
+      ref,
+    ) {
+      const user = useFragment(fragment, fragmentRef);
+
+      // `Flexbox`'s `xstyle` may itself be a function of state, so the caller's value is resolved
+      // rather than spread into an array alongside ours.
+      const composedStyle = React.useCallback(
+        (state: Flexbox.State) => [baseStyles.row, typeof xstyle === 'function' ? xstyle(state) : xstyle],
+        [xstyle],
+      );
+
+      return (
+        <EmployeeHoverCard fragmentRef={user}>
+          <Flexbox
+            ref={ref}
+            variants={{ gap: 'XS', alignItems: 'center' }}
+            xstyle={composedStyle}
+            {...rest}
+          >
+            <EmployeeAvatarVisual fragmentRef={user} darkenOnHover />
+            <Text>
+              <Link href={`/employee/${user.id}`}>{user.fullName}</Link>
+            </Text>
+          </Flexbox>
+        </EmployeeHoverCard>
+      );
+    }),
+  ),
+  {
+    styles: baseStyles,
+  },
 );
 
 namespace EmployeeLink {

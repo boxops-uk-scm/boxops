@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<12bebe2393e4b973f96872bd1e0b3cdd>>
+ * @generated SignedSource<<48ef274aad72874b8ade914af31bd2aa>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -11,9 +11,7 @@
 import { ReaderFragment } from 'relay-runtime';
 import { FragmentRefs } from "relay-runtime";
 export type EmployeeAvatar_fragment$data = {
-  readonly avatarUrl: string | null | undefined;
-  readonly id: string;
-  readonly initials: string | null | undefined;
+  readonly " $fragmentSpreads": FragmentRefs<"EmployeeAvatarVisual_fragment" | "EmployeeHoverCard_fragment">;
   readonly " $fragmentType": "EmployeeAvatar_fragment";
 };
 export type EmployeeAvatar_fragment$key = {
@@ -28,31 +26,20 @@ const node: ReaderFragment = {
   "name": "EmployeeAvatar_fragment",
   "selections": [
     {
-      "alias": null,
       "args": null,
-      "kind": "ScalarField",
-      "name": "id",
-      "storageKey": null
+      "kind": "FragmentSpread",
+      "name": "EmployeeAvatarVisual_fragment"
     },
     {
-      "alias": null,
       "args": null,
-      "kind": "ScalarField",
-      "name": "initials",
-      "storageKey": null
-    },
-    {
-      "alias": null,
-      "args": null,
-      "kind": "ScalarField",
-      "name": "avatarUrl",
-      "storageKey": null
+      "kind": "FragmentSpread",
+      "name": "EmployeeHoverCard_fragment"
     }
   ],
   "type": "EntUser",
   "abstractKey": null
 };
 
-(node as any).hash = "c7899cd880fcb385e5fec19f6d715060";
+(node as any).hash = "77845d61a384e1ceb4db047ff9092107";
 
 export default node;

@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<cfe4e13c7112976395902b0abfc56cc3>>
+ * @generated SignedSource<<a793a369033efe84de359bc7edd31465>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -11,15 +11,15 @@
 import { ConcreteRequest } from 'relay-runtime';
 import { FragmentRefs } from "relay-runtime";
 export type UserStatus = "AVAILABLE" | "AWAY" | "BUSY" | "OFFLINE" | "%future added value";
-export type EmployeeAvatarHoverCardQuery$variables = {
+export type EmployeeHoverCardQuery$variables = {
   id: string;
 };
-export type EmployeeAvatarHoverCardQuery$data = {
+export type EmployeeHoverCardQuery$data = {
   readonly user: {
     readonly " $fragmentSpreads": FragmentRefs<"EmployeeHoverCardContent_fragment">;
   } | null | undefined;
 };
-export type EmployeeAvatarHoverCardQuery$rawResponse = {
+export type EmployeeHoverCardQuery$rawResponse = {
   readonly user: {
     readonly avatarUrl: string | null | undefined;
     readonly email: string | null | undefined;
@@ -40,10 +40,10 @@ export type EmployeeAvatarHoverCardQuery$rawResponse = {
     readonly unixName: string | null | undefined;
   } | null | undefined;
 };
-export type EmployeeAvatarHoverCardQuery = {
-  rawResponse: EmployeeAvatarHoverCardQuery$rawResponse;
-  response: EmployeeAvatarHoverCardQuery$data;
-  variables: EmployeeAvatarHoverCardQuery$variables;
+export type EmployeeHoverCardQuery = {
+  rawResponse: EmployeeHoverCardQuery$rawResponse;
+  response: EmployeeHoverCardQuery$data;
+  variables: EmployeeHoverCardQuery$variables;
 };
 
 const node: ConcreteRequest = (function(){
@@ -80,7 +80,7 @@ return {
     "argumentDefinitions": (v0/*: any*/),
     "kind": "Fragment",
     "metadata": null,
-    "name": "EmployeeAvatarHoverCardQuery",
+    "name": "EmployeeHoverCardQuery",
     "selections": [
       {
         "alias": null,
@@ -106,7 +106,7 @@ return {
   "operation": {
     "argumentDefinitions": (v0/*: any*/),
     "kind": "Operation",
-    "name": "EmployeeAvatarHoverCardQuery",
+    "name": "EmployeeHoverCardQuery",
     "selections": [
       {
         "alias": null,
@@ -214,16 +214,16 @@ return {
     ]
   },
   "params": {
-    "cacheID": "5121ed1298cc9abac33cf608148190b6",
+    "cacheID": "ae8ebe461217d4af932d01ef977aff4c",
     "id": null,
     "metadata": {},
-    "name": "EmployeeAvatarHoverCardQuery",
+    "name": "EmployeeHoverCardQuery",
     "operationKind": "query",
-    "text": "query EmployeeAvatarHoverCardQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    fullName\n    id\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n"
+    "text": "query EmployeeHoverCardQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    fullName\n    id\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n"
   }
 };
 })();
 
-(node as any).hash = "98f08d1f1616d1ae79a6776a1a0f9f8f";
+(node as any).hash = "7810b64c75d37f8538d9d771e722f629";
 
 export default node;
