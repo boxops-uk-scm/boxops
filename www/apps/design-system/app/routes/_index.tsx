@@ -37,11 +37,7 @@ import {
   AvatarIcon,
   Meter,
   UncontrolledBanner,
-  MeetingMenu,
-  MeetingMenuItem,
   ToolsMenu,
-  Notification,
-  NotificationMenu,
   AvatarGroup,
   Sitemap,
   ProfileMenu,
@@ -70,6 +66,8 @@ import { DiffHoverCardStory } from '../stories/DiffHoverCardStory';
 import { EmployeeAvatarStory } from '../stories/EmployeeAvatarStory';
 import { EmployeeHoverCardStory } from '../stories/EmployeeHoverCardStory';
 import { EmployeeLinkStory } from '../stories/EmployeeLinkStory';
+import { MeetingMenuStory } from '../stories/MeetingMenuStory';
+import { NotificationStory } from '../stories/NotificationStory';
 import { OncallHoverCardStory } from '../stories/OncallHoverCardStory';
 import { SEVHoverCardStory } from '../stories/SEVHoverCardStory';
 import { TaskHoverCardStory } from '../stories/TaskHoverCardStory';
@@ -311,8 +309,10 @@ const styles = stylex.create({
   sideNav: {
     width: '240px',
   },
+  // Sized for the sitemap the logo now reveals: wide enough for several columns, and capped so it
+  // stays inside its pane on this split-screen page. The sitemap scrolls itself past that.
   sideNavOverview: {
-    width: '260px',
+    maxWidth: 'min(620px, 90vw)',
   },
   avatarRow: {
     display: 'flex',
@@ -338,10 +338,6 @@ const styles = stylex.create({
 });
 
 // Fixed instants so the meeting menu renders identically on server and client.
-const MEETING_NOW = new Date('2026-08-12T09:30:00Z');
-const MEETING_IN_PROGRESS = { start: new Date('2026-08-12T09:00:00Z'), end: new Date('2026-08-12T10:00:00Z') };
-const MEETING_UPCOMING = { start: new Date('2026-08-12T11:00:00Z'), end: new Date('2026-08-12T11:30:00Z') };
-
 // Generated faces, so the image path is exercised with real photographs rather than a flat SVG.
 // Served from the app's `public/` directory.
 const AVATAR_IMAGES = ['/avatar-1.jpg', '/avatar-2.jpg', '/avatar-3.jpg'];
@@ -1251,14 +1247,9 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
           heading="Boxops"
           subheading="Design System"
           media={<Logo icon={Phosphor.CubeIcon} />}
-          overview={
-            <Card xstyle={styles.sideNavOverview}>
-              <CardHeader title="Boxops" subtitle="Design System" />
-              <Text as="small" variants={{ color: 'subtle' }}>
-                Hover the logo to reveal whatever is passed as `overview`.
-              </Text>
-            </Card>
-          }
+          // The logo opens the map of the site — which is what a sitemap in a hover card is for,
+          // and why `overview` exists.
+          overview={<Sitemap routes={SITEMAP_ROUTES} xstyle={styles.sideNavOverview} />}
           xstyle={styles.sideNav}
         />
       </section>
@@ -1353,27 +1344,7 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
       </section>
       <Heading isContent>Notification</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>
-        <NotificationMenu filterLabel="Unread" filters={[{ label: 'Urgent' }, { label: 'Read' }]}>
-          <Notification
-            avatar={
-              <Avatar variants={{ size: 'S' }}>
-                <AvatarInitials initials="AL" />
-              </Avatar>
-            }
-          >
-            <Text as="small">Alex requested review on a diff you own.</Text>
-          </Notification>
-          <Notification
-            isSeen
-            avatar={
-              <Avatar variants={{ size: 'S' }}>
-                <AvatarInitials initials="RK" />
-              </Avatar>
-            }
-          >
-            <Text as="small">Riku commented on your task.</Text>
-          </Notification>
-        </NotificationMenu>
+        <NotificationStory />
       </section>
       <Heading isContent>Tools Menu</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>
@@ -1412,32 +1383,7 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
       </section>
       <Heading isContent>Meeting Menu</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>
-        <MeetingMenu
-          date={MEETING_NOW}
-          inProgress={
-            <MeetingMenuItem
-              now={MEETING_NOW}
-              meetingName="Design system review"
-              meetingRoom="Kensington 3"
-              startTime={MEETING_IN_PROGRESS.start}
-              endTime={MEETING_IN_PROGRESS.end}
-              participants={
-                <Avatar variants={{ size: 'XS' }}>
-                  <AvatarInitials initials="TB" />
-                </Avatar>
-              }
-            />
-          }
-          upcoming={
-            <MeetingMenuItem
-              now={MEETING_NOW}
-              meetingName="Consolidation standup"
-              meetingRoom="Zoom"
-              startTime={MEETING_UPCOMING.start}
-              endTime={MEETING_UPCOMING.end}
-            />
-          }
-        />
+        <MeetingMenuStory />
       </section>
       <Heading isContent>Avatar Group</Heading>
       <section {...stylex.props(styles.row, styles.componentStage)}>
