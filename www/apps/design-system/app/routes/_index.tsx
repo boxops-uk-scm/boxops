@@ -62,8 +62,13 @@ import { SSR as Phosphor } from '@phosphor-icons/react';
 import * as stylex from '@stylexjs/stylex';
 import React from 'react';
 
+import { DiffHoverCardStory } from '../stories/DiffHoverCardStory';
 import { EmployeeAvatarStory } from '../stories/EmployeeAvatarStory';
 import { EmployeeHoverCardStory } from '../stories/EmployeeHoverCardStory';
+import { EmployeeLinkStory } from '../stories/EmployeeLinkStory';
+import { OncallHoverCardStory } from '../stories/OncallHoverCardStory';
+import { SEVHoverCardStory } from '../stories/SEVHoverCardStory';
+import { TaskHoverCardStory } from '../stories/TaskHoverCardStory';
 
 export function meta() {
   return [{ title: 'Text' }];
@@ -1377,9 +1382,29 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
           Hover the avatar — the card&rsquo;s data loads on demand, from its own query.
         </Text>
       </section>
+      <Heading isContent>Employee Link</Heading>
+      <section {...stylex.props(styles.row, styles.componentStage)}>
+        <EmployeeLinkStory />
+      </section>
       <Heading isContent>Employee Hover Card</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>
         <EmployeeHoverCardStory />
+      </section>
+      <Heading isContent>Task Hover Card</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <TaskHoverCardStory />
+      </section>
+      <Heading isContent>Diff Hover Card</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <DiffHoverCardStory />
+      </section>
+      <Heading isContent>SEV Hover Card</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <SEVHoverCardStory />
+      </section>
+      <Heading isContent>Oncall Hover Card</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <OncallHoverCardStory />
       </section>
       <Heading isContent>Meeting Menu</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>

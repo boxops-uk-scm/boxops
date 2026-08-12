@@ -27,7 +27,7 @@ export { SideNav } from './SideNav';
 export { PortalContainerProvider, usePortalContainer } from './PortalContainer';
 
 // --- consolidated from v1/v2 — batch 1 (2026-08-12), presentational components only ---
-export { Link } from './Link';
+export { Link, EmployeeLink } from './Link';
 export { List, ListItem } from './List';
 export { Avatar, AvatarImage, AvatarInitials, AvatarIcon, EmployeeAvatar } from './Avatar';
 export { Meter } from './Meter';
@@ -35,4 +35,11 @@ export { Banner, UncontrolledBanner } from './Banner';
 export { MeetingMenu, MeetingMenuItem } from './MeetingMenu';
 export { ToolsMenu } from './ToolsMenu';
 export { Notification, NotificationMenu } from './Notification';
-export { EmployeeHoverCardContent } from './HoverCard';
+export {
+  EmployeeHoverCardContent,
+  EmployeeReference,
+  TaskHoverCardContent,
+  DiffHoverCardContent,
+  SEVHoverCardContent,
+  OncallHoverCardContent,
+} from './HoverCard';
