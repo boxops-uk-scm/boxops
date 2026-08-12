@@ -2,41 +2,155 @@ import { Field, Input } from '@base-ui/react';
 import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 
+import { backgroundColor, dividerColor, fontFamily, gap, padding, semanticColor, textColor } from '../tokens.stylex';
 import * as bx from '../types';
 
+import { vars } from './vars.stylex';
+
 /**
- * Empty on purpose — this is a scaffold. Every slot the component renders has a style object here
- * so that filling them in later is an edit rather than a restructure, and so the shape of the
- * component is legible before it has any appearance at all.
+ * Applied to the frame rather than the root: the size of a field is the size of the box you type
+ * in. The control inherits its font from here, so one declaration moves both the padding and the
+ * text rather than leaving them to drift apart.
  */
 const variantStyles = {
   size: stylex.create({
-    default: {},
-    compact: {},
+    default: {
+      padding: padding.S,
+      fontSize: '16px',
+      lineHeight: '24px',
+    },
+    compact: {
+      padding: `${padding.XS} ${padding.S}`,
+      fontSize: '14px',
+      lineHeight: '20px',
+    },
   }),
 } as const satisfies bx.VariantStyles;
 
 const baseStyles = stylex.create({
   /** `Field.Root` — the label, the control and any message, stacked. */
-  base: {},
-  /** `Field.Label`. */
-  label: {},
+  base: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: gap.XS,
+    fontFamily: fontFamily.body,
+    [vars.labelColor]: textColor.primary,
+    [vars.messageColor]: textColor.subtle,
+  },
+  label: {
+    fontSize: '14px',
+    lineHeight: '20px',
+    fontWeight: 600,
+    color: vars.labelColor,
+  },
   /**
    * The frame around the control: border, background, focus ring.
    *
-   * Not the `<input>` itself. Leading and trailing content sit inside the frame beside the input,
-   * so the input is transparent and borderless and this row draws what the eye reads as the field.
+   * Deliberately the same frame `RichTextArea` draws — same 1px subtle border, same surface, same
+   * radius, and the same 3px inset accent ring on focus — because the two are the same control at
+   * different lengths and nothing about a single line justifies a different box.
+   *
+   * The one difference is which pseudo-class raises the ring. The editor is itself the focusable
+   * element, so it uses `:focus`; here the focusable element is the `<input>` nested inside, so the
+   * frame keys off `:focus-within`. That is also the better behaviour: focus a clear button passed
+   * as `endContent` and the frame stays lit, because the focus is still inside the field.
    */
-  row: {},
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: gap.S,
+    color: vars.color,
+    backgroundColor: vars.backgroundColor,
+    borderRadius: '4px',
+    borderWidth: '1px',
+    borderStyle: 'solid',
+    borderColor: vars.borderColor,
+    [vars.color]: textColor.primary,
+    [vars.backgroundColor]: backgroundColor.surface,
+    [vars.placeholderColor]: textColor.secondary,
+    [vars.borderColor]: {
+      default: dividerColor.subtle,
+      ':focus-within': semanticColor.accent,
+    },
+    boxShadow: {
+      default: null,
+      ':focus-within': `inset 0 0 0 3px ${semanticColor.accentSubtle}`,
+    },
+    outline: {
+      default: null,
+      ':focus-within': 'none',
+    },
+  },
+  /** Invalid only once the field has been validated — `valid` is `null` until then. */
+  rowInvalid: {
+    [vars.borderColor]: {
+      default: semanticColor.negative,
+      ':focus-within': semanticColor.negative,
+    },
+    boxShadow: {
+      default: null,
+      ':focus-within': `inset 0 0 0 3px ${semanticColor.negativeSubtle}`,
+    },
+  },
+  rowDisabled: {
+    [vars.color]: textColor.disabled,
+    [vars.placeholderColor]: textColor.disabled,
+    [vars.backgroundColor]: backgroundColor.secondary,
+    cursor: 'not-allowed',
+  },
   /** The `<input>`, which fills whatever the row leaves it. */
-  control: {},
+  control: {
+    flexGrow: 1,
+    // Without this a flex item refuses to shrink below its content, so a long value pushes the
+    // frame wider than whatever is holding it.
+    minWidth: 0,
+    appearance: 'none',
+    borderStyle: 'none',
+    padding: 0,
+    margin: 0,
+    backgroundColor: 'transparent',
+    color: 'inherit',
+    // Longhands: the `font` shorthand is one of the ones StyleX drops on the floor.
+    fontFamily: 'inherit',
+    fontSize: 'inherit',
+    lineHeight: 'inherit',
+    fontWeight: 'inherit',
+    outline: 'none',
+    cursor: 'inherit',
+    '::placeholder': {
+      color: vars.placeholderColor,
+    },
+    ':disabled': {
+      // Safari paints its own washed-out ink on a disabled control, which ignores `color`.
+      WebkitTextFillColor: vars.color,
+      cursor: 'not-allowed',
+    },
+  },
   /** Leading and trailing content — an icon, a unit, a clear button. */
-  startContent: {},
-  endContent: {},
+  startContent: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    flexShrink: 0,
+    color: textColor.secondary,
+  },
+  endContent: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    flexShrink: 0,
+    color: textColor.secondary,
+  },
   /** `Field.Description`: the standing hint, shown whether or not the value is valid. */
-  description: {},
+  description: {
+    fontSize: '14px',
+    lineHeight: '20px',
+    color: vars.messageColor,
+  },
   /** `Field.Error`: replaces nothing, sits below, and only appears once the field is invalid. */
-  error: {},
+  error: {
+    fontSize: '14px',
+    lineHeight: '20px',
+    color: semanticColor.negative,
+  },
 });
 
 /**
@@ -72,11 +186,7 @@ const TextInput = Object.assign(
       },
       ref,
     ) {
-      const rootStyles = [
-        baseStyles.base,
-        bx.useVariantStyle<TextInput.Variants>(variantStyles, variants, { size: 'default' }),
-        xstyle,
-      ];
+      const sizeStyle = bx.useVariantStyle<TextInput.Variants>(variantStyles, variants, { size: 'default' });
 
       return (
         <Field.Root
@@ -85,37 +195,47 @@ const TextInput = Object.assign(
           invalid={invalid}
           validate={validate}
           validationMode={validationMode}
-          {...stylex.props(rootStyles)}
-        >
-          {label && <Field.Label {...stylex.props(baseStyles.label)}>{label}</Field.Label>}
-          <div {...stylex.props(baseStyles.row)}>
-            <Input
-              ref={ref}
-              {...rest}
-              render={(props, state) => {
-                const inputState: TextInput.State = { ...state, variants };
+          {...stylex.props(baseStyles.base, xstyle)}
+          // Rendered through the root's own state because the frame reacts to conditions CSS cannot
+          // see from where it sits: `disabled` and `invalid` land on the `<input>`, and no selector
+          // reaches from a child back up to the box drawn around it. Focus is the exception and
+          // stays in CSS, since `:focus-within` does read downwards.
+          render={(rootProps, state) => (
+            <div {...rootProps}>
+              {label && <Field.Label {...stylex.props(baseStyles.label)}>{label}</Field.Label>}
+              <div
+                {...stylex.props(
+                  baseStyles.row,
+                  sizeStyle,
+                  state.valid === false && baseStyles.rowInvalid,
+                  state.disabled && baseStyles.rowDisabled,
+                )}
+              >
+                <Input
+                  ref={ref}
+                  {...rest}
+                  render={(props, controlState) => {
+                    const inputState: TextInput.State = { ...controlState, variants };
 
-                return (
-                  <>
-                    {startContent && (
-                      <span {...stylex.props(baseStyles.startContent)}>
-                        {bx.useRenderFunction(startContent, inputState)}
-                      </span>
-                    )}
-                    <input {...props} {...stylex.props(baseStyles.control)} />
-                    {endContent && (
-                      <span {...stylex.props(baseStyles.endContent)}>
-                        {bx.useRenderFunction(endContent, inputState)}
-                      </span>
-                    )}
-                  </>
-                );
-              }}
-            />
-          </div>
-          {description && <Field.Description {...stylex.props(baseStyles.description)}>{description}</Field.Description>}
-          {error && <Field.Error {...stylex.props(baseStyles.error)}>{error}</Field.Error>}
-        </Field.Root>
+                    return (
+                      <>
+                        {startContent && (
+                          <span {...stylex.props(baseStyles.startContent)}>{bx.useRenderFunction(startContent, inputState)}</span>
+                        )}
+                        <input {...props} {...stylex.props(baseStyles.control)} />
+                        {endContent && (
+                          <span {...stylex.props(baseStyles.endContent)}>{bx.useRenderFunction(endContent, inputState)}</span>
+                        )}
+                      </>
+                    );
+                  }}
+                />
+              </div>
+              {description && <Field.Description {...stylex.props(baseStyles.description)}>{description}</Field.Description>}
+              {error && <Field.Error {...stylex.props(baseStyles.error)}>{error}</Field.Error>}
+            </div>
+          )}
+        />
       );
     }),
   ),
