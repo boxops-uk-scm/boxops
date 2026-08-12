@@ -36,6 +36,9 @@ const variantStyles = {
     },
   }),
   color: stylex.create({
+    // The default is `currentColor` (see `vars.stylex.ts`), so an icon matches its surrounding
+    // text. This pins the primary ink explicitly for cases that are not inheriting a usable colour.
+    primary: { color: iconColor.primary },
     onLightMedia: { color: iconColor.onLightMedia },
     onDarkMedia: { color: iconColor.onDarkMedia },
     secondary: { color: iconColor.secondary },

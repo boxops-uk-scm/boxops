@@ -1,16 +1,17 @@
-import { AutoFocusPlugin } from '@lexical/react/LexicalAutoFocusPlugin';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { createDOMRange, createRectsFromDOMRange } from '@lexical/selection';
-import * as HoverCard from '@radix-ui/react-hover-card';
 import * as stylex from '@stylexjs/stylex';
-import { $getSelection, $isRangeSelection, EditorState, LexicalEditor, TextNode } from 'lexical';
+import { $getSelection, $isRangeSelection, TextNode, type EditorState, type LexicalEditor } from 'lexical';
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 
+import { usePortalContainer } from '../PortalContainer';
 import { Text } from '../Text';
 import { backgroundColor, dividerColor, gap, padding, semanticColor } from '../tokens.stylex';
 import * as bx from '../types';
@@ -31,14 +32,20 @@ const styles = stylex.create({
       outline: 'none',
     },
   },
-  selection: (x: number, y: number, width: number, height: number) => ({
-    position: 'absolute',
-    left: x,
-    top: y,
-    width,
-    height,
-    pointerEvents: 'none',
+  actionBarLayer: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    zIndex: 100,
+  },
+  actionBarAt: (top: number, left: number) => ({
+    transform: `translate(${left}px, ${top}px)`,
   }),
+  // Covers both the frame before the bar has been measured and the case where the selection has
+  // been scrolled out of view — the bar should not linger at the viewport edge without its anchor.
+  actionBarHidden: {
+    visibility: 'hidden',
+  },
   code: {
     padding: padding.XS,
     borderRadius: '4px',
@@ -74,6 +81,7 @@ function onChange(
   setIsSelectionStrikethrough: (isStrikethrough: boolean) => void,
   setIsSelectionCode: (isCode: boolean) => void,
   setIsActionBarOpen: (isOpen: boolean) => void,
+  canOpen: boolean,
 ) {
   editor.read(() => {
     const selection = $getSelection();
@@ -147,7 +155,9 @@ function onChange(
 
     const boundingBox = getBoundingBox(createRectsFromDOMRange(editor, selectionRange));
 
-    if (boundingBox) {
+    // The rect is always refreshed so the anchor tracks the selection as it grows mid-drag; only
+    // opening waits for the gesture to finish. See `SelectionGesture`.
+    if (boundingBox && canOpen) {
       setIsActionBarOpen(true);
     }
 
@@ -175,6 +185,152 @@ function getBoundingBox(rects: ClientRect[]): DOMRect | undefined {
   return new DOMRect(minX, minY, maxRight - minX, maxBottom - minY);
 }
 
+/** Gap between the selection and the action bar, and the minimum inset kept from the viewport edge. */
+const ACTION_BAR_OFFSET = 8;
+
+interface Placement {
+  top: number;
+  left: number;
+  /** False once the selection has been scrolled out of view, which hides the bar along with it. */
+  isAnchorVisible: boolean;
+}
+
+/**
+ * Renders the action bar in a portal, positioned over the selection.
+ *
+ * A popover primitive is deliberately not used here. Those dismiss themselves on outside press, and
+ * every interaction this bar exists for — dragging out a selection, then reaching for the bar — is
+ * an outside press, so the bar spent its life being closed by the very gesture that opened it.
+ * A plain layer has no such opinions: it shows exactly while there is a selection to act on.
+ */
+function ActionBarLayer({ rect, ...actionBarProps }: ActionBarLayer.Props) {
+  const portalContainer = usePortalContainer();
+  const ref = React.useRef<React.ComponentRef<'div'>>(null);
+  const [placement, setPlacement] = React.useState<Placement | undefined>(undefined);
+
+  // Layout effect so the measured position is applied in the same frame the bar first paints.
+  React.useLayoutEffect(() => {
+    if (!ref.current) {
+      return;
+    }
+
+    const { width, height } = ref.current.getBoundingClientRect();
+
+    // Sits above the selection, flipping below when there is no room for it there.
+    const above = rect.top - height - ACTION_BAR_OFFSET;
+    const top = above < ACTION_BAR_OFFSET ? rect.bottom + ACTION_BAR_OFFSET : above;
+
+    // Aligned to the start of the selection, pulled back in when that would overflow the viewport.
+    const rightLimit = window.innerWidth - width - ACTION_BAR_OFFSET;
+    const left = Math.max(ACTION_BAR_OFFSET, Math.min(rect.left, rightLimit));
+
+    setPlacement({ top, left, isAnchorVisible: rect.bottom > 0 && rect.top < window.innerHeight });
+  }, [rect]);
+
+  return createPortal(
+    <div
+      ref={ref}
+      // Swallowing the press keeps focus in the editor, so the selection the bar acts on survives
+      // being clicked. `click` still fires, so the buttons work as normal.
+      onMouseDown={(event) => event.preventDefault()}
+      {...stylex.props(
+        styles.actionBarLayer,
+        placement && styles.actionBarAt(placement.top, placement.left),
+        !placement?.isAnchorVisible && styles.actionBarHidden,
+      )}
+    >
+      <ActionBar {...actionBarProps} />
+    </div>,
+    portalContainer ?? document.body,
+  );
+}
+
+namespace ActionBarLayer {
+  export interface Props extends ActionBar.Props {
+    /** Viewport-relative bounding box of the current selection. */
+    rect: DOMRect;
+  }
+}
+
+/**
+ * Keeps the action bar in step with the selection.
+ *
+ * The bar is held back until a pointer gesture finishes, so it does not skitter around under the
+ * cursor while a selection is being dragged out, and it is re-synced while open so it stays pinned
+ * to the selection as the page scrolls or resizes underneath it.
+ */
+function SelectionTracker({
+  isDraggingRef,
+  isActionBarOpen,
+  onSync,
+  onDismiss,
+}: {
+  isDraggingRef: React.RefObject<boolean>;
+  isActionBarOpen: boolean;
+  onSync: (editor: LexicalEditor) => void;
+  onDismiss: () => void;
+}) {
+  const [editor] = useLexicalComposerContext();
+
+  React.useEffect(() => {
+    const handlePointerDown = () => {
+      isDraggingRef.current = true;
+    };
+
+    // The pointer is often released outside the editor, so the release is tracked on the window.
+    const handlePointerUp = () => {
+      if (!isDraggingRef.current) {
+        return;
+      }
+
+      isDraggingRef.current = false;
+      onSync(editor);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onDismiss();
+      }
+    };
+
+    const unregisterRoot = editor.registerRootListener((rootElement, prevRootElement) => {
+      prevRootElement?.removeEventListener('pointerdown', handlePointerDown);
+      prevRootElement?.removeEventListener('blur', onDismiss);
+      rootElement?.addEventListener('pointerdown', handlePointerDown);
+      rootElement?.addEventListener('blur', onDismiss);
+    });
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      unregisterRoot();
+      editor.getRootElement()?.removeEventListener('pointerdown', handlePointerDown);
+      editor.getRootElement()?.removeEventListener('blur', onDismiss);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [editor, isDraggingRef, onSync, onDismiss]);
+
+  React.useEffect(() => {
+    if (!isActionBarOpen) {
+      return undefined;
+    }
+
+    const handleReposition = () => onSync(editor);
+
+    // Capture, so scrolling of any ancestor container is caught, not just the page.
+    window.addEventListener('scroll', handleReposition, true);
+    window.addEventListener('resize', handleReposition);
+
+    return () => {
+      window.removeEventListener('scroll', handleReposition, true);
+      window.removeEventListener('resize', handleReposition);
+    };
+  }, [editor, isActionBarOpen, onSync]);
+
+  return null;
+}
+
 const RichTextArea = Object.assign(
   React.memo(function RichTextArea({ xstyle, ...rest }: RichTextArea.Props) {
     const [isActionBarOpen, setIsActionBarOpen] = React.useState(false);
@@ -192,7 +348,9 @@ const RichTextArea = Object.assign(
       onError,
     };
 
-    const updateRect = React.useCallback((_state: EditorState, editor: LexicalEditor) => {
+    const isDraggingRef = React.useRef(false);
+
+    const syncSelection = React.useCallback((editor: LexicalEditor, canOpen: boolean) => {
       onChange(
         editor,
         setRect,
@@ -202,34 +360,44 @@ const RichTextArea = Object.assign(
         setIsSelectionStrikethrough,
         setIsSelectionCode,
         setIsActionBarOpen,
+        canOpen,
       );
     }, []);
 
+    const updateRect = React.useCallback(
+      (_state: EditorState, editor: LexicalEditor) => syncSelection(editor, !isDraggingRef.current),
+      [syncSelection],
+    );
+
+    const handleSync = React.useCallback((editor: LexicalEditor) => syncSelection(editor, true), [syncSelection]);
+
+    const handleDismiss = React.useCallback(() => setIsActionBarOpen(false), []);
+
     return (
-      <HoverCard.Root open={isActionBarOpen}>
-        <LexicalComposer initialConfig={initialConfig}>
-          <RichTextPlugin
-            contentEditable={<ContentEditable {...stylex.props(styles.base, xstyle)} {...rest} />}
-            ErrorBoundary={LexicalErrorBoundary}
-          />
-          <HistoryPlugin />
-          <AutoFocusPlugin />
-          <OnChangePlugin onChange={updateRect} />
-          {rect && (
-            <HoverCard.Trigger asChild>
-              <div {...stylex.props(styles.selection(rect.x, rect.y, rect.width, rect.height))} />
-            </HoverCard.Trigger>
-          )}
-          <ActionBar
+      <LexicalComposer initialConfig={initialConfig}>
+        <RichTextPlugin
+          contentEditable={<ContentEditable {...stylex.props(styles.base, xstyle)} {...rest} />}
+          ErrorBoundary={LexicalErrorBoundary}
+        />
+        <HistoryPlugin />
+        <OnChangePlugin onChange={updateRect} />
+        <SelectionTracker
+          isDraggingRef={isDraggingRef}
+          isActionBarOpen={isActionBarOpen}
+          onSync={handleSync}
+          onDismiss={handleDismiss}
+        />
+        {isActionBarOpen && rect !== undefined && (
+          <ActionBarLayer
+            rect={rect}
             isSelectionBold={isSelectionBold}
             isSelectionItalic={isSelectionItalic}
             isSelectionStrikethrough={isSelectionStrikethrough}
             isSelectionUnderline={isSelectionUnderline}
             isSelectionCode={isSelectionCode}
-            dismiss={() => setIsActionBarOpen(false)}
           />
-        </LexicalComposer>
-      </HoverCard.Root>
+        )}
+      </LexicalComposer>
     );
   }),
   {
@@ -238,7 +406,7 @@ const RichTextArea = Object.assign(
 );
 
 namespace RichTextArea {
-  export interface Props extends bx.BaseComponentProps {}
+  export type Props = bx.BaseComponentProps;
 }
 
 export default RichTextArea;

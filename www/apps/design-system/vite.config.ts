@@ -71,6 +71,8 @@ export default defineConfig({
       },
       aliases: {
         '@boxops/ui/tokens.stylex': path.join(wwwRoot, '@boxops/ui/src/tokens.stylex.ts'),
+        '@boxops/ui/palette.stylex': path.join(wwwRoot, '@boxops/ui/src/palette.stylex.ts'),
+        '@boxops/ui/themes.stylex': path.join(wwwRoot, '@boxops/ui/src/themes.stylex.ts'),
         '@boxops/ui/MetadataList/vars.stylex': path.join(wwwRoot, '@boxops/ui/src/MetadataList/vars.stylex.ts'),
       },
     }),
@@ -90,6 +92,14 @@ export default defineConfig({
     external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
   },
   optimizeDeps: {
-    include: ['react-relay', 'relay-runtime', '@stylexjs/stylex'],
+    // Crawl the app (and through it @boxops/ui) at server start so every dependency is pre-bundled
+    // before the first request. Left to discover them mid-load, Vite aborts the in-flight module
+    // scripts and issues an "optimized dependencies changed" reload; that load comes back with the
+    // SSR markup intact but React never hydrated — the page looks correct while nothing is
+    // interactive and no portals (tooltips, popovers, the editor action bar) ever mount.
+    // @boxops/ui's own deps (lexical, @base-ui/react) cannot go in `include`: under Yarn PnP they
+    // are not resolvable from this workspace, so they have to be reached by scanning instead.
+    entries: ['app/entry.client.tsx', 'app/root.tsx', 'app/routes/**/*.tsx'],
+    include: ['react-relay', 'relay-runtime', '@stylexjs/stylex', '@phosphor-icons/react'],
   },
 });

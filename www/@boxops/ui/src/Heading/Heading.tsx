@@ -12,7 +12,9 @@ const baseStyles = stylex.create({
   base: {
     textWrap: 'balance',
     lineHeight: '1.1',
-    color: textColor.onLightMedia,
+    // `primary`, not `onLightMedia`: headings are body content and must follow the colour scheme.
+    // `onLightMedia` names a fixed light ground, so it left headings near-black in dark mode.
+    color: textColor.primary,
     fontFamily: '"Open Sans", sans-serif',
     marginTop: 0,
     marginBlockEnd: 0,

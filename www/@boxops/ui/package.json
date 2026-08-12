@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./*": "./src/*/index.ts",
     "./tokens.stylex": "./src/tokens.stylex.ts",
+    "./palette.stylex": "./src/palette.stylex.ts",
+    "./themes.stylex": "./src/themes.stylex.ts",
     "./MetadataList/vars.stylex": "./src/MetadataList/vars.stylex.ts"
   },
   "dependencies": {
@@ -15,7 +17,6 @@
     "@lexical/react": "^0.21.0",
     "@lexical/selection": "^0.21.0",
     "@phosphor-icons/react": "^2.1.10",
-    "@radix-ui/react-hover-card": "^1.1.0",
     "@stylexjs/stylex": "^0.18.1",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",

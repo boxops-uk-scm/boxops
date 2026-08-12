@@ -15,8 +15,23 @@ import {
   CardFooter,
   MetadataLabel,
   MetadataList,
+  Divider,
+  StatusDot,
+  Flexbox,
+  Glimmer,
+  LineClamp,
+  Logo,
+  TextPair,
+  Toast,
+  UncontrolledSplitButton,
+  SplitButtonMenuItem,
+  RichTextArea,
+  SideNav,
+  PortalContainerProvider,
 } from '@boxops/ui';
 import { vars as metadataListVars } from '@boxops/ui/MetadataList/vars.stylex';
+import { palette } from '@boxops/ui/palette.stylex';
+import { darkTheme, lightTheme } from '@boxops/ui/themes.stylex';
 import {
   backgroundColor,
   dividerColor,
@@ -38,6 +53,41 @@ export function meta() {
 }
 
 const styles = stylex.create({
+  // Two independently themed panes sharing one scroll position, so any component can be compared
+  // across schemes by looking straight across. Falls back to stacking when there is no room.
+  split: {
+    display: 'grid',
+    gridTemplateColumns: {
+      default: '1fr 1fr',
+      '@media (max-width: 900px)': '1fr',
+    },
+    alignItems: 'start',
+    minBlockSize: '100dvb',
+  },
+  pane: {
+    inlineSize: '100%',
+    minBlockSize: '100dvb',
+    backgroundColor: backgroundColor.surface,
+    // `Text` inherits its colour, so the pane establishes the body ink for each scheme.
+    color: textColor.primary,
+    borderInlineEndWidth: {
+      default: '1px',
+      '@media (max-width: 900px)': '0',
+    },
+    borderInlineEndStyle: 'solid',
+    borderInlineEndColor: dividerColor.subtle,
+  },
+  paneLabel: {
+    position: 'sticky',
+    insetBlockStart: 0,
+    zIndex: 10,
+    paddingBlock: padding.S,
+    paddingInline: '2rem',
+    backgroundColor: backgroundColor.navbar,
+    borderBlockEndWidth: '1px',
+    borderBlockEndStyle: 'solid',
+    borderBlockEndColor: dividerColor.subtle,
+  },
   main: {
     inlineSize: '100%',
     padding: '2rem',
@@ -91,8 +141,11 @@ const styles = stylex.create({
     gap: '1rem',
     height: '50px',
   },
+  // Stands in for dark media (a photo, a video, a scrim), so it is a fixed ink rather than a token.
+  // It previously used `backgroundColor.tooltip`, which correctly flips to white in dark mode —
+  // leaving the "on dark media" row as white icons on a white ground.
   darkMedia: {
-    backgroundColor: backgroundColor.tooltip,
+    backgroundColor: palette.gray1000,
   },
 
   twoColumnGridSection: {
@@ -136,18 +189,137 @@ const styles = stylex.create({
       '@media (max-width: 800px)': 1,
     },
   },
+  wrapRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '1rem',
+  },
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1rem',
+  },
+  // Vertical dividers stretch to their container, so give them one with a height.
+  verticalDividerStage: {
+    height: '48px',
+  },
+  flexboxStage: {
+    minHeight: '72px',
+    padding: padding.XS,
+    borderRadius: '4px',
+    borderWidth: '1px',
+    borderStyle: 'dashed',
+    borderColor: dividerColor.subtle,
+  },
+  // Intrinsically sized rather than fixed-height, so `alignItems: stretch` and
+  // `baseline` are both visible against the other alignments.
+  flexboxItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '48px',
+    padding: padding.XS,
+    borderRadius: '4px',
+    backgroundColor: nonsemanticBackgroundColor.blue,
+  },
+  // Applied to the `Text` inside each item, since `Text` sets its own font size.
+  flexboxItemS: {
+    fontSize: '12px',
+    lineHeight: '16px',
+  },
+  flexboxItemM: {
+    fontSize: '20px',
+    lineHeight: '28px',
+  },
+  flexboxItemL: {
+    fontSize: '32px',
+    lineHeight: '44px',
+  },
+  // Glimmer renders a span with no intrinsic size — callers give it the shape they are standing in for.
+  glimmerLine: {
+    display: 'block',
+    width: '100%',
+    height: '1rem',
+    borderRadius: '4px',
+  },
+  glimmerLineShort: {
+    display: 'block',
+    width: '60%',
+    height: '1rem',
+    borderRadius: '4px',
+  },
+  glimmerBlock: {
+    display: 'block',
+    width: '100%',
+    height: '80px',
+    borderRadius: '8px',
+  },
+  glimmerCircle: {
+    display: 'block',
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    alignSelf: 'flex-start',
+  },
+  clamped: {
+    maxWidth: '48ch',
+  },
+  toastBody: {
+    padding: padding.M,
+  },
+  richTextArea: {
+    width: '100%',
+    minHeight: '120px',
+  },
+  sideNavStage: {
+    display: 'flex',
+    height: '420px',
+    overflow: 'hidden',
+  },
+  sideNav: {
+    width: '240px',
+  },
+  sideNavOverview: {
+    width: '260px',
+  },
 });
 
-export default function IndexRoute() {
+const lorem =
+  'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.';
+
+const sideNavRoutes: readonly SideNav.Route[] = [
+  { type: 'page', path: '/overview', title: 'Overview' },
+  {
+    type: 'group',
+    label: 'Primitives',
+    children: [
+      { type: 'page', path: '/primitives/text', title: 'Text' },
+      { type: 'page', path: '/primitives/icon', title: 'Icon' },
+      { type: 'page', path: '/primitives/divider', title: 'Divider' },
+    ],
+  },
+  {
+    type: 'group',
+    label: 'Controls',
+    children: [
+      { type: 'page', path: '/controls/button', title: 'Button' },
+      { type: 'page', path: '/controls/toggle', title: 'Toggle' },
+      { type: 'page', path: '/controls/split-button', title: 'Split Button' },
+    ],
+  },
+  { type: 'page', path: '/internal', title: 'Internal', hideFromNav: true },
+];
+
+function DemoContent({ idPrefix }: { idPrefix: string }) {
   return (
-    <main {...stylex.props(styles.main)}>
-      <section aria-labelledby="colors-heading">
-        <Heading id="colors-heading" isContent as="h1">
+    <>
+      <section aria-labelledby={`${idPrefix}-colors-heading`}>
+        <Heading id={`${idPrefix}-colors-heading`} isContent as="h1">
           Colors
         </Heading>
         <section {...stylex.props(styles.twoColumnGridSection)}>
           <div {...stylex.props(styles.subgridHeading)}>
-            <Heading id="semantic-colors-heading" isContent as="h2">
+            <Heading id={`${idPrefix}-semantic-colors-heading`} isContent as="h2">
               Semantic Colors
             </Heading>
           </div>
@@ -165,7 +337,7 @@ export default function IndexRoute() {
             }
           </div>
           <div {...stylex.props(styles.subgridHeading)}>
-            <Heading id="outline-colors-heading" isContent as="h2">
+            <Heading id={`${idPrefix}-outline-colors-heading`} isContent as="h2">
               Outline Colors
             </Heading>
           </div>
@@ -183,7 +355,7 @@ export default function IndexRoute() {
             }
           </div>
           <div {...stylex.props(styles.subgridHeading)}>
-            <Heading id="background-colors-heading" isContent as="h2">
+            <Heading id={`${idPrefix}-background-colors-heading`} isContent as="h2">
               Background Colors
             </Heading>
           </div>
@@ -201,7 +373,7 @@ export default function IndexRoute() {
             }
           </div>
           <div {...stylex.props(styles.subgridHeading)}>
-            <Heading id="nonsemantic-background-colors-heading" isContent as="h2">
+            <Heading id={`${idPrefix}-nonsemantic-background-colors-heading`} isContent as="h2">
               Non-semantic Background Colors
             </Heading>
           </div>
@@ -219,7 +391,7 @@ export default function IndexRoute() {
             }
           </div>
           <div {...stylex.props(styles.subgridHeading)}>
-            <Heading id="text-colors-heading" isContent as="h2">
+            <Heading id={`${idPrefix}-text-colors-heading`} isContent as="h2">
               Text Colors
             </Heading>
           </div>
@@ -237,7 +409,7 @@ export default function IndexRoute() {
             }
           </div>
           <div {...stylex.props(styles.subgridHeading)}>
-            <Heading id="nonsemantic-text-colors-heading" isContent as="h2">
+            <Heading id={`${idPrefix}-nonsemantic-text-colors-heading`} isContent as="h2">
               Non-semantic Text Colors
             </Heading>
           </div>
@@ -255,7 +427,7 @@ export default function IndexRoute() {
             }
           </div>
           <div {...stylex.props(styles.subgridHeading)}>
-            <Heading id="divider-colors-heading" isContent as="h2">
+            <Heading id={`${idPrefix}-divider-colors-heading`} isContent as="h2">
               Divider Colors
             </Heading>
           </div>
@@ -273,7 +445,7 @@ export default function IndexRoute() {
             }
           </div>
           <div {...stylex.props(styles.subgridHeading)}>
-            <Heading id="icon-colors-heading" isContent as="h2">
+            <Heading id={`${idPrefix}-icon-colors-heading`} isContent as="h2">
               Icon Colors
             </Heading>
           </div>
@@ -292,12 +464,12 @@ export default function IndexRoute() {
           </div>
         </section>
       </section>
-      <Heading id="typography-heading" isContent as="h1">
+      <Heading id={`${idPrefix}-typography-heading`} isContent as="h1">
         Typography
       </Heading>
       <section {...stylex.props(styles.twoColumnGridSection)}>
         <div {...stylex.props(styles.subgridHeading)}>
-          <Heading id="text-heading" as="h2" isContent>
+          <Heading id={`${idPrefix}-text-heading`} as="h2" isContent>
             Text
           </Heading>
         </div>
@@ -320,7 +492,7 @@ export default function IndexRoute() {
           <Text as="code">Lorem ipsum doler sit amet</Text>
         </section>
         <div {...stylex.props(styles.subgridHeading)}>
-          <Heading id="headings-heading" as="h2" isContent>
+          <Heading id={`${idPrefix}-headings-heading`} as="h2" isContent>
             Headings
           </Heading>
         </div>
@@ -334,24 +506,24 @@ export default function IndexRoute() {
           <Text>H4</Text>
           <Heading as="h4">Lorem ipsum doler sit amet</Heading>
           <Text>Title</Text>
-          <Heading id="title-heading" isContent as="h1">
+          <Heading id={`${idPrefix}-title-heading`} isContent as="h1">
             Lorem ipsum doler sit amet
           </Heading>
           <Text>Section heading</Text>
-          <Heading id="section-heading" isContent as="h2">
+          <Heading id={`${idPrefix}-section-heading`} isContent as="h2">
             Lorem ipsum doler sit amet
           </Heading>
           <Text>Content heading</Text>
-          <Heading id="content-heading" isContent as="h3">
+          <Heading id={`${idPrefix}-content-heading`} isContent as="h3">
             Lorem ipsum doler sit amet
           </Heading>
           <Text>Group heading</Text>
-          <Heading id="group-heading" isContent as="h4">
+          <Heading id={`${idPrefix}-group-heading`} isContent as="h4">
             Lorem ipsum doler sit amet
           </Heading>
         </section>
       </section>
-      <Heading id="icon-heading" isContent>
+      <Heading id={`${idPrefix}-icon-heading`} isContent>
         Icon
       </Heading>
       <section {...stylex.props(styles.componentStage)}>
@@ -412,7 +584,7 @@ export default function IndexRoute() {
           <Icon as={Phosphor.FlagBannerFoldIcon} weight="fill" variants={{ size: 'XL', color: 'disabled' }} />
         </div>
       </section>
-      <Heading id="badge-heading" isContent>
+      <Heading id={`${idPrefix}-badge-heading`} isContent>
         Badge
       </Heading>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
@@ -452,7 +624,7 @@ export default function IndexRoute() {
         <Spinner variants={{ size: 'L', color: 'onDarkMedia' }} />
         <Spinner variants={{ size: 'XL', color: 'onDarkMedia' }} />
       </section>
-      <Heading id="button-heading" isContent>
+      <Heading id={`${idPrefix}-button-heading`} isContent>
         Button
       </Heading>
       <section {...stylex.props(styles.grid, styles.componentStage)}>
@@ -733,6 +905,324 @@ export default function IndexRoute() {
           <Text>Text value</Text>
         </MetadataList>
       </section>
+      <Heading isContent>Divider</Heading>
+      <section {...stylex.props(styles.twoColumnGrid, styles.alignCenter, styles.componentStage)}>
+        <Text as="small">horizontal / subtle</Text>
+        <Divider variants={{ orientation: 'horizontal', color: 'subtle' }} />
+        <Text as="small">horizontal / strong</Text>
+        <Divider variants={{ orientation: 'horizontal', color: 'strong' }} />
+        <Text as="small">vertical / subtle</Text>
+        <div {...stylex.props(styles.verticalDividerStage)}>
+          <Divider variants={{ orientation: 'vertical', color: 'subtle' }} />
+        </div>
+        <Text as="small">vertical / strong</Text>
+        <div {...stylex.props(styles.verticalDividerStage)}>
+          <Divider variants={{ orientation: 'vertical', color: 'strong' }} />
+        </div>
+      </section>
+      <Heading isContent>Status Dot</Heading>
+      <section {...stylex.props(styles.twoColumnGrid, styles.alignCenter, styles.componentStage)}>
+        {(['neutral', 'info', 'success', 'warning', 'error'] as const).map((status) => (
+          <React.Fragment key={status}>
+            <Text as="small">{status}</Text>
+            <div {...stylex.props(styles.row)}>
+              <StatusDot variants={{ status, size: 'S' }} />
+              <StatusDot variants={{ status, size: 'M' }} />
+              <StatusDot variants={{ status, size: 'L' }} />
+              <StatusDot variants={{ status, size: 'XL' }} />
+            </div>
+          </React.Fragment>
+        ))}
+      </section>
+      <Heading isContent>Flexbox</Heading>
+      <section {...stylex.props(styles.twoColumnGridSection)}>
+        <div {...stylex.props(styles.subgridHeading)}>
+          <Heading as="h2" isContent>
+            Direction
+          </Heading>
+        </div>
+        <section {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+          {(['row', 'column', 'rowReverse', 'columnReverse'] as const).map((direction) => (
+            <React.Fragment key={direction}>
+              <Text as="small">{direction}</Text>
+              <Flexbox variants={{ direction, gap: 'S' }} xstyle={styles.flexboxStage}>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemS}>A</Text>
+                </div>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemM}>B</Text>
+                </div>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemL}>C</Text>
+                </div>
+              </Flexbox>
+            </React.Fragment>
+          ))}
+        </section>
+        <div {...stylex.props(styles.subgridHeading)}>
+          <Heading as="h2" isContent>
+            Align Items
+          </Heading>
+        </div>
+        <section {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+          {(['start', 'center', 'end', 'baseline', 'stretch'] as const).map((alignItems) => (
+            <React.Fragment key={alignItems}>
+              <Text as="small">{alignItems}</Text>
+              <Flexbox variants={{ alignItems, gap: 'S' }} xstyle={styles.flexboxStage}>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemS}>A</Text>
+                </div>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemM}>B</Text>
+                </div>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemL}>C</Text>
+                </div>
+              </Flexbox>
+            </React.Fragment>
+          ))}
+        </section>
+        <div {...stylex.props(styles.subgridHeading)}>
+          <Heading as="h2" isContent>
+            Justify Content
+          </Heading>
+        </div>
+        <section {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+          {(['start', 'center', 'end', 'spaceBetween', 'spaceEvenly', 'spaceAround'] as const).map((justifyContent) => (
+            <React.Fragment key={justifyContent}>
+              <Text as="small">{justifyContent}</Text>
+              <Flexbox variants={{ justifyContent, alignItems: 'center' }} xstyle={styles.flexboxStage}>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemM}>A</Text>
+                </div>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemM}>B</Text>
+                </div>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemM}>C</Text>
+                </div>
+              </Flexbox>
+            </React.Fragment>
+          ))}
+        </section>
+        <div {...stylex.props(styles.subgridHeading)}>
+          <Heading as="h2" isContent>
+            Gap
+          </Heading>
+        </div>
+        <section {...stylex.props(styles.twoColumnSubgrid, styles.componentStage)}>
+          {(['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL'] as const).map((gapSize) => (
+            <React.Fragment key={gapSize}>
+              <Text as="small">{gapSize}</Text>
+              <Flexbox variants={{ gap: gapSize, alignItems: 'center' }} xstyle={styles.flexboxStage}>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemM}>A</Text>
+                </div>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemM}>B</Text>
+                </div>
+                <div {...stylex.props(styles.flexboxItem)}>
+                  <Text xstyle={styles.flexboxItemM}>C</Text>
+                </div>
+              </Flexbox>
+            </React.Fragment>
+          ))}
+        </section>
+      </section>
+      <Heading isContent>Glimmer</Heading>
+      <section {...stylex.props(styles.content, styles.componentStage)}>
+        <Glimmer xstyle={styles.glimmerLine} />
+        <Glimmer xstyle={styles.glimmerLineShort} />
+        <Glimmer xstyle={styles.glimmerBlock} />
+        <Glimmer xstyle={styles.glimmerCircle} />
+      </section>
+      <Heading isContent>Line Clamp</Heading>
+      <section {...stylex.props(styles.twoColumnGrid, styles.componentStage)}>
+        <Text as="small">lines: 1</Text>
+        <LineClamp lines={1} xstyle={styles.clamped}>
+          <Text as="span">{lorem}</Text>
+        </LineClamp>
+        <Text as="small">lines: 2</Text>
+        <LineClamp lines={2} xstyle={styles.clamped}>
+          <Text as="span">{lorem}</Text>
+        </LineClamp>
+        <Text as="small">lines: 3</Text>
+        <LineClamp lines={3} xstyle={styles.clamped}>
+          <Text as="span">{lorem}</Text>
+        </LineClamp>
+      </section>
+      <Heading isContent>Logo</Heading>
+      <section {...stylex.props(styles.row, styles.componentStage)}>
+        <Logo icon={Phosphor.CubeIcon} />
+        <Logo icon={Phosphor.RocketLaunchIcon} />
+        <Logo icon={Phosphor.PackageIcon} />
+        <Logo icon={Phosphor.GitBranchIcon} />
+      </section>
+      <Heading isContent>Text Pair</Heading>
+      <section {...stylex.props(styles.twoColumnGrid, styles.componentStage)}>
+        <Text as="small">body</Text>
+        <TextPair description="Descriptions clamp to two lines, so anything longer than that is truncated where it overflows.">
+          Body title
+        </TextPair>
+        <Text as="small">h2</Text>
+        <TextPair
+          variant="h2"
+          description="Descriptions clamp to two lines, so anything longer than that is truncated where it overflows."
+        >
+          Heading 2 title
+        </TextPair>
+        <Text as="small">h3</Text>
+        <TextPair
+          variant="h3"
+          description="Descriptions clamp to two lines, so anything longer than that is truncated where it overflows."
+        >
+          Heading 3 title
+        </TextPair>
+        <Text as="small">h4</Text>
+        <TextPair
+          variant="h4"
+          description="Descriptions clamp to two lines, so anything longer than that is truncated where it overflows."
+        >
+          Heading 4 title
+        </TextPair>
+      </section>
+      <Heading isContent>Toast</Heading>
+      <section {...stylex.props(styles.wrapRow, styles.componentStage)}>
+        <Toast variants={{ status: 'info' }}>
+          <div {...stylex.props(styles.toastBody)}>
+            <TextPair variant="h4" description="Your changes are syncing in the background.">
+              Sync started
+            </TextPair>
+          </div>
+        </Toast>
+        <Toast variants={{ status: 'success' }}>
+          <div {...stylex.props(styles.toastBody)}>
+            <TextPair variant="h4" description="All 12 changes were published successfully.">
+              Deploy complete
+            </TextPair>
+          </div>
+        </Toast>
+        <Toast variants={{ status: 'warning' }}>
+          <div {...stylex.props(styles.toastBody)}>
+            <TextPair variant="h4" description="Two records could not be matched and were skipped.">
+              Partial import
+            </TextPair>
+          </div>
+        </Toast>
+        <Toast variants={{ status: 'error' }}>
+          <div {...stylex.props(styles.toastBody)}>
+            <TextPair variant="h4" description="The connection timed out before the upload finished.">
+              Upload failed
+            </TextPair>
+          </div>
+        </Toast>
+      </section>
+      <Heading isContent>Split Button</Heading>
+      <section {...stylex.props(styles.wrapRow, styles.componentStage)}>
+        <UncontrolledSplitButton label="Save" variants={{ appearance: 'default' }}>
+          <SplitButtonMenuItem label="Save and close" />
+          <SplitButtonMenuItem label="Save as draft" />
+          <SplitButtonMenuItem label="Save a copy" />
+        </UncontrolledSplitButton>
+        <UncontrolledSplitButton label="Save" variants={{ appearance: 'flat' }}>
+          <SplitButtonMenuItem label="Save and close" />
+          <SplitButtonMenuItem label="Save as draft" />
+          <SplitButtonMenuItem label="Save a copy" />
+        </UncontrolledSplitButton>
+        <UncontrolledSplitButton label="Save" variants={{ appearance: 'primary' }}>
+          <SplitButtonMenuItem label="Save and close" />
+          <SplitButtonMenuItem label="Save as draft" />
+          <SplitButtonMenuItem label="Save a copy" />
+        </UncontrolledSplitButton>
+        <UncontrolledSplitButton label="Delete" variants={{ appearance: 'negative' }}>
+          <SplitButtonMenuItem label="Delete permanently" />
+          <SplitButtonMenuItem label="Move to trash" />
+        </UncontrolledSplitButton>
+        <UncontrolledSplitButton label="Approve" variants={{ appearance: 'positive' }}>
+          <SplitButtonMenuItem label="Approve and merge" />
+          <SplitButtonMenuItem label="Approve with comment" />
+        </UncontrolledSplitButton>
+      </section>
+      <section {...stylex.props(styles.wrapRow, styles.componentStage)}>
+        <UncontrolledSplitButton
+          label="Save"
+          startContent={<Icon as={Phosphor.FloppyDiskIcon} />}
+          variants={{ size: 'compact', appearance: 'default' }}
+        >
+          <SplitButtonMenuItem label="Save and close" />
+          <SplitButtonMenuItem label="Save as draft" />
+        </UncontrolledSplitButton>
+        <UncontrolledSplitButton label="Save" disabled variants={{ appearance: 'default' }}>
+          <SplitButtonMenuItem label="Save and close" />
+          <SplitButtonMenuItem label="Save as draft" />
+        </UncontrolledSplitButton>
+        <UncontrolledSplitButton label="Save" loading variants={{ appearance: 'primary' }}>
+          <SplitButtonMenuItem label="Save and close" />
+          <SplitButtonMenuItem label="Save as draft" />
+        </UncontrolledSplitButton>
+      </section>
+      <Heading isContent>Rich Text Area</Heading>
+      <section {...stylex.props(styles.content, styles.componentStage)}>
+        <Text as="small" variants={{ color: 'subtle' }}>
+          Select text inside the editor to reveal the formatting action bar.
+        </Text>
+        <RichTextArea xstyle={styles.richTextArea} />
+      </section>
+      <Heading isContent>Side Nav</Heading>
+      <section {...stylex.props(styles.sideNavStage, styles.componentStage)}>
+        <SideNav
+          routes={sideNavRoutes}
+          selectedPath="/controls/button"
+          heading="Boxops"
+          subheading="Design System"
+          media={<Logo icon={Phosphor.CubeIcon} />}
+          overview={
+            <Card xstyle={styles.sideNavOverview}>
+              <CardHeader title="Boxops" subtitle="Design System" />
+              <Text as="small" variants={{ color: 'subtle' }}>
+                Hover the logo to reveal whatever is passed as `overview`.
+              </Text>
+            </Card>
+          }
+          xstyle={styles.sideNav}
+        />
+      </section>
+    </>
+  );
+}
+
+// The two panes are spelled out rather than shared through a component: `createTheme` brands each
+// theme with its own symbol, so a single `theme` prop cannot be typed to accept both.
+//
+// Each pane is also its own portal container. Overlays portal to `<body>` by default, which puts
+// them outside both panes — so a tooltip raised in the light pane would resolve its tokens against
+// the document and come out dark-themed. Pointing them at the pane keeps them with their content.
+export default function IndexRoute() {
+  const [lightPane, setLightPane] = React.useState<HTMLDivElement | null>(null);
+  const [darkPane, setDarkPane] = React.useState<HTMLDivElement | null>(null);
+
+  return (
+    <main {...stylex.props(styles.split)}>
+      <div ref={setLightPane} {...stylex.props(styles.pane, lightTheme)}>
+        <PortalContainerProvider value={lightPane}>
+          <div {...stylex.props(styles.paneLabel)}>
+            <Heading as="h2">Light</Heading>
+          </div>
+          <div {...stylex.props(styles.main)}>
+            <DemoContent idPrefix="light" />
+          </div>
+        </PortalContainerProvider>
+      </div>
+      <div ref={setDarkPane} {...stylex.props(styles.pane, darkTheme)}>
+        <PortalContainerProvider value={darkPane}>
+          <div {...stylex.props(styles.paneLabel)}>
+            <Heading as="h2">Dark</Heading>
+          </div>
+          <div {...stylex.props(styles.main)}>
+            <DemoContent idPrefix="dark" />
+          </div>
+        </PortalContainerProvider>
+      </div>
     </main>
   );
 }

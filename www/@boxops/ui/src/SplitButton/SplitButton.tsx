@@ -7,10 +7,12 @@ import { Button } from '../Button';
 import { ButtonGroup } from '../ButtonGroup';
 import { Card } from '../Card';
 import { Icon } from '../Icon';
+import { usePortalContainer } from '../PortalContainer';
 import { gap } from '../tokens.stylex';
 
 const baseStyles = stylex.create({
-  popup: {
+  // Stacking belongs on the Positioner — the Popup is `position: static`, so a z-index there is inert.
+  positioner: {
     zIndex: 100,
   },
   menu: {
@@ -29,6 +31,7 @@ const SplitButton = Object.assign(
       { open, onOpenChange, children, variants, disabled, xstyle, ...props },
       ref,
     ) {
+      const portalContainer = usePortalContainer();
       const anchorRef = React.useRef<HTMLDivElement | null>(null);
       const setRefs = React.useCallback(
         (node: HTMLDivElement | null) => {
@@ -58,9 +61,9 @@ const SplitButton = Object.assign(
               }
             />
           </ButtonGroup>
-          <Popover.Portal>
-            <Popover.Positioner anchor={anchorRef} sideOffset={5} align="end">
-              <Popover.Popup {...stylex.props(baseStyles.popup)}>
+          <Popover.Portal container={portalContainer}>
+            <Popover.Positioner anchor={anchorRef} sideOffset={5} align="end" {...stylex.props(baseStyles.positioner)}>
+              <Popover.Popup>
                 <Card xstyle={baseStyles.menu}>{children}</Card>
               </Popover.Popup>
             </Popover.Positioner>

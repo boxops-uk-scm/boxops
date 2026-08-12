@@ -23,9 +23,5 @@ export { TextPair } from './TextPair';
 export { Toast } from './Toast';
 export { SplitButton, UncontrolledSplitButton, SplitButtonMenuItem } from './SplitButton';
 export { RichTextArea } from './RichTextArea';
-
-// HELD — not exported yet:
-//   SideNav — depends on `@boxops/router` (absent in this repo) + react-router; needs a
-//   presentational/prop-driven refactor before it belongs in a primitives package.
-//   Files exist at ./SideNav but are intentionally not re-exported. See BATCH0-REVIEW.md.
-// export { SideNav } from './SideNav';
+export { SideNav } from './SideNav';
+export { PortalContainerProvider, usePortalContainer } from './PortalContainer';

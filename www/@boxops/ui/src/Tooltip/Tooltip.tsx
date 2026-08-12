@@ -2,6 +2,7 @@ import { Tooltip as BaseTooltip } from '@base-ui/react';
 import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 
+import { usePortalContainer } from '../PortalContainer';
 import { Text } from '../Text';
 import { backgroundColor, textColor } from '../tokens.stylex';
 import * as bx from '../types';
@@ -12,13 +13,17 @@ const baseStyles = stylex.create({
   root: {
     display: 'contents',
   },
+  // The Popup is `position: static`, so a z-index on it is inert. The Positioner is the positioned
+  // element, so stacking has to be declared there or the tooltip paints below anything with a z-index.
+  positioner: {
+    zIndex: 200,
+  },
   base: {
     width: 'fit-content',
     borderRadius: '12px',
     padding: '4px 8px',
     backgroundColor: backgroundColor.tooltip,
     userSelect: 'none',
-    zIndex: 200,
   },
   label: {
     fontSize: '15px',
@@ -37,6 +42,8 @@ const Tooltip = Object.assign(
     side = 'top',
     xstyle,
   }: Tooltip.Props) {
+    const portalContainer = usePortalContainer();
+
     const styles = [bx.useComponentStyle(baseStyles.base, xstyle)];
 
     return (
@@ -47,8 +54,8 @@ const Tooltip = Object.assign(
             render={trigger}
             closeOnClick={closeOnClick}
           ></BaseTooltip.Trigger>
-          <BaseTooltip.Portal>
-            <BaseTooltip.Positioner sideOffset={5} side={side}>
+          <BaseTooltip.Portal container={portalContainer}>
+            <BaseTooltip.Positioner sideOffset={5} side={side} {...stylex.props(baseStyles.positioner)}>
               <BaseTooltip.Popup {...stylex.props(styles)}>
                 <Text xstyle={baseStyles.label} aria-live="polite">
                   {label}

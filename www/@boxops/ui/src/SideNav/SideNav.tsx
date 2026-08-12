@@ -1,23 +1,21 @@
+import { PreviewCard } from '@base-ui/react';
 import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 
-import { useRouterConfig, usePrefetchLinkHandlers } from '@boxops/router';
-import * as HoverCard from '@radix-ui/react-hover-card';
-
-import { Avatar } from '../Avatar';
 import { Flexbox } from '../Flexbox';
 import { Heading } from '../Heading';
-import { Icon } from '../Icon';
-import { List } from '../List';
-import { Sitemap } from '../Sitemap';
+import { usePortalContainer } from '../PortalContainer';
 import { Text } from '../Text';
-import { backgroundColor, padding } from '../tokens.stylex';
+import { backgroundColor, gap, padding } from '../tokens.stylex';
 import * as bx from '../types';
 
 import Item from './Item';
 
 const baseStyles = stylex.create({
   base: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: gap.XL,
     backgroundColor: backgroundColor.card,
     borderWidth: '0px',
     borderRightWidth: '2px',
@@ -31,18 +29,31 @@ const baseStyles = stylex.create({
   header: {
     paddingTop: padding.L,
   },
+  trigger: {
+    display: 'inline-flex',
+  },
   unselectable: {
     userSelect: 'none',
   },
-  popover: {
+  // Stacking belongs on the Positioner — the Popup is `position: static`, so a z-index there is inert.
+  positioner: {
     zIndex: 100,
   },
   routes: {
     overflowY: 'auto',
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
   },
-  groupHeading: {
+  group: {
+    listStyle: 'none',
     paddingTop: padding.M,
     paddingBottom: padding.M,
+  },
+  groupRoutes: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
   },
   heading: {
     paddingBottom: padding.S,
@@ -51,52 +62,70 @@ const baseStyles = stylex.create({
 
 const SideNav = Object.assign(
   React.memo(
-    React.forwardRef<React.ComponentRef<'div'>, SideNav.Props>(function SideNav({ xstyle, ...rest }, ref) {
-      const { routes } = useRouterConfig();
-      const [onMouseEnter, onClick] = usePrefetchLinkHandlers('/design-system');
+    React.forwardRef<React.ComponentRef<'nav'>, SideNav.Props>(function SideNav(
+      { routes, selectedPath, heading, subheading, media, overview, onRoutePrefetch, onRouteSelect, xstyle, ...rest },
+      ref,
+    ) {
+      const portalContainer = usePortalContainer();
+
+      const renderItem = (route: SideNav.PageRoute, key: React.Key) => (
+        <Item
+          key={key}
+          label={route.title}
+          isSelected={route.path === selectedPath}
+          onPrefetch={onRoutePrefetch && (() => onRoutePrefetch(route.path))}
+          onSelect={onRouteSelect && (() => onRouteSelect(route.path))}
+        />
+      );
 
       return (
-        <Flexbox variants={{ direction: 'column', gap: 'XL' }} xstyle={[baseStyles.base, xstyle]} {...rest}>
-          <Flexbox variants={{ direction: 'column', alignItems: 'center' }} xstyle={baseStyles.header}>
-            <HoverCard.Root openDelay={800}>
-              <HoverCard.Trigger onClick={onClick} onMouseEnter={onMouseEnter}>
-                <Avatar size="XXL" darkenOnHover>
-                  <Avatar.Icon src={Icon.Package} />
-                </Avatar>
-              </HoverCard.Trigger>
-              <HoverCard.Portal>
-                <HoverCard.Content side="top" sideOffset={5} {...stylex.props(baseStyles.popover)}>
-                  <Sitemap />
-                </HoverCard.Content>
-              </HoverCard.Portal>
-            </HoverCard.Root>
-            <Heading as="h1" xstyle={baseStyles.unselectable}>
-              Boxops
-            </Heading>
-            <Text as="small" variants={{ color: 'subtle' }} xstyle={baseStyles.unselectable}>
-              Design System
-            </Text>
-          </Flexbox>
-          <List ref={ref} xstyle={baseStyles.routes}>
+        <nav ref={ref} {...stylex.props(baseStyles.base, xstyle)} {...rest}>
+          {(media || heading || subheading) && (
+            <Flexbox variants={{ direction: 'column', alignItems: 'center' }} xstyle={baseStyles.header}>
+              {media &&
+                (overview ? (
+                  <PreviewCard.Root>
+                    <PreviewCard.Trigger render={<span {...stylex.props(baseStyles.trigger)} />}>{media}</PreviewCard.Trigger>
+                    <PreviewCard.Portal container={portalContainer}>
+                      <PreviewCard.Positioner side="top" sideOffset={5} {...stylex.props(baseStyles.positioner)}>
+                        <PreviewCard.Popup>{overview}</PreviewCard.Popup>
+                      </PreviewCard.Positioner>
+                    </PreviewCard.Portal>
+                  </PreviewCard.Root>
+                ) : (
+                  media
+                ))}
+              {heading && (
+                <Heading as="h1" xstyle={baseStyles.unselectable}>
+                  {heading}
+                </Heading>
+              )}
+              {subheading && (
+                <Text as="small" variants={{ color: 'subtle' }} xstyle={baseStyles.unselectable}>
+                  {subheading}
+                </Text>
+              )}
+            </Flexbox>
+          )}
+          <ul {...stylex.props(baseStyles.routes)}>
             {routes
-              .filter((route) => !('hideFromNav' in route && route.hideFromNav))
+              .filter((route) => !route.hideFromNav)
               .map((route, index) => {
-                switch (route.type) {
-                  case 'group':
-                    return (
-                      <div key={index} {...stylex.props(baseStyles.groupHeading)}>
-                        <Heading xstyle={[baseStyles.heading, baseStyles.unselectable]}>{route.label}</Heading>
-                        {route.children.map((subRoute, subIndex) => (
-                          <Item key={subIndex} route={subRoute} />
-                        ))}
-                      </div>
-                    );
-                  case 'page':
-                    return <Item key={index} route={route} />;
+                if (route.type === 'group') {
+                  return (
+                    <li key={index} {...stylex.props(baseStyles.group)}>
+                      <Heading xstyle={[baseStyles.heading, baseStyles.unselectable]}>{route.label}</Heading>
+                      <ul {...stylex.props(baseStyles.groupRoutes)}>
+                        {route.children.map((subRoute, subIndex) => renderItem(subRoute, subIndex))}
+                      </ul>
+                    </li>
+                  );
                 }
+
+                return renderItem(route, index);
               })}
-          </List>
-        </Flexbox>
+          </ul>
+        </nav>
       );
     }),
   ),
@@ -106,7 +135,36 @@ const SideNav = Object.assign(
 );
 
 namespace SideNav {
-  export type Props = bx.ComponentProps<'div'>;
+  export interface PageRoute {
+    type: 'page';
+    /** Identifies the route. Compared against `selectedPath` to mark the item as current. */
+    path: string;
+    title: React.ReactNode;
+    hideFromNav?: boolean;
+  }
+
+  export interface GroupRoute {
+    type: 'group';
+    label: React.ReactNode;
+    children: readonly PageRoute[];
+    hideFromNav?: boolean;
+  }
+
+  export type Route = PageRoute | GroupRoute;
+
+  export interface Props extends Omit<bx.ComponentProps<'nav'>, 'children' | 'title'> {
+    routes: readonly Route[];
+    /** Path of the route to mark as current. Callers owning pattern matching pass the resolved path. */
+    selectedPath?: string;
+    heading?: React.ReactNode;
+    subheading?: React.ReactNode;
+    /** Rendered above the heading. Supply an interactive node if it should be clickable. */
+    media?: React.ReactNode;
+    /** Revealed on hover over `media`. Ignored when `media` is absent. */
+    overview?: React.ReactNode;
+    onRoutePrefetch?: (path: string) => void;
+    onRouteSelect?: (path: string) => void;
+  }
 }
 
 export default SideNav;

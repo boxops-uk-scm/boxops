@@ -10,12 +10,17 @@ const shimmer = stylex.keyframes({
   },
 });
 
+// StyleX drops the `background` and `animation` shorthands, so both are spelled out as longhands —
+// the shorthand form compiles away silently and leaves the glimmer invisible and unanimated.
 const baseStyles = stylex.create({
   base: {
-    background: `linear-gradient(to right, ${nonsemanticBackgroundColor.blue} 0%, ${nonsemanticBackgroundColor.pink} 48%, ${nonsemanticBackgroundColor.pink} 52%, ${nonsemanticBackgroundColor.blue} 100%)`,
+    backgroundImage: `linear-gradient(to right, ${nonsemanticBackgroundColor.blue} 0%, ${nonsemanticBackgroundColor.pink} 48%, ${nonsemanticBackgroundColor.pink} 52%, ${nonsemanticBackgroundColor.blue} 100%)`,
     backgroundSize: '300%',
     backgroundPositionX: '300%',
-    animation: `${shimmer} 4s infinite linear`,
+    animationName: shimmer,
+    animationDuration: '4s',
+    animationIterationCount: 'infinite',
+    animationTimingFunction: 'linear',
   },
 });
 

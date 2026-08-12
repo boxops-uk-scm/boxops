@@ -13,46 +13,59 @@ import * as bx from '../types';
 
 import { vars } from './vars.stylex';
 
+/**
+ * Interaction states are expressed as blends toward a token, not toward a literal, so they follow
+ * the colour scheme:
+ *
+ * - **disabled** fades halfway into `backgroundColor.surface` — the ground the button sits on. It
+ *   used to blend toward literal `white`, which is the surface in light mode but the opposite of it
+ *   in dark mode, making disabled buttons brighter and more prominent than enabled ones.
+ * - **hover/active** shift toward `textColor.primary`, the foreground ink. That darkens on a light
+ *   ground and lightens on a dark one, where blending toward literal `black` left almost no
+ *   perceptible feedback.
+ *
+ * In light mode both resolve to the values they always had, so nothing there changes.
+ */
 const variantStyles = {
   appearance: stylex.create({
     default: {
       [vars.backgroundColor]: {
         default: backgroundColor.button,
-        ':disabled': `color-mix(in srgb, white 50%, ${backgroundColor.button} 50%)`,
-        ':enabled:hover': `color-mix(in srgb, black 5%, ${backgroundColor.button} 95%)`,
-        ':enabled:active': `color-mix(in srgb, black 10%, ${backgroundColor.button} 90%)`,
+        ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${backgroundColor.button} 50%)`,
+        ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, ${backgroundColor.button} 95%)`,
+        ':enabled:active': `color-mix(in srgb, ${textColor.primary} 10%, ${backgroundColor.button} 90%)`,
       },
     },
     flat: {
       [vars.backgroundColor]: {
         default: 'transparent',
-        ':disabled': 'rgba(255,255,255,0.5)',
-        ':enabled:hover': 'rgba(0,0,0,0.05)',
-        ':enabled:active': 'rgba(0,0,0,0.1)',
+        ':disabled': `oklch(from ${backgroundColor.surface} l c h / 50%)`,
+        ':enabled:hover': `oklch(from ${textColor.primary} l c h / 5%)`,
+        ':enabled:active': `oklch(from ${textColor.primary} l c h / 10%)`,
       },
     },
     primary: {
       [vars.backgroundColor]: {
         default: semanticColor.accent,
-        ':disabled': `color-mix(in srgb, white 50%, ${semanticColor.accent} 50%)`,
-        ':enabled:hover': `color-mix(in srgb, black 5%, ${semanticColor.accent} 95%)`,
-        ':enabled:active': `color-mix(in srgb, black 10%, ${semanticColor.accent} 90%)`,
+        ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${semanticColor.accent} 50%)`,
+        ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, ${semanticColor.accent} 95%)`,
+        ':enabled:active': `color-mix(in srgb, ${textColor.primary} 10%, ${semanticColor.accent} 90%)`,
       },
     },
     negative: {
       [vars.backgroundColor]: {
         default: semanticColor.negative,
-        ':disabled': `color-mix(in srgb, white 50%, ${semanticColor.negative} 50%)`,
-        ':enabled:hover': `color-mix(in srgb, black 5%, ${semanticColor.negative} 95%)`,
-        ':enabled:active': `color-mix(in srgb, black 10%, ${semanticColor.negative} 90%)`,
+        ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${semanticColor.negative} 50%)`,
+        ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, ${semanticColor.negative} 95%)`,
+        ':enabled:active': `color-mix(in srgb, ${textColor.primary} 10%, ${semanticColor.negative} 90%)`,
       },
     },
     positive: {
       [vars.backgroundColor]: {
         default: semanticColor.positive,
-        ':disabled': `color-mix(in srgb, white 50%, ${semanticColor.positive} 50%)`,
-        ':enabled:hover': `color-mix(in srgb, black 5%, ${semanticColor.positive} 95%)`,
-        ':enabled:active': `color-mix(in srgb, black 10%, ${semanticColor.positive} 90%)`,
+        ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${semanticColor.positive} 50%)`,
+        ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, ${semanticColor.positive} 95%)`,
+        ':enabled:active': `color-mix(in srgb, ${textColor.primary} 10%, ${semanticColor.positive} 90%)`,
       },
     },
   }),
@@ -70,6 +83,11 @@ const variantStyles = {
 
 const baseStyles = stylex.create({
   base: {
+    // Set on the button itself, not just on `label`: the UA stylesheet gives form controls their
+    // own `color`, so a `<button>` never inherits the page ink. Without this, anything passed as
+    // `startContent`/`endContent` that relies on inheritance — plain text glyphs, for instance —
+    // renders UA black, which happens to look right on a light ground and wrong on a dark one.
+    color: vars.color,
     fill: vars.color,
     backgroundColor: vars.backgroundColor,
     borderTopLeftRadius: vars.borderRadiusLeft,
@@ -92,8 +110,8 @@ const baseStyles = stylex.create({
     },
     [badgeVars.color]: {
       default: 'white',
-      ':enabled:hover': `color-mix(in srgb, black 5%, white 95%)`,
-      ':enabled:active': `color-mix(in srgb, black 10%, white 90%)`,
+      ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, white 95%)`,
+      ':enabled:active': `color-mix(in srgb, ${textColor.primary} 10%, white 90%)`,
     },
     [badgeVars.backgroundColor]: {
       default: 'rgba(0,0,0,0.5)',
@@ -104,29 +122,29 @@ const baseStyles = stylex.create({
     [spinnerVars.fill]: badgeVars.color,
     [iconVars.fill]: {
       default: 'white',
-      ':enabled:hover': `color-mix(in srgb, black 5%, white 95%)`,
-      ':enabled:active': `color-mix(in srgb, black 10%, white 90%)`,
+      ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, white 95%)`,
+      ':enabled:active': `color-mix(in srgb, ${textColor.primary} 10%, white 90%)`,
     },
   },
   spinner: {
     [spinnerVars.fill]: null,
   },
-  onLightMedia: {
+  onSurface: {
     [vars.color]: {
-      default: textColor.onLightMedia,
-      ':disabled': `color-mix(in srgb, white 50%, ${textColor.subtle} 50%)`,
+      default: textColor.primary,
+      ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${textColor.subtle} 50%)`,
     },
     [spinnerVars.fill]: {
       default: semanticColor.accent,
-      ':disabled': `color-mix(in srgb, white 50%, ${semanticColor.accent} 50%)`,
-      ':enabled:hover': `color-mix(in srgb, black 5%, ${semanticColor.accent} 95%)`,
-      ':enabled:active': `color-mix(in srgb, black 10%, ${semanticColor.accent} 90%)`,
+      ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${semanticColor.accent} 50%)`,
+      ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, ${semanticColor.accent} 95%)`,
+      ':enabled:active': `color-mix(in srgb, ${textColor.primary} 10%, ${semanticColor.accent} 90%)`,
     },
     [iconVars.fill]: {
-      default: iconColor.onLightMedia,
-      ':disabled': `color-mix(in srgb, white 50%, ${iconColor.onLightMedia} 50%)`,
-      ':enabled:hover': `color-mix(in srgb, black 5%, ${iconColor.onLightMedia} 95%)`,
-      ':enabled:active': `color-mix(in srgb, black 10%, ${iconColor.onLightMedia} 90%)`,
+      default: iconColor.primary,
+      ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${iconColor.primary} 50%)`,
+      ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, ${iconColor.primary} 95%)`,
+      ':enabled:active': `color-mix(in srgb, ${textColor.primary} 10%, ${iconColor.primary} 90%)`,
     },
   },
   label: {
@@ -182,7 +200,7 @@ const Button = Object.assign(
       };
 
       const appearance = variants.appearance;
-      const onLightMedia = appearance === undefined || appearance === 'default' || appearance === 'flat';
+      const onSurface = appearance === undefined || appearance === 'default' || appearance === 'flat';
       const labelBaseStyle = loading ? baseStyles.placeholder : baseStyles.label;
       const state: Button.State = { variants, disabled: !!disabled, loading: !!loading };
 
@@ -192,7 +210,7 @@ const Button = Object.assign(
       const styles = [
         baseStyles.base,
         bx.useVariantStyle<Button.Variants>(variantStyles, variants),
-        onLightMedia && baseStyles.onLightMedia,
+        onSurface && baseStyles.onSurface,
         bx.useComponentStyleWithState<Button.State>(state, xstyle),
       ];
 
@@ -204,13 +222,13 @@ const Button = Object.assign(
               <>
                 {!state.loading && (
                   <Text data-text={label} xstyle={labelBaseStyle}>
-                    {onLightMedia ? label : <Text as="b">{label}</Text>}
+                    {onSurface ? label : <Text as="b">{label}</Text>}
                   </Text>
                 )}
                 {state.loading && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                     <Text data-text={label} xstyle={labelBaseStyle} />
-                    <Spinner variants={{ color: onLightMedia ? 'onLightMedia' : 'onDarkMedia' }} xstyle={baseStyles.spinner} />
+                    <Spinner variants={{ color: onSurface ? 'onLightMedia' : 'onDarkMedia' }} xstyle={baseStyles.spinner} />
                   </div>
                 )}
               </>

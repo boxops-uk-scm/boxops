@@ -29,7 +29,7 @@ const UncontrolledSplitButton = React.memo(
 );
 
 namespace UncontrolledSplitButton {
-  export interface Props extends Omit<SplitButton.Props, 'open' | 'onOpenChange'> {}
+  export type Props = Omit<SplitButton.Props, 'open' | 'onOpenChange'>;
 }
 
 export default UncontrolledSplitButton;
