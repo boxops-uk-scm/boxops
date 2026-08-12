@@ -9,8 +9,8 @@ import { usePortalContainer } from '../../PortalContainer';
 import { Spinner } from '../../Spinner';
 import EmployeeHoverCardContent from '../EmployeeHoverCardContent/EmployeeHoverCardContent';
 
-import type { EmployeeHoverCardQuery } from '@repo/relay-artifacts/src/__generated__/EmployeeHoverCardQuery.graphql';
 import type { EmployeeHoverCard_fragment$key } from '@repo/relay-artifacts/src/__generated__/EmployeeHoverCard_fragment.graphql';
+import type { EmployeeHoverCardQuery } from '@repo/relay-artifacts/src/__generated__/EmployeeHoverCardQuery.graphql';
 
 /**
  * Wraps whatever should reveal a person's card on hover.

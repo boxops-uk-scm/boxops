@@ -14,10 +14,15 @@ const variantStyles = {
   status: stylex.create({
     // `info` maps to the accent blue rather than `semanticColor.info` (purple). That is the v1
     // behaviour, preserved verbatim — Toast carries the same quirk.
-    info: { color: semanticColor.accent, backgroundColor: semanticColor.accentSubtle },
-    warning: { color: semanticColor.warning, backgroundColor: semanticColor.warningSubtle },
-    error: { color: semanticColor.negative, backgroundColor: semanticColor.negativeSubtle },
-    success: { color: semanticColor.positive, backgroundColor: semanticColor.positiveSubtle },
+    //
+    // `color` is the `*Ink` token paired with each tint, not the bold status hue v1 used here. It is
+    // inherited by two things: the description (the title pins `textColor.primary` itself) and the
+    // status icon, whose fill defaults to `currentColor`. Both were failing — vivid yellow on the
+    // light warning tint measured 1.70, below even the 3.0 icons need.
+    info: { color: semanticColor.accentInk, backgroundColor: semanticColor.accentSubtle },
+    warning: { color: semanticColor.warningInk, backgroundColor: semanticColor.warningSubtle },
+    error: { color: semanticColor.negativeInk, backgroundColor: semanticColor.negativeSubtle },
+    success: { color: semanticColor.positiveInk, backgroundColor: semanticColor.positiveSubtle },
   }),
 } as const satisfies bx.VariantStyles;
 

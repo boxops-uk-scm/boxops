@@ -56,6 +56,26 @@ export const semanticColor = stylex.defineVars({
   negativeSubtle: 'oklch(58.58% 0.2258 21.26 / 20%)',
   warningSubtle: 'oklch(75.76% 0.156365 81.2982 / 20%)',
   infoSubtle: 'oklch(58.25% 0.2416 286.61 / 20%)',
+  // The ink for text and icons sitting on the matching `*Subtle` ground — one per tint, so nothing
+  // reaches for the vivid status hue instead. The bold hues above are fills: a dot, a toast stripe,
+  // a solid button, all read against the page. Used as ink on their own 20% tint they have nothing
+  // to contrast with, and Banner measured 1.70 for warning-on-white and 2.32 for success-on-dark.
+  //
+  // Derived by the rule the nonsemantic ramp documents below, applied to the composited ground:
+  // hold the ink-to-chip OKLCH lightness distance, keep as much chroma as sRGB allows, and take the
+  // hue of the same family's nonsemantic ink — those hues were already designed to read at ink
+  // lightness, which is why yellow lands at 63 rather than the tint's 81. The ramp's ten hues
+  // average 56.3 light and 52.7 dark, and that mean is used for all five rather than each family's
+  // own gap: a status set should feel uniform in weight, where a badge palette can vary by hue.
+  //
+  // These must flip even though the tints do not. The tints are translucent, so the same declared
+  // value composites to L≈90-95 on white and L≈32-38 on the dark card; ink that works on one is
+  // invisible on the other. Worst case after the change is 7.48, against 4.5 for body text.
+  accentInk: { default: 'oklch(35.06% 0.1746 263.19)', [DARK]: 'oklch(87.32% 0.0618 263.19)' },
+  positiveInk: { default: 'oklch(35.79% 0.0858 150.59)', [DARK]: 'oklch(87.86% 0.0858 150.59)' },
+  negativeInk: { default: 'oklch(33.40% 0.1360 25.97)', [DARK]: 'oklch(84.20% 0.0867 25.97)' },
+  warningInk: { default: 'oklch(38.40% 0.0808 63.05)', [DARK]: 'oklch(90.34% 0.0651 63.05)' },
+  infoInk: { default: 'oklch(34.97% 0.1541 286.86)', [DARK]: 'oklch(86.44% 0.0701 286.86)' },
   focusOutline: 'oklch(53.34% 0.2049 258.81 / 20%)',
 });
 

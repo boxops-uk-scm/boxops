@@ -34,15 +34,20 @@ function relayPlugin(): Plugin {
     enforce: 'pre',
 
     // `babel-plugin-relay` always emits a *relative* import, and always writes it without the `.ts`
-    // the compiler actually produces — so the specifier names a file that does not exist. Resolving
-    // it here is less invasive than teaching the compiler to emit a different extension.
-    resolveId(source, importer) {
-      if (!importer || !source.endsWith('.graphql')) {
+    // the compiler actually produces — so the specifier names a file that does not exist.
+    //
+    // Resolved by basename against the artifact directory rather than by walking the relative path.
+    // Relay operation and fragment names are globally unique, so the basename identifies the file on
+    // its own; the relative path meanwhile depends on where the importing module physically sits and
+    // on the exact id form Vite hands over, which differs between the dev server and the gateway
+    // running the same config in middleware mode.
+    resolveId(source) {
+      if (!source.endsWith('.graphql')) {
         return undefined;
       }
 
-      const resolved = path.resolve(path.dirname(importer), source) + '.ts';
-      return fs.existsSync(resolved) ? resolved : undefined;
+      const artifact = path.join(relayArtifacts, `${path.basename(source)}.ts`);
+      return fs.existsSync(artifact) ? artifact : undefined;
     },
     transform(src, id) {
       const file = id.split('?')[0];
