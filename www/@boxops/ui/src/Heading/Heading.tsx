@@ -1,7 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 
-import { textColor } from '../tokens.stylex';
+import { fontFamily, textColor } from '../tokens.stylex';
 import * as bx from '../types';
 
 import type { PolyRefFunction } from 'react-polymorphed';
@@ -15,7 +15,7 @@ const baseStyles = stylex.create({
     // `primary`, not `onLightMedia`: headings are body content and must follow the colour scheme.
     // `onLightMedia` names a fixed light ground, so it left headings near-black in dark mode.
     color: textColor.primary,
-    fontFamily: '"Open Sans", sans-serif',
+    fontFamily: fontFamily.body,
     marginTop: 0,
     marginBlockEnd: 0,
   },

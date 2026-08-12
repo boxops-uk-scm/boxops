@@ -6,7 +6,7 @@ import { Flexbox } from '../Flexbox';
 import { Heading } from '../Heading';
 import { usePortalContainer } from '../PortalContainer';
 import { Text } from '../Text';
-import { backgroundColor, gap, padding } from '../tokens.stylex';
+import { backgroundColor, colorScheme, gap, padding, scrollbarColor } from '../tokens.stylex';
 import * as bx from '../types';
 
 import Item from './Item';
@@ -25,6 +25,12 @@ const baseStyles = stylex.create({
     top: 0,
     paddingLeft: padding.S,
     paddingRight: padding.S,
+    // The route list scrolls, so the nav owns a scrollbar. `scrollbarColor` themes it where that is
+    // supported and `colorScheme` gets a correctly-schemed native one everywhere else — see the note
+    // in `tokens.stylex.ts`. Both are declared here rather than on `routes` because both inherit, so
+    // this also covers a consumer who moves the scroll onto the nav itself through `xstyle`.
+    colorScheme: colorScheme.ui,
+    scrollbarColor: scrollbarColor.subtle,
   },
   header: {
     paddingTop: padding.L,

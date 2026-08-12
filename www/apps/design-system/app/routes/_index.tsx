@@ -28,6 +28,20 @@ import {
   RichTextArea,
   SideNav,
   PortalContainerProvider,
+  Link,
+  List,
+  ListItem,
+  Avatar,
+  AvatarImage,
+  AvatarInitials,
+  AvatarIcon,
+  Meter,
+  UncontrolledBanner,
+  MeetingMenu,
+  MeetingMenuItem,
+  ToolsMenu,
+  Notification,
+  NotificationMenu,
 } from '@boxops/ui';
 import { vars as metadataListVars } from '@boxops/ui/MetadataList/vars.stylex';
 import { palette } from '@boxops/ui/palette.stylex';
@@ -282,7 +296,50 @@ const styles = stylex.create({
   sideNavOverview: {
     width: '260px',
   },
+  avatarRow: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '1rem',
+    flexWrap: 'wrap',
+  },
+  menuRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '1rem',
+    flexWrap: 'wrap',
+  },
+  meterStage: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '1rem',
+    maxWidth: '420px',
+  },
+  listStage: {
+    maxWidth: '380px',
+  },
 });
+
+// Fixed instants so the meeting menu renders identically on server and client.
+const MEETING_NOW = new Date('2026-08-12T09:30:00Z');
+const MEETING_IN_PROGRESS = { start: new Date('2026-08-12T09:00:00Z'), end: new Date('2026-08-12T10:00:00Z') };
+const MEETING_UPCOMING = { start: new Date('2026-08-12T11:00:00Z'), end: new Date('2026-08-12T11:30:00Z') };
+
+// Generated faces, so the image path is exercised with real photographs rather than a flat SVG.
+// Served from the app's `public/` directory.
+const AVATAR_IMAGES = ['/avatar-1.jpg', '/avatar-2.jpg', '/avatar-3.jpg'];
+
+const TOOLS_MENU_ITEMS: readonly ToolsMenu.Item[] = [
+  { label: 'Home', icon: Phosphor.HouseIcon },
+  { label: 'Calendar', icon: Phosphor.CalendarIcon },
+  { label: 'Search', icon: Phosphor.MagnifyingGlassIcon },
+  { label: 'Tasks', icon: Phosphor.ClipboardTextIcon },
+  { label: 'Diffs', icon: Phosphor.GitDiffIcon },
+  { label: 'SEVs', icon: Phosphor.FlameIcon },
+  { type: 'divider' },
+  { label: 'Create URL', icon: Phosphor.LinkSimpleIcon },
+  { label: 'Shortcuts', icon: Phosphor.ArrowSquareOutIcon, hasSubmenu: true },
+  { label: 'Recently opened', icon: Phosphor.ClockIcon, hasSubmenu: true },
+];
 
 const lorem =
   'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.';
@@ -1185,6 +1242,155 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
             </Card>
           }
           xstyle={styles.sideNav}
+        />
+      </section>
+      <Heading isContent>Link</Heading>
+      <section {...stylex.props(styles.row, styles.componentStage)}>
+        <Link href="#link-demo">A link to somewhere</Link>
+        <Text as="small">
+          Inline: <Link href="#link-demo">nested in a sentence</Link> and after.
+        </Text>
+      </section>
+      <Heading isContent>Avatar</Heading>
+      <section {...stylex.props(styles.avatarRow, styles.componentStage)}>
+        {(['XS', 'S', 'M', 'L', 'XL', 'XXL'] as const).map((size) => (
+          <Avatar key={size} variants={{ size }}>
+            <AvatarInitials initials="TB" />
+          </Avatar>
+        ))}
+      </section>
+      <section {...stylex.props(styles.avatarRow, styles.componentStage)}>
+        {(['available', 'away', 'busy', 'offline'] as const).map((status) => (
+          <Avatar key={status} status={status} variants={{ size: 'L' }}>
+            <AvatarInitials initials={status.slice(0, 2).toUpperCase()} />
+          </Avatar>
+        ))}
+        <Avatar variants={{ size: 'L' }}>
+          <AvatarIcon icon={Phosphor.UsersIcon} seed="team" />
+        </Avatar>
+        {AVATAR_IMAGES.map((src, i) => (
+          <Avatar key={src} variants={{ size: 'L' }}>
+            <AvatarImage src={src} alt={`Generated portrait ${i + 1}`} />
+          </Avatar>
+        ))}
+        <Avatar hasVignette variants={{ size: 'L' }}>
+          <AvatarInitials initials="VG" />
+        </Avatar>
+        <Avatar darkenOnHover variants={{ size: 'L' }}>
+          <AvatarInitials initials="HV" />
+        </Avatar>
+      </section>
+      <section {...stylex.props(styles.avatarRow, styles.componentStage)}>
+        {(['S', 'M', 'L', 'XL', 'XXL', 'XXXL'] as const).map((size) => (
+          <Avatar key={size} variants={{ size }}>
+            <AvatarImage src={AVATAR_IMAGES[0]} alt="" />
+          </Avatar>
+        ))}
+        <Avatar status="available" variants={{ size: 'XXL' }}>
+          <AvatarImage src={AVATAR_IMAGES[1]} alt="" />
+        </Avatar>
+        <Avatar hasVignette variants={{ size: 'XXL' }}>
+          <AvatarImage src={AVATAR_IMAGES[2]} alt="" />
+        </Avatar>
+        <Avatar darkenOnHover variants={{ size: 'XXL' }}>
+          <AvatarImage src={AVATAR_IMAGES[0]} alt="" />
+        </Avatar>
+      </section>
+      <Heading isContent>List</Heading>
+      <section {...stylex.props(styles.componentStage)}>
+        <List variants={{ gap: 'XXS' }} xstyle={styles.listStage}>
+          <ListItem
+            label="Overview"
+            description="Everything at a glance"
+            startContent={<Icon as={Phosphor.HouseIcon} />}
+          />
+          <ListItem isSelected label="Diffs" description="12 awaiting review" startContent={<Icon as={Phosphor.GitDiffIcon} />} />
+          <ListItem label="Tasks" startContent={<Icon as={Phosphor.ClipboardTextIcon} />} endContent={<Badge label="3" />} />
+          <ListItem label="Archive" startContent={<Icon as={Phosphor.TrayIcon} />} />
+        </List>
+      </section>
+      <Heading isContent>Meter</Heading>
+      <section {...stylex.props(styles.meterStage, styles.componentStage)}>
+        <Meter status="indeterminate" value={0} label="Preparing" />
+        <Meter status="in-progress" value={0.42} label="Uploading" />
+        <Meter status="paused" value={0.42} label="Paused" />
+        <Meter status="error" value={0.68} label="Failed" />
+        <Meter status="complete" value={1} label="Done" />
+        <Meter status="in-progress" value={0.3} />
+      </section>
+      <Heading isContent>Banner</Heading>
+      <section {...stylex.props(styles.content, styles.componentStage)}>
+        {(['info', 'success', 'warning', 'error'] as const).map((status) => (
+          <UncontrolledBanner
+            key={status}
+            variants={{ status }}
+            title={`${status[0].toUpperCase()}${status.slice(1)} banner`}
+            description="Supporting description for the banner."
+          />
+        ))}
+        <UncontrolledBanner
+          variants={{ status: 'info' }}
+          title="Expandable banner"
+          description="Has children, so it gets a caret."
+        >
+          <Text as="small">Revealed content lives here.</Text>
+        </UncontrolledBanner>
+      </section>
+      <Heading isContent>Notification</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <NotificationMenu filterLabel="Unread" filters={[{ label: 'Urgent' }, { label: 'Read' }]}>
+          <Notification
+            avatar={
+              <Avatar variants={{ size: 'S' }}>
+                <AvatarInitials initials="AL" />
+              </Avatar>
+            }
+          >
+            <Text as="small">Alex requested review on a diff you own.</Text>
+          </Notification>
+          <Notification
+            isSeen
+            avatar={
+              <Avatar variants={{ size: 'S' }}>
+                <AvatarInitials initials="RK" />
+              </Avatar>
+            }
+          >
+            <Text as="small">Riku commented on your task.</Text>
+          </Notification>
+        </NotificationMenu>
+      </section>
+      <Heading isContent>Tools Menu</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <ToolsMenu items={TOOLS_MENU_ITEMS} />
+      </section>
+      <Heading isContent>Meeting Menu</Heading>
+      <section {...stylex.props(styles.menuRow, styles.componentStage)}>
+        <MeetingMenu
+          date={MEETING_NOW}
+          inProgress={
+            <MeetingMenuItem
+              now={MEETING_NOW}
+              meetingName="Design system review"
+              meetingRoom="Kensington 3"
+              startTime={MEETING_IN_PROGRESS.start}
+              endTime={MEETING_IN_PROGRESS.end}
+              participants={
+                <Avatar variants={{ size: 'XS' }}>
+                  <AvatarInitials initials="TB" />
+                </Avatar>
+              }
+            />
+          }
+          upcoming={
+            <MeetingMenuItem
+              now={MEETING_NOW}
+              meetingName="Consolidation standup"
+              meetingRoom="Zoom"
+              startTime={MEETING_UPCOMING.start}
+              endTime={MEETING_UPCOMING.end}
+            />
+          }
         />
       </section>
     </>

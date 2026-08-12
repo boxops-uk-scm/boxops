@@ -3,11 +3,13 @@ import * as stylex from '@stylexjs/stylex';
 import { palette } from './palette.stylex';
 import {
   backgroundColor,
+  colorScheme,
   dividerColor,
   iconColor,
   nonsemanticBackgroundColor,
   nonsemanticTextColor,
   outlineColor,
+  scrollbarColor,
   semanticColor,
   textColor,
 } from './tokens.stylex';
@@ -23,6 +25,17 @@ import {
  * Only tokens that actually differ between the schemes are overridden; the rest already resolve to
  * a single value. Values come from `palette.stylex.ts`, so there is one source for each ink.
  */
+
+// Pinning the inks without pinning these two would leave the scrollbars painting against the
+// reader's setting while the pane paints against the forced one — the two disagreeing is exactly the
+// mismatch a forced theme exists to avoid.
+const colorSchemeLight = stylex.createTheme(colorScheme, { ui: 'light' });
+
+const colorSchemeDark = stylex.createTheme(colorScheme, { ui: 'dark' });
+
+const scrollbarLight = stylex.createTheme(scrollbarColor, { subtle: `${palette.gray350} transparent` });
+
+const scrollbarDark = stylex.createTheme(scrollbarColor, { subtle: `${palette.gray600} transparent` });
 
 const semanticLight = stylex.createTheme(semanticColor, {
   accent: palette.blue650,
@@ -56,6 +69,7 @@ const backgroundLight = stylex.createTheme(backgroundColor, {
   navbar: palette.white,
   popover: palette.white,
   secondary: 'oklch(0% 0 0 / 5%)',
+  overlay: 'oklch(0% 0 0 / 10%)',
   button: palette.gray100,
   input: palette.white,
   tooltip: palette.gray950,
@@ -67,6 +81,7 @@ const backgroundDark = stylex.createTheme(backgroundColor, {
   navbar: palette.gray1050,
   popover: palette.gray950,
   secondary: 'oklch(100% 0 0 / 5%)',
+  overlay: 'oklch(100% 0 0 / 10%)',
   button: 'oklch(100% 0 0 / 10%)',
   input: palette.gray950,
   tooltip: palette.white,
@@ -165,6 +180,8 @@ const nonsemanticTextDark = stylex.createTheme(nonsemanticTextColor, {
 });
 
 export const lightTheme = [
+  colorSchemeLight,
+  scrollbarLight,
   semanticLight,
   outlineLight,
   backgroundLight,
@@ -176,6 +193,8 @@ export const lightTheme = [
 ];
 
 export const darkTheme = [
+  colorSchemeDark,
+  scrollbarDark,
   semanticDark,
   outlineDark,
   backgroundDark,

@@ -9,6 +9,35 @@ import { palette } from './palette.stylex';
  */
 const DARK = '@media (prefers-color-scheme: dark)';
 
+/**
+ * The scrollbar, in the two layers the platform gives us.
+ *
+ * `scrollbarColor` is the designed one: `scrollbar-color` takes thumb-then-track as a single pair, so
+ * the pair is one token rather than two — it is what changes together, and a use site cannot
+ * concatenate two vars anyway. The track stays transparent so the thumb floats on whatever surface is
+ * scrolling, and the thumb is picked by the rule the nonsemantic ramps document below: hold the OKLCH
+ * lightness distance from that surface steady across the schemes. Off white, `gray350` sits 24.8
+ * away; off `backgroundColor.card`, `gray600` sits 27.7 — the nearest ramp entry that also keeps the
+ * neutral ~243 hue, where `gray650` would be closer in lightness but drifts violet.
+ *
+ * `colorScheme` is the fallback, and worth having on its own account. `scrollbar-color` is unsupported
+ * in Safari and in Chromium before 121; those UAs paint a native scrollbar instead, and without being
+ * told the scheme they paint the light one — which is the white bar that stands out against a dark
+ * nav. It is not only about scrollbars either: `color-scheme` also governs form widgets and the
+ * `Canvas`/`ButtonFace` system colours in the subtree.
+ *
+ * Both have to be per-subtree vars rather than a rule on `:root`: the design-system demo forces both
+ * schemes onto one page, so a document-level declaration would leave one pane painting its scrollbar
+ * against the reader's setting instead of its own theme.
+ */
+export const colorScheme = stylex.defineVars({
+  ui: { default: 'light', [DARK]: 'dark' },
+});
+
+export const scrollbarColor = stylex.defineVars({
+  subtle: { default: `${palette.gray350} transparent`, [DARK]: `${palette.gray600} transparent` },
+});
+
 export const semanticColor = stylex.defineVars({
   accent: { default: palette.blue650, [DARK]: palette.blue500 },
   positive: palette.green600,
@@ -49,8 +78,9 @@ export const backgroundColor = stylex.defineVars({
   badge: 'oklch(52.43% 0.0299 248.4)',
   button: { default: palette.gray100, [DARK]: 'oklch(100% 0 0 / 10%)' },
   input: { default: palette.white, [DARK]: palette.gray950 },
-  // TODO(dark): a 10% black scrim barely registers on a dark ground; likely wants white/~20%.
-  overlay: 'oklch(0% 0 0 / 10%)',
+  // Must flip, for the same reason as `secondary`: a 10% black scrim is invisible on a dark ground.
+  // Meter's track is the first consumer that depends on it being visible.
+  overlay: { default: 'oklch(0% 0 0 / 10%)', [DARK]: 'oklch(100% 0 0 / 10%)' },
   tooltip: { default: palette.gray950, [DARK]: palette.white },
 });
 
@@ -123,6 +153,17 @@ export const nonsemanticTextColor = stylex.defineVars({
 export const dividerColor = stylex.defineVars({
   subtle: { default: palette.gray200, [DARK]: palette.gray600 },
   strong: { default: palette.gray600, [DARK]: palette.gray200 },
+});
+
+/**
+ * `Text` and `Heading` each carried their own copy of the family, and anything that renders text
+ * without going through them — `Link`, most visibly — declared none and fell through to the UA's
+ * serif default. The stack ends in the platform UI faces rather than bare `sans-serif` so the
+ * fallback is a deliberate choice instead of whatever the browser picks.
+ */
+export const fontFamily = stylex.defineVars({
+  body: "'Open Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+  mono: "'Noto Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
 });
 
 export const gap = stylex.defineVars({

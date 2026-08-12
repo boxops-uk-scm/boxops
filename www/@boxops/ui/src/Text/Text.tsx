@@ -1,7 +1,7 @@
 import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 
-import { textColor } from '../tokens.stylex';
+import { fontFamily, textColor } from '../tokens.stylex';
 import * as bx from '../types';
 
 import type { PolyRefFunction } from 'react-polymorphed';
@@ -18,7 +18,7 @@ const variantStyles = {
 
 const baseStyles = stylex.create({
   base: {
-    fontFamily: "'Open Sans', sans-serif",
+    fontFamily: fontFamily.body,
     WebkitFontSmoothing: 'antialiased',
     MozOsxFontSmoothing: 'grayscale',
     textSizeAdjust: 'none',
@@ -40,7 +40,7 @@ const baseStyles = stylex.create({
     lineHeight: '20px',
   },
   code: {
-    fontFamily: '"Noto Sans Mono", monospace',
+    fontFamily: fontFamily.mono,
   },
   unselectable: {
     userSelect: 'none',
