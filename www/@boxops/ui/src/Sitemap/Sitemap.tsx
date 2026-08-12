@@ -3,7 +3,7 @@ import * as React from 'react';
 
 import { Card } from '../Card';
 import { Flexbox } from '../Flexbox';
-import { padding } from '../tokens.stylex';
+import { colorScheme, padding, scrollbarColor } from '../tokens.stylex';
 import * as bx from '../types';
 
 import Section from './Section/Section';
@@ -11,6 +11,12 @@ import Section from './Section/Section';
 const baseStyles = stylex.create({
   base: {
     padding: padding.M,
+    // The map is wider than whatever it is shown in — a hover card off the nav logo, most often —
+    // so it scrolls, and a scrolling surface owns a scrollbar. Themed the same way `SideNav`'s is:
+    // `scrollbarColor` where it is supported, `colorScheme` so the UAs without it paint a native
+    // bar in the right scheme rather than a white one against a dark card.
+    colorScheme: colorScheme.ui,
+    scrollbarColor: scrollbarColor.subtle,
     overflow: 'auto',
   },
   container: {
@@ -34,7 +40,12 @@ const Sitemap = Object.assign(
       { routes, uncategorizedLabel = 'Uncategorized', onRoutePrefetch, onRouteSelect, xstyle, ...rest },
       ref,
     ) {
-      const styles = [bx.useComponentStyle(baseStyles.base, xstyle)];
+      // `StyleXStyles` types `colorScheme` as a literal union, and a token reference reads as
+      // `string`, so a style that sets it from a var will not satisfy a typed `xstyle` prop.
+      // `SideNav` sets the same pair without complaint only because it spreads `stylex.props`
+      // directly, which is typed loosely. Asserted at this one boundary rather than widening the
+      // token, which would drop the check everywhere the property is written literally.
+      const styles = [baseStyles.base as stylex.StyleXStyles, xstyle];
 
       const visible = routes.filter((route) => !route.hideFromNav);
       const groups = visible.filter((route): route is Sitemap.GroupRoute => route.type === 'group');
