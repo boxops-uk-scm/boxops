@@ -59,7 +59,7 @@ const EmployeeLink = Object.assign(
             xstyle={composedStyle}
             {...rest}
           >
-            <EmployeeAvatarVisual fragmentRef={user} darkenOnHover />
+            <EmployeeAvatarVisual fragmentRef={user} />
             <Text>
               <Link href={`/employee/${user.id}`}>{user.fullName}</Link>
             </Text>

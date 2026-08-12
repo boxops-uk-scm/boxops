@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<972c3f6b10c7018c99d4829b7197daa6>>
+ * @generated SignedSource<<653a44356a417f700ea37bc2a559afb5>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -13,7 +13,7 @@ export type DiffStatus = "CLOSED" | "MERGED" | "OPEN" | "%future added value";
 import { FragmentRefs } from "relay-runtime";
 export type DiffHoverCardContent_fragment$data = {
   readonly author: {
-    readonly " $fragmentSpreads": FragmentRefs<"EmployeeReference_fragment">;
+    readonly " $fragmentSpreads": FragmentRefs<"EmployeeLink_fragment">;
   } | null | undefined;
   readonly comments: ReadonlyArray<{
     readonly id: string;
@@ -90,7 +90,7 @@ const node: ReaderFragment = {
         {
           "args": null,
           "kind": "FragmentSpread",
-          "name": "EmployeeReference_fragment"
+          "name": "EmployeeLink_fragment"
         }
       ],
       "storageKey": null
@@ -118,6 +118,6 @@ const node: ReaderFragment = {
   "abstractKey": null
 };
 
-(node as any).hash = "d7eab52df0642e6c57956caa7eada6b2";
+(node as any).hash = "d8096a0029b476392c9f497e5deab703";
 
 export default node;

@@ -9,12 +9,12 @@ import { Flexbox } from '../../Flexbox';
 import { Heading } from '../../Heading';
 import { Icon } from '../../Icon';
 import { Link } from '../../Link';
+import EmployeeLink from '../../Link/EmployeeLink/EmployeeLink';
 import { MetadataList } from '../../MetadataList';
 import { vars as metadataListVars } from '../../MetadataList/vars.stylex';
 import { Text } from '../../Text';
 import { iconColor } from '../../tokens.stylex';
 import * as bx from '../../types';
-import EmployeeReference from '../EmployeeReference/EmployeeReference';
 
 import type { DiffHoverCardContent_fragment$key } from '@repo/relay-artifacts/src/__generated__/DiffHoverCardContent_fragment.graphql';
 
@@ -27,7 +27,7 @@ const fragment = graphql`
     significantLines
     projects
     author {
-      ...EmployeeReference_fragment
+      ...EmployeeLink_fragment
     }
     comments {
       id
@@ -91,7 +91,7 @@ const DiffHoverCardContent = Object.assign(
           </Flexbox>
           <MetadataList variants={{ size: 'compact' }} xstyle={baseStyles.metadata}>
             <Icon as={Phosphor.UserCircleIcon} xstyle={baseStyles.metadataIcon} />
-            {diff.author ? <EmployeeReference fragmentRef={diff.author} /> : <Text variants={{ color: 'subtle' }}>Unknown author</Text>}
+            {diff.author ? <EmployeeLink fragmentRef={diff.author} /> : <Text variants={{ color: 'subtle' }}>Unknown author</Text>}
             <Icon as={Phosphor.ChatDotsIcon} xstyle={baseStyles.metadataIcon} />
             <Text>{diff.comments.length} comments</Text>
             <Icon as={Phosphor.ListNumbersIcon} xstyle={baseStyles.metadataIcon} />

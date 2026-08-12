@@ -67,9 +67,16 @@ const OncallHoverCardContent = Object.assign(
           </Flexbox>
           <MetadataList variants={{ size: 'compact' }} xstyle={baseStyles.metadata}>
             <Icon as={Phosphor.ListNumbersIcon} xstyle={baseStyles.metadataIcon} />
-            {/* A list in the schema, joined here — the v2 source rendered the array straight into a
-                `Text`, which concatenates the entries with no separator at all. */}
-            <Text>{oncall.products.join(', ')}</Text>
+            {/* A list in the schema. The v2 source rendered the array straight into a `Text`, which
+                concatenates the entries with no separator at all; each is a product you can open. */}
+            <Text>
+              {oncall.products.map((product, index) => (
+                <React.Fragment key={product}>
+                  {index > 0 && ', '}
+                  <Link href={`/product/${product}`}>{product}</Link>
+                </React.Fragment>
+              ))}
+            </Text>
             <Icon as={Phosphor.MegaphoneIcon} xstyle={baseStyles.metadataIcon} />
             <Text xstyle={[LineClamp.styles.base, LineClamp.styles.clamp(2)]}>{oncall.description}</Text>
           </MetadataList>

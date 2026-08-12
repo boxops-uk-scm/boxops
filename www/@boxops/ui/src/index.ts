@@ -38,7 +38,6 @@ export { Notification, NotificationMenu } from './Notification';
 export {
   EmployeeHoverCard,
   EmployeeHoverCardContent,
-  EmployeeReference,
   TaskHoverCardContent,
   DiffHoverCardContent,
   SEVHoverCardContent,

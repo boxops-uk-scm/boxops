@@ -9,12 +9,12 @@ import { Flexbox } from '../../Flexbox';
 import { Heading } from '../../Heading';
 import { Icon } from '../../Icon';
 import { Link } from '../../Link';
+import EmployeeLink from '../../Link/EmployeeLink/EmployeeLink';
 import { MetadataList } from '../../MetadataList';
 import { vars as metadataListVars } from '../../MetadataList/vars.stylex';
 import { Text } from '../../Text';
 import { iconColor } from '../../tokens.stylex';
 import * as bx from '../../types';
-import EmployeeReference from '../EmployeeReference/EmployeeReference';
 
 import type { TaskHoverCardContent_fragment$key } from '@repo/relay-artifacts/src/__generated__/TaskHoverCardContent_fragment.graphql';
 
@@ -26,7 +26,7 @@ const fragment = graphql`
     priority
     tags
     owner {
-      ...EmployeeReference_fragment
+      ...EmployeeLink_fragment
     }
   }
 `;
@@ -93,7 +93,7 @@ const TaskHoverCardContent = Object.assign(
             {task.owner ? (
               <Flexbox variants={{ gap: 'S', alignItems: 'center' }}>
                 <Text>Owned by</Text>
-                <EmployeeReference fragmentRef={task.owner} />
+                <EmployeeLink fragmentRef={task.owner} />
               </Flexbox>
             ) : (
               <Text variants={{ color: 'subtle' }}>Unowned</Text>

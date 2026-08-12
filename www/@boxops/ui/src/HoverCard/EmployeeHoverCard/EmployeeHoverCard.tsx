@@ -4,9 +4,11 @@ import * as React from 'react';
 import { useFragment, useLazyLoadQuery } from 'react-relay';
 import { graphql } from 'relay-runtime';
 
+import { vars as avatarVars } from '../../Avatar/vars.stylex';
 import { Card } from '../../Card';
 import { usePortalContainer } from '../../PortalContainer';
 import { Spinner } from '../../Spinner';
+import { backgroundColor } from '../../tokens.stylex';
 import EmployeeHoverCardContent from '../EmployeeHoverCardContent/EmployeeHoverCardContent';
 
 import type { EmployeeHoverCard_fragment$key } from '@repo/relay-artifacts/src/__generated__/EmployeeHoverCard_fragment.graphql';
@@ -41,6 +43,15 @@ const hoverCardQuery = graphql`
 const baseStyles = stylex.create({
   trigger: {
     display: 'inline-flex',
+    // Anything that reveals a card is pointing at a person, so it reads as clickable.
+    cursor: 'pointer',
+    // Set on the trigger rather than on the avatar's own `:hover`, so the whole trigger drives it:
+    // in a link, brushing the name dims the face too. The token flips with the scheme, so it
+    // darkens on a light ground and lightens on a dark one.
+    [avatarVars.overlayColor]: {
+      default: null,
+      ':hover': backgroundColor.overlay,
+    },
   },
   positioner: {
     zIndex: 100,

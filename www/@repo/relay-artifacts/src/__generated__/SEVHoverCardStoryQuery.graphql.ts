@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<0bf3320789542cdf2c9c403acc2e616c>>
+ * @generated SignedSource<<841c0929f7012aea2179faa971c20712>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -14,10 +14,14 @@ export type SEVSeverity = "CRITICAL" | "HIGH" | "LOW" | "MEDIUM" | "%future adde
 export type UserStatus = "AVAILABLE" | "AWAY" | "BUSY" | "OFFLINE" | "%future added value";
 export type SEVHoverCardStoryQuery$variables = {
   number: number;
+  personId: string;
 };
 export type SEVHoverCardStoryQuery$data = {
   readonly sev: {
     readonly " $fragmentSpreads": FragmentRefs<"SEVHoverCardContent_fragment">;
+  } | null | undefined;
+  readonly user: {
+    readonly " $fragmentSpreads": FragmentRefs<"EmployeeHoverCardContent_fragment">;
   } | null | undefined;
 };
 export type SEVHoverCardStoryQuery$rawResponse = {
@@ -27,22 +31,9 @@ export type SEVHoverCardStoryQuery$rawResponse = {
     }>;
     readonly coordinator: {
       readonly avatarUrl: string | null | undefined;
-      readonly email: string | null | undefined;
       readonly fullName: string;
       readonly id: string;
       readonly initials: string | null | undefined;
-      readonly jobTitle: string | null | undefined;
-      readonly location: string | null | undefined;
-      readonly organization: string | null | undefined;
-      readonly phoneNumber: string | null | undefined;
-      readonly reportsTo: {
-        readonly fullName: string;
-        readonly id: string;
-      } | null | undefined;
-      readonly startedAt: string | null | undefined;
-      readonly status: UserStatus | null | undefined;
-      readonly timezone: string | null | undefined;
-      readonly unixName: string | null | undefined;
     } | null | undefined;
     readonly createdAt: string;
     readonly description: string | null | undefined;
@@ -52,6 +43,25 @@ export type SEVHoverCardStoryQuery$rawResponse = {
     readonly stack: string | null | undefined;
     readonly tags: ReadonlyArray<string> | null | undefined;
     readonly title: string;
+  } | null | undefined;
+  readonly user: {
+    readonly avatarUrl: string | null | undefined;
+    readonly email: string | null | undefined;
+    readonly fullName: string;
+    readonly id: string;
+    readonly initials: string | null | undefined;
+    readonly jobTitle: string | null | undefined;
+    readonly location: string | null | undefined;
+    readonly organization: string | null | undefined;
+    readonly phoneNumber: string | null | undefined;
+    readonly reportsTo: {
+      readonly fullName: string;
+      readonly id: string;
+    } | null | undefined;
+    readonly startedAt: string | null | undefined;
+    readonly status: UserStatus | null | undefined;
+    readonly timezone: string | null | undefined;
+    readonly unixName: string | null | undefined;
   } | null | undefined;
 };
 export type SEVHoverCardStoryQuery = {
@@ -66,6 +76,11 @@ var v0 = [
     "defaultValue": null,
     "kind": "LocalArgument",
     "name": "number"
+  },
+  {
+    "defaultValue": null,
+    "kind": "LocalArgument",
+    "name": "personId"
   }
 ],
 v1 = [
@@ -75,18 +90,39 @@ v1 = [
     "variableName": "number"
   }
 ],
-v2 = {
+v2 = [
+  {
+    "kind": "Variable",
+    "name": "id",
+    "variableName": "personId"
+  }
+],
+v3 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
   "name": "id",
   "storageKey": null
 },
-v3 = {
+v4 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
   "name": "fullName",
+  "storageKey": null
+},
+v5 = {
+  "alias": null,
+  "args": null,
+  "kind": "ScalarField",
+  "name": "initials",
+  "storageKey": null
+},
+v6 = {
+  "alias": null,
+  "args": null,
+  "kind": "ScalarField",
+  "name": "avatarUrl",
   "storageKey": null
 };
 return {
@@ -108,6 +144,22 @@ return {
             "args": null,
             "kind": "FragmentSpread",
             "name": "SEVHoverCardContent_fragment"
+          }
+        ],
+        "storageKey": null
+      },
+      {
+        "alias": null,
+        "args": (v2/*: any*/),
+        "concreteType": "EntUser",
+        "kind": "LinkedField",
+        "name": "user",
+        "plural": false,
+        "selections": [
+          {
+            "args": null,
+            "kind": "FragmentSpread",
+            "name": "EmployeeHoverCardContent_fragment"
           }
         ],
         "storageKey": null
@@ -187,98 +239,10 @@ return {
             "name": "coordinator",
             "plural": false,
             "selections": [
-              (v2/*: any*/),
               (v3/*: any*/),
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "avatarUrl",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "initials",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "unixName",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "email",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "phoneNumber",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "organization",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "jobTitle",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "concreteType": "EntUser",
-                "kind": "LinkedField",
-                "name": "reportsTo",
-                "plural": false,
-                "selections": [
-                  (v3/*: any*/),
-                  (v2/*: any*/)
-                ],
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "location",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "timezone",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "startedAt",
-                "storageKey": null
-              },
-              {
-                "alias": null,
-                "args": null,
-                "kind": "ScalarField",
-                "name": "status",
-                "storageKey": null
-              }
+              (v4/*: any*/),
+              (v5/*: any*/),
+              (v6/*: any*/)
             ],
             "storageKey": null
           },
@@ -290,27 +254,118 @@ return {
             "name": "comments",
             "plural": true,
             "selections": [
-              (v2/*: any*/)
+              (v3/*: any*/)
             ],
             "storageKey": null
           },
-          (v2/*: any*/)
+          (v3/*: any*/)
+        ],
+        "storageKey": null
+      },
+      {
+        "alias": null,
+        "args": (v2/*: any*/),
+        "concreteType": "EntUser",
+        "kind": "LinkedField",
+        "name": "user",
+        "plural": false,
+        "selections": [
+          (v3/*: any*/),
+          (v4/*: any*/),
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "unixName",
+            "storageKey": null
+          },
+          (v5/*: any*/),
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "email",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "phoneNumber",
+            "storageKey": null
+          },
+          (v6/*: any*/),
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "organization",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "jobTitle",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "concreteType": "EntUser",
+            "kind": "LinkedField",
+            "name": "reportsTo",
+            "plural": false,
+            "selections": [
+              (v3/*: any*/),
+              (v4/*: any*/)
+            ],
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "location",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "timezone",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "startedAt",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "status",
+            "storageKey": null
+          }
         ],
         "storageKey": null
       }
     ]
   },
   "params": {
-    "cacheID": "25c91e682d99366d7e0af07986b0c25b",
+    "cacheID": "48ce5a6bc8ca7cdab16d70c41242893a",
     "id": null,
     "metadata": {},
     "name": "SEVHoverCardStoryQuery",
     "operationKind": "query",
-    "text": "query SEVHoverCardStoryQuery(\n  $number: Int!\n) {\n  sev(number: $number) {\n    ...SEVHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    fullName\n    id\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n\nfragment EmployeeReference_fragment on EntUser {\n  id\n  fullName\n  avatarUrl\n  initials\n  ...EmployeeHoverCardContent_fragment\n}\n\nfragment SEVHoverCardContent_fragment on EntSEV {\n  number\n  title\n  stack\n  severity\n  tags\n  description\n  createdAt\n  coordinator {\n    ...EmployeeReference_fragment\n    id\n  }\n  comments {\n    id\n  }\n}\n"
+    "text": "query SEVHoverCardStoryQuery(\n  $number: Int!\n  $personId: ID!\n) {\n  sev(number: $number) {\n    ...SEVHoverCardContent_fragment\n    id\n  }\n  user(id: $personId) {\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeAvatarVisual_fragment on EntUser {\n  id\n  initials\n  avatarUrl\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    id\n    fullName\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n\nfragment EmployeeHoverCard_fragment on EntUser {\n  id\n}\n\nfragment EmployeeLink_fragment on EntUser {\n  id\n  fullName\n  ...EmployeeAvatarVisual_fragment\n  ...EmployeeHoverCard_fragment\n}\n\nfragment SEVHoverCardContent_fragment on EntSEV {\n  number\n  title\n  stack\n  severity\n  tags\n  description\n  createdAt\n  coordinator {\n    ...EmployeeLink_fragment\n    id\n  }\n  comments {\n    id\n  }\n}\n"
   }
 };
 })();
 
-(node as any).hash = "11be192948e3bbd4512c5f8b55953940";
+(node as any).hash = "ff95eabab873090161a075937d47e59e";
 
 export default node;

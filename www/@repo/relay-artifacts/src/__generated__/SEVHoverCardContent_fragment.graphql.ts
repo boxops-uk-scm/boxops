@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<4dcf1e60df84ee96f6f59f9f17729eb8>>
+ * @generated SignedSource<<e8b068e265c229f411bebb62f1d2b8eb>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -16,7 +16,7 @@ export type SEVHoverCardContent_fragment$data = {
     readonly id: string;
   }>;
   readonly coordinator: {
-    readonly " $fragmentSpreads": FragmentRefs<"EmployeeReference_fragment">;
+    readonly " $fragmentSpreads": FragmentRefs<"EmployeeLink_fragment">;
   } | null | undefined;
   readonly createdAt: string;
   readonly description: string | null | undefined;
@@ -98,7 +98,7 @@ const node: ReaderFragment = {
         {
           "args": null,
           "kind": "FragmentSpread",
-          "name": "EmployeeReference_fragment"
+          "name": "EmployeeLink_fragment"
         }
       ],
       "storageKey": null
@@ -126,6 +126,6 @@ const node: ReaderFragment = {
   "abstractKey": null
 };
 
-(node as any).hash = "65844aeaad535a3d69afea60405d342c";
+(node as any).hash = "5e960b2fde4ce0bde600ba7104ba89e0";
 
 export default node;

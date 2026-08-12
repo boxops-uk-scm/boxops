@@ -31,6 +31,7 @@ const fragment = graphql`
     organization
     jobTitle
     reportsTo {
+      id
       fullName
     }
     location
@@ -108,12 +109,16 @@ const EmployeeHoverCardContent = Object.assign(
                 </Text>
                 <Icon as={Phosphor.TreeStructureIcon} xstyle={baseStyles.metadataIcon} />
                 <Flexbox variants={{ direction: 'column', gap: 'XS' }}>
-                  <Text>
-                    Reports to <Link href={`/employee/${user.reportsTo?.fullName}`}>{user.reportsTo?.fullName}</Link>
-                  </Text>
+                  {user.reportsTo ? (
+                    <Text>
+                      Reports to <Link href={`/employee/${user.reportsTo.id}`}>{user.reportsTo.fullName}</Link>
+                    </Text>
+                  ) : (
+                    <Text variants={{ color: 'subtle' }}>No reporting line</Text>
+                  )}
                 </Flexbox>
                 <Icon as={Phosphor.MapPinIcon} xstyle={baseStyles.metadataIcon} />
-                <Text>{user.location}</Text>
+                <Text>{user.location ? <Link href={`/location/${user.location}`}>{user.location}</Link> : '—'}</Text>
                 <Icon as={Phosphor.SunHorizonIcon} xstyle={baseStyles.metadataIcon} />
                 <Flexbox variants={{ direction: 'row', alignItems: 'baseline', gap: 'S' }}>
                   <Text>{user.timezone}</Text>

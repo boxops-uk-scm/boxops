@@ -16,15 +16,26 @@ const variantStyles = {
     // behaviour, preserved verbatim — Toast carries the same quirk.
     //
     // `color` is the `*Ink` token paired with each tint, not the bold status hue v1 used here. It is
-    // inherited by two things: the description (the title pins `textColor.primary` itself) and the
-    // status icon, whose fill defaults to `currentColor`. Both were failing — vivid yellow on the
-    // light warning tint measured 1.70, below even the 3.0 icons need.
+    // what the description inherits (the title pins `textColor.primary` itself), and on its own tint
+    // the bold hue had nothing to contrast with — light warning measured 1.70.
     info: { color: semanticColor.accentInk, backgroundColor: semanticColor.accentSubtle },
     warning: { color: semanticColor.warningInk, backgroundColor: semanticColor.warningSubtle },
     error: { color: semanticColor.negativeInk, backgroundColor: semanticColor.negativeSubtle },
     success: { color: semanticColor.positiveInk, backgroundColor: semanticColor.positiveSubtle },
   }),
 } as const satisfies bx.VariantStyles;
+
+/**
+ * The icon is pinned rather than left to inherit, so it keeps the vivid status colour while the text
+ * beside it takes the higher-contrast ink. `Icon` fills with `currentColor` by default, which would
+ * otherwise hand it the text ink and mute it.
+ */
+const iconStyles = stylex.create({
+  info: { color: semanticColor.accentIconInk },
+  warning: { color: semanticColor.warningIconInk },
+  error: { color: semanticColor.negativeIconInk },
+  success: { color: semanticColor.positiveIconInk },
+});
 
 const baseStyles = stylex.create({
   base: {
@@ -89,7 +100,7 @@ const Banner = Object.assign(
                 isOpen && !!children && baseStyles.headerOpen,
               )}
             >
-              <Icon as={STATUS_ICON[status]} weight="fill" />
+              <Icon as={STATUS_ICON[status]} weight="fill" xstyle={iconStyles[status]} />
               <TextPair variant="h3" description={description}>
                 {title}
               </TextPair>

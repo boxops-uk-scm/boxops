@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<4e98f30efa5181e939f3c11ebafd3a38>>
+ * @generated SignedSource<<35464a8c8574b146b69a14de0da2b62d>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -23,6 +23,7 @@ export type EmployeeHoverCardContent_fragment$data = {
   readonly phoneNumber: string | null | undefined;
   readonly reportsTo: {
     readonly fullName: string;
+    readonly id: string;
   } | null | undefined;
   readonly startedAt: string | null | undefined;
   readonly status: UserStatus | null | undefined;
@@ -40,6 +41,13 @@ var v0 = {
   "alias": null,
   "args": null,
   "kind": "ScalarField",
+  "name": "id",
+  "storageKey": null
+},
+v1 = {
+  "alias": null,
+  "args": null,
+  "kind": "ScalarField",
   "name": "fullName",
   "storageKey": null
 };
@@ -49,14 +57,8 @@ return {
   "metadata": null,
   "name": "EmployeeHoverCardContent_fragment",
   "selections": [
-    {
-      "alias": null,
-      "args": null,
-      "kind": "ScalarField",
-      "name": "id",
-      "storageKey": null
-    },
     (v0/*: any*/),
+    (v1/*: any*/),
     {
       "alias": null,
       "args": null,
@@ -114,7 +116,8 @@ return {
       "name": "reportsTo",
       "plural": false,
       "selections": [
-        (v0/*: any*/)
+        (v0/*: any*/),
+        (v1/*: any*/)
       ],
       "storageKey": null
     },
@@ -152,6 +155,6 @@ return {
 };
 })();
 
-(node as any).hash = "e7a1da4c77fb02e7f1b9a0c007c52c95";
+(node as any).hash = "d55dbae6dc821fde4ccc30d73245de2f";
 
 export default node;

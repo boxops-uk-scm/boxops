@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<0ec24756a037fb82fa9f51630ed09f7b>>
+ * @generated SignedSource<<67f029ab5d5b694825da4c933398a2d7>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -180,8 +180,8 @@ return {
             "name": "reportsTo",
             "plural": false,
             "selections": [
-              (v3/*: any*/),
-              (v2/*: any*/)
+              (v2/*: any*/),
+              (v3/*: any*/)
             ],
             "storageKey": null
           },
@@ -219,12 +219,12 @@ return {
     ]
   },
   "params": {
-    "cacheID": "6d1f692bb065e661f85c3ae5ee67afae",
+    "cacheID": "30475f199eb8030bc55f5f5f4a5ce0c4",
     "id": null,
     "metadata": {},
     "name": "EmployeeAvatarStoryQuery",
     "operationKind": "query",
-    "text": "query EmployeeAvatarStoryQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeAvatar_fragment\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeAvatarVisual_fragment on EntUser {\n  id\n  initials\n  avatarUrl\n}\n\nfragment EmployeeAvatar_fragment on EntUser {\n  ...EmployeeAvatarVisual_fragment\n  ...EmployeeHoverCard_fragment\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    fullName\n    id\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n\nfragment EmployeeHoverCard_fragment on EntUser {\n  id\n}\n"
+    "text": "query EmployeeAvatarStoryQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeAvatar_fragment\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeAvatarVisual_fragment on EntUser {\n  id\n  initials\n  avatarUrl\n}\n\nfragment EmployeeAvatar_fragment on EntUser {\n  ...EmployeeAvatarVisual_fragment\n  ...EmployeeHoverCard_fragment\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    id\n    fullName\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n\nfragment EmployeeHoverCard_fragment on EntUser {\n  id\n}\n"
   }
 };
 })();

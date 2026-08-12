@@ -7,14 +7,20 @@ import { ALAN } from './fixtures';
 import type { SEVHoverCardStoryQuery } from '@repo/relay-artifacts/src/__generated__/SEVHoverCardStoryQuery.graphql';
 
 const query = graphql`
-  query SEVHoverCardStoryQuery($number: Int!) @raw_response_type {
+  query SEVHoverCardStoryQuery($number: Int!, $personId: ID!) @raw_response_type {
     sev(number: $number) {
       ...SEVHoverCardContent_fragment
+    }
+    # Seeds the lazy query the person's link issues on hover. In a real client that is a request;
+    # here it must already be in the store, or the mock network throws.
+    user(id: $personId) {
+      ...EmployeeHoverCardContent_fragment
     }
   }
 `;
 
 const data: SEVHoverCardStoryQuery['rawResponse'] = {
+  user: ALAN,
   sev: {
     id: 'sev-1',
     number: 208,
@@ -32,7 +38,7 @@ const data: SEVHoverCardStoryQuery['rawResponse'] = {
 
 export function SEVHoverCardStory() {
   return (
-    <MockRelayEnvironment<SEVHoverCardStoryQuery> query={query} variables={{ number: 208 }} data={data}>
+    <MockRelayEnvironment<SEVHoverCardStoryQuery> query={query} variables={{ number: 208, personId: ALAN.id }} data={data}>
       {({ sev }) => (sev ? <Card><SEVHoverCardContent fragmentRef={sev} /></Card> : null)}
     </MockRelayEnvironment>
   );

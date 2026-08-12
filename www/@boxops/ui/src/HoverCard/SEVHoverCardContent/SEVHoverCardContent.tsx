@@ -11,12 +11,12 @@ import { Heading } from '../../Heading';
 import { Icon } from '../../Icon';
 import { LineClamp } from '../../LineClamp';
 import { Link } from '../../Link';
+import EmployeeLink from '../../Link/EmployeeLink/EmployeeLink';
 import { MetadataList } from '../../MetadataList';
 import { vars as metadataListVars } from '../../MetadataList/vars.stylex';
 import { Text } from '../../Text';
 import { iconColor } from '../../tokens.stylex';
 import * as bx from '../../types';
-import EmployeeReference from '../EmployeeReference/EmployeeReference';
 
 import type { SEVHoverCardContent_fragment$key } from '@repo/relay-artifacts/src/__generated__/SEVHoverCardContent_fragment.graphql';
 
@@ -30,7 +30,7 @@ const fragment = graphql`
     description
     createdAt
     coordinator {
-      ...EmployeeReference_fragment
+      ...EmployeeLink_fragment
     }
     comments {
       id
@@ -86,12 +86,12 @@ const SEVHoverCardContent = Object.assign(
           </Flexbox>
           <MetadataList variants={{ size: 'compact' }} xstyle={baseStyles.metadata}>
             <Icon as={Phosphor.StackIcon} xstyle={baseStyles.metadataIcon} />
-            <Text>{sev.stack} Stack</Text>
+            <Text>{sev.stack ? <><Link href={`/stack/${sev.stack}`}>{sev.stack}</Link> Stack</> : 'Unassigned'}</Text>
             <Icon as={Phosphor.UserCircleIcon} xstyle={baseStyles.metadataIcon} />
             {sev.coordinator ? (
               <Flexbox variants={{ gap: 'S', alignItems: 'center' }}>
                 <Text>Coordinated by</Text>
-                <EmployeeReference fragmentRef={sev.coordinator} />
+                <EmployeeLink fragmentRef={sev.coordinator} />
               </Flexbox>
             ) : (
               <Text variants={{ color: 'subtle' }}>No coordinator</Text>

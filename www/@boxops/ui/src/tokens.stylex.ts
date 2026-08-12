@@ -56,10 +56,10 @@ export const semanticColor = stylex.defineVars({
   negativeSubtle: 'oklch(58.58% 0.2258 21.26 / 20%)',
   warningSubtle: 'oklch(75.76% 0.156365 81.2982 / 20%)',
   infoSubtle: 'oklch(58.25% 0.2416 286.61 / 20%)',
-  // The ink for text and icons sitting on the matching `*Subtle` ground — one per tint, so nothing
-  // reaches for the vivid status hue instead. The bold hues above are fills: a dot, a toast stripe,
-  // a solid button, all read against the page. Used as ink on their own 20% tint they have nothing
-  // to contrast with, and Banner measured 1.70 for warning-on-white and 2.32 for success-on-dark.
+  // The text ink for the matching `*Subtle` ground — one per tint, so nothing reaches for the vivid
+  // status hue instead. The bold hues above are fills: a dot, a toast stripe, a solid button, all
+  // read against the page. Used as ink on their own 20% tint they have nothing to contrast with, and
+  // Banner measured 1.70 for warning-on-white and 2.32 for success-on-dark.
   //
   // Derived by the rule the nonsemantic ramp documents below, applied to the composited ground:
   // hold the ink-to-chip OKLCH lightness distance, keep as much chroma as sRGB allows, and take the
@@ -76,6 +76,25 @@ export const semanticColor = stylex.defineVars({
   negativeInk: { default: 'oklch(33.40% 0.1360 25.97)', [DARK]: 'oklch(84.20% 0.0867 25.97)' },
   warningInk: { default: 'oklch(38.40% 0.0808 63.05)', [DARK]: 'oklch(90.34% 0.0651 63.05)' },
   infoInk: { default: 'oklch(34.97% 0.1541 286.86)', [DARK]: 'oklch(86.44% 0.0701 286.86)' },
+  // The icon ink for the same grounds, and deliberately not the same value as the text ink above.
+  // WCAG asks 4.5 of body text but only 3 of a graphic (1.4.11), and the status glyph is filled, not
+  // hairline — so it can be spent on chroma instead of on contrast it does not need. These are the
+  // most saturated form of each status hue that still clears 3.5, which leaves the icon reading as
+  // the vivid status colour while the supporting text beside it sits at ~8.
+  //
+  // Four of the ten cells are the bold hue verbatim, because it already clears the floor there; the
+  // rest move the least distance in lightness that gets them over it, and take all the chroma sRGB
+  // allows at wherever they land. Two end up *more* chromatic than the bold hue they came from.
+  //
+  // The exception is `warningIconInk` in light mode, which also takes the text ink's hue rather than
+  // the tint's 81. Yellow is intrinsically light, so nothing at hue 81 both darkens enough to read
+  // on a near-white tint and stays yellow — it goes olive. At 63 it darkens to amber instead, which
+  // is still legible as a warning.
+  accentIconInk: { default: palette.blue650, [DARK]: palette.blue500 },
+  positiveIconInk: { default: palette.green600, [DARK]: 'oklch(63.95% 0.2010 145.04)' },
+  negativeIconInk: { default: 'oklch(57.88% 0.2330 21.26)', [DARK]: 'oklch(64.18% 0.2445 21.26)' },
+  warningIconInk: { default: 'oklch(60.04% 0.1370 63.05)', [DARK]: palette.yellow250 },
+  infoIconInk: { default: palette.purple800, [DARK]: 'oklch(65.12% 0.1964 286.56)' },
   focusOutline: 'oklch(53.34% 0.2049 258.81 / 20%)',
 });
 

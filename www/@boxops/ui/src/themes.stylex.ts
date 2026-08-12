@@ -48,6 +48,11 @@ const semanticLight = stylex.createTheme(semanticColor, {
   negativeInk: 'oklch(33.40% 0.1360 25.97)',
   warningInk: 'oklch(38.40% 0.0808 63.05)',
   infoInk: 'oklch(34.97% 0.1541 286.86)',
+  accentIconInk: palette.blue650,
+  positiveIconInk: palette.green600,
+  negativeIconInk: 'oklch(57.88% 0.2330 21.26)',
+  warningIconInk: 'oklch(60.04% 0.1370 63.05)',
+  infoIconInk: palette.purple800,
 });
 
 const semanticDark = stylex.createTheme(semanticColor, {
@@ -61,6 +66,11 @@ const semanticDark = stylex.createTheme(semanticColor, {
   negativeInk: 'oklch(84.20% 0.0867 25.97)',
   warningInk: 'oklch(90.34% 0.0651 63.05)',
   infoInk: 'oklch(86.44% 0.0701 286.86)',
+  accentIconInk: palette.blue500,
+  positiveIconInk: 'oklch(63.95% 0.2010 145.04)',
+  negativeIconInk: 'oklch(64.18% 0.2445 21.26)',
+  warningIconInk: palette.yellow250,
+  infoIconInk: 'oklch(65.12% 0.1964 286.56)',
 });
 
 const outlineLight = stylex.createTheme(outlineColor, {

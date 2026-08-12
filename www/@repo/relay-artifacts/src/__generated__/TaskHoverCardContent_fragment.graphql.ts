@@ -1,5 +1,5 @@
 /**
- * @generated SignedSource<<3b395c43eb0c392ed41ef9461c5e1486>>
+ * @generated SignedSource<<414c841ffa418a975e462f2447156102>>
  * @lightSyntaxTransform
  * @nogrep
  */
@@ -15,7 +15,7 @@ import { FragmentRefs } from "relay-runtime";
 export type TaskHoverCardContent_fragment$data = {
   readonly number: number;
   readonly owner: {
-    readonly " $fragmentSpreads": FragmentRefs<"EmployeeReference_fragment">;
+    readonly " $fragmentSpreads": FragmentRefs<"EmployeeLink_fragment">;
   } | null | undefined;
   readonly priority: TaskPriority;
   readonly status: TaskStatus;
@@ -80,7 +80,7 @@ const node: ReaderFragment = {
         {
           "args": null,
           "kind": "FragmentSpread",
-          "name": "EmployeeReference_fragment"
+          "name": "EmployeeLink_fragment"
         }
       ],
       "storageKey": null
@@ -90,6 +90,6 @@ const node: ReaderFragment = {
   "abstractKey": null
 };
 
-(node as any).hash = "0df006ed659663bb5d86a5936b5a2580";
+(node as any).hash = "10e328f0f7746760a47211d3b7581ac6";
 
 export default node;
