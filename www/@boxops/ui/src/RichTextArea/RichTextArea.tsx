@@ -21,7 +21,7 @@ import ActionBar from './ActionBar';
 const styles = stylex.create({
   base: {
     padding: padding.S,
-    backgroundColor: backgroundColor.surface,
+    backgroundColor: backgroundColor.input,
     borderRadius: '4px',
     borderWidth: '1px',
     borderStyle: 'solid',
