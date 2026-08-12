@@ -19,7 +19,8 @@ const STATUS_ICON = {
 /**
  * The frame's border and the icon inside it take the bold hue — they sit on the input's own ground,
  * where the bold hue is what carries. The message below takes the tint-and-ink pairing `Banner`
- * uses, because it sits on the tint.
+ * uses, because it sits on the tint. The glyph is not repeated in the message: it is already on the
+ * field an inch above, saying the same thing.
  */
 const statusStyles = stylex.create({
   error: {
@@ -68,12 +69,6 @@ const messageStyles = stylex.create({
     backgroundColor: backgroundColor.surface,
     backgroundImage: `linear-gradient(${semanticColor.positiveSubtle}, ${semanticColor.positiveSubtle})`,
   },
-});
-
-const messageIconStyles = stylex.create({
-  error: { color: semanticColor.negativeIconInk },
-  warning: { color: semanticColor.warningIconInk },
-  success: { color: semanticColor.positiveIconInk },
 });
 
 /**
@@ -227,10 +222,6 @@ const baseStyles = stylex.create({
     left: '-1px',
     right: '-1px',
     zIndex: 10,
-    display: 'flex',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: gap.S,
     paddingTop: padding.XS,
     paddingBottom: padding.XS,
     paddingLeft: '12px',
@@ -357,12 +348,7 @@ const TextInput = Object.assign(
                       // Rendered around its own children rather than given new ones: passing
                       // children to `Field.Error` replaces the message validation produced, so a
                       // field with no `message` of its own would come out empty.
-                      render={({ children, ...errorProps }) => (
-                        <div {...errorProps}>
-                          <Icon as={STATUS_ICON.error} weight="fill" xstyle={messageIconStyles.error} />
-                          {message ?? children}
-                        </div>
-                      )}
+                      render={({ children, ...errorProps }) => <div {...errorProps}>{message ?? children}</div>}
                     />
                   ) : (
                     effectiveStatus &&
@@ -371,14 +357,11 @@ const TextInput = Object.assign(
                       // which is what puts it in `aria-describedby` beside any `description`.
                       <Field.Description
                         role="status"
-                        // A description is a `<p>` by default, which cannot legally contain the
-                        // `<div>` that `Icon` wraps itself in — React refuses to hydrate it — and
-                        // carries a UA margin that would sit it further from the field than the
-                        // error variant sits.
+                        // A description is a `<p>` by default, whose UA margin would sit it further
+                        // from the field than the error variant sits.
                         render={<div />}
                         {...stylex.props(baseStyles.message, messageStyles[effectiveStatus])}
                       >
-                        <Icon as={STATUS_ICON[effectiveStatus]} weight="fill" xstyle={messageIconStyles[effectiveStatus]} />
                         {message}
                       </Field.Description>
                     )
