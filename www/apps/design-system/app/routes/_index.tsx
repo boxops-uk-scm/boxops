@@ -62,6 +62,7 @@ import { SSR as Phosphor } from '@phosphor-icons/react';
 import * as stylex from '@stylexjs/stylex';
 import React from 'react';
 
+import { EmployeeAvatarStory } from '../stories/EmployeeAvatarStory';
 import { EmployeeHoverCardStory } from '../stories/EmployeeHoverCardStory';
 
 export function meta() {
@@ -1371,6 +1372,13 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
       <Heading isContent>Tools Menu</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>
         <ToolsMenu items={TOOLS_MENU_ITEMS} />
+      </section>
+      <Heading isContent>Employee Avatar</Heading>
+      <section {...stylex.props(styles.row, styles.componentStage)}>
+        <EmployeeAvatarStory />
+        <Text as="small" variants={{ color: 'subtle' }}>
+          Hover the avatar — the card&rsquo;s data loads on demand, from its own query.
+        </Text>
       </section>
       <Heading isContent>Employee Hover Card</Heading>
       <section {...stylex.props(styles.menuRow, styles.componentStage)}>
