@@ -350,6 +350,20 @@ const TextInput = Object.assign(
                             </span>
                           )}
                           <input {...props} {...stylex.props(baseStyles.control)} />
+                          {/* Inboard of `endContent`, so the trailing edge stays with whatever the
+                              caller put there — a clear button or a reveal toggle belongs against
+                              the edge, and the status is a remark about the value rather than
+                              something to press. With no `endContent` this is the last thing in the
+                              row and sits at the edge itself. */}
+                          <span {...stylex.props(baseStyles.statusSlot)}>
+                            {effectiveStatus && (
+                              <Icon
+                                as={STATUS_ICON[effectiveStatus]}
+                                weight="fill"
+                                xstyle={statusIconStyles[effectiveStatus]}
+                              />
+                            )}
+                          </span>
                           {endContent && (
                             <span {...stylex.props(baseStyles.endContent)}>{bx.useRenderFunction(endContent, inputState)}</span>
                           )}
@@ -357,11 +371,6 @@ const TextInput = Object.assign(
                       );
                     }}
                   />
-                  <span {...stylex.props(baseStyles.statusSlot)}>
-                    {effectiveStatus && (
-                      <Icon as={STATUS_ICON[effectiveStatus]} weight="fill" xstyle={statusIconStyles[effectiveStatus]} />
-                    )}
-                  </span>
                   {effectiveStatus === 'error' ? (
                     // `Field.Error` decides its own visibility from validity and registers itself as
                     // the control's description. `match` forces it open for an error the caller is
