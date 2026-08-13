@@ -181,17 +181,29 @@ const baseStyles = stylex.create({
       cursor: 'not-allowed',
     },
   },
-  /** Leading and trailing content — an icon, a unit, a clear button. */
+  /**
+   * Leading and trailing content — an icon, a unit, a clear button.
+   *
+   * Floored at one icon's width for the same reason the status slot is held open: these are given
+   * as functions of the field's state, so a clear button that appears on focus or a spinner that
+   * appears while checking would otherwise resize the value as it arrived. The floor means content
+   * that comes and goes inside the slot changes nothing outside it. Anything wider than an icon
+   * still sizes to itself, which is stable as long as it stays one size.
+   */
   startContent: {
     display: 'inline-flex',
     alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
+    minInlineSize: '20px',
     color: textColor.secondary,
   },
   endContent: {
     display: 'inline-flex',
     alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
+    minInlineSize: '20px',
     color: textColor.secondary,
   },
   /** `Field.Description`: the standing hint, shown whether or not the value is valid. */
