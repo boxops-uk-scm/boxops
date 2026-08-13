@@ -1,10 +1,11 @@
-import path from 'path';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 
+import { transformSync } from '@babel/core';
 import { reactRouter } from '@react-router/dev/vite';
 import stylex from '@stylexjs/unplugin';
 import { defineConfig, type Plugin } from 'vite';
-import relay from 'vite-plugin-relay';
 
 const repoRoot = process.env.BOXOPS_REPO_ROOT;
 if (!repoRoot) {
@@ -12,6 +13,74 @@ if (!repoRoot) {
 }
 
 const wwwRoot = path.join(repoRoot, 'www');
+const relayArtifacts = path.join(wwwRoot, '@repo/relay-artifacts/src/__generated__');
+
+// Resolved from this config rather than passed to Babel as a bare name. Babel resolves plugin names
+// against `process.cwd()`, and the gateway app runs this very config through Vite in middleware
+// mode — so the cwd is `apps/gateway`, which has no reason to declare a Relay Babel plugin.
+const relayBabelPlugin = createRequire(import.meta.url).resolve('babel-plugin-relay');
+
+/**
+ * Replaces `vite-plugin-relay`, which invokes `babel-plugin-relay` with no options — so the plugin
+ * falls back to the relative `artifactDirectory` in `relay.config.js` and resolves it against the
+ * importing file. That works for app code, but `@boxops/ui` is resolved through a Yarn PnP virtual
+ * path, and a relative hop from there lands nowhere. Passing an absolute directory makes the
+ * emitted import independent of where the importing module happens to live.
+ */
+function relayPlugin(): Plugin {
+  return {
+    name: 'vite:relay-artifacts',
+    // Ahead of react-router's babel pass, so this is the only thing that consumes a graphql tag.
+    enforce: 'pre',
+
+    // `babel-plugin-relay` always emits a *relative* import, and always writes it without the `.ts`
+    // the compiler actually produces — so the specifier names a file that does not exist.
+    //
+    // Resolved by basename against the artifact directory rather than by walking the relative path.
+    // Relay operation and fragment names are globally unique, so the basename identifies the file on
+    // its own; the relative path meanwhile depends on where the importing module physically sits and
+    // on the exact id form Vite hands over, which differs between the dev server and the gateway
+    // running the same config in middleware mode.
+    resolveId(source) {
+      if (!source.endsWith('.graphql')) {
+        return undefined;
+      }
+
+      const artifact = path.join(relayArtifacts, `${path.basename(source)}.ts`);
+      return fs.existsSync(artifact) ? artifact : undefined;
+    },
+    transform(src, id) {
+      const file = id.split('?')[0];
+
+      // Only first-party source. Prebundled vendor chunks are large and some contain the string
+      // `graphql\`` in their own source, which had Babel re-parsing half a megabyte per chunk for
+      // nothing — visible as its "code generator has deoptimised" warning.
+      if (id.startsWith('\0') || file.includes('/node_modules/') || file.includes('/.vite/')) {
+        return undefined;
+      }
+
+      if (!/\.(t|j)sx?$/.test(file) || !src.includes('graphql`')) {
+        return undefined;
+      }
+
+      const out = transformSync(src, {
+        plugins: [[relayBabelPlugin, { artifactDirectory: relayArtifacts }]],
+        parserOpts: { plugins: ['typescript', 'jsx'] },
+        babelrc: false,
+        configFile: false,
+        code: true,
+        filename: id,
+        sourceMaps: true,
+      });
+
+      if (!out?.code) {
+        throw new Error(`vite:relay-artifacts: failed to transform ${id}`);
+      }
+
+      return { code: out.code, map: out.map };
+    },
+  };
+}
 
 function chunkInputsPlugin(): Plugin {
   return {
@@ -71,10 +140,12 @@ export default defineConfig({
       },
       aliases: {
         '@boxops/ui/tokens.stylex': path.join(wwwRoot, '@boxops/ui/src/tokens.stylex.ts'),
+        '@boxops/ui/palette.stylex': path.join(wwwRoot, '@boxops/ui/src/palette.stylex.ts'),
+        '@boxops/ui/themes.stylex': path.join(wwwRoot, '@boxops/ui/src/themes.stylex.ts'),
         '@boxops/ui/MetadataList/vars.stylex': path.join(wwwRoot, '@boxops/ui/src/MetadataList/vars.stylex.ts'),
       },
     }),
-    relay,
+    relayPlugin(),
     reactRouter(),
     chunkInputsPlugin(),
   ],
@@ -90,6 +161,14 @@ export default defineConfig({
     external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
   },
   optimizeDeps: {
-    include: ['react-relay', 'relay-runtime', '@stylexjs/stylex'],
+    // Crawl the app (and through it @boxops/ui) at server start so every dependency is pre-bundled
+    // before the first request. Left to discover them mid-load, Vite aborts the in-flight module
+    // scripts and issues an "optimized dependencies changed" reload; that load comes back with the
+    // SSR markup intact but React never hydrated — the page looks correct while nothing is
+    // interactive and no portals (tooltips, popovers, the editor action bar) ever mount.
+    // @boxops/ui's own deps (lexical, @base-ui/react) cannot go in `include`: under Yarn PnP they
+    // are not resolvable from this workspace, so they have to be reached by scanning instead.
+    entries: ['app/entry.client.tsx', 'app/root.tsx', 'app/routes/**/*.tsx'],
+    include: ['react-relay', 'relay-runtime', '@stylexjs/stylex', '@phosphor-icons/react'],
   },
 });

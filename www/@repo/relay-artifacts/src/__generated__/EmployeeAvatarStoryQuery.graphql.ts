@@ -1,0 +1,234 @@
+/**
+ * @generated SignedSource<<d07f08c8cd8a8c88e5d1d676ead052e5>>
+ * @lightSyntaxTransform
+ * @nogrep
+ */
+
+/* tslint:disable */
+/* eslint-disable */
+// @ts-nocheck
+
+import { ConcreteRequest } from 'relay-runtime';
+import { FragmentRefs } from "relay-runtime";
+export type UserStatus = "AVAILABLE" | "AWAY" | "BUSY" | "OFFLINE" | "%future added value";
+export type EmployeeAvatarStoryQuery$variables = {
+  id: string;
+};
+export type EmployeeAvatarStoryQuery$data = {
+  readonly user: {
+    readonly " $fragmentSpreads": FragmentRefs<"EmployeeAvatar_fragment" | "EmployeeHoverCardContent_fragment">;
+  } | null | undefined;
+};
+export type EmployeeAvatarStoryQuery$rawResponse = {
+  readonly user: {
+    readonly avatarUrl: string | null | undefined;
+    readonly email: string | null | undefined;
+    readonly fullName: string;
+    readonly id: string;
+    readonly initials: string | null | undefined;
+    readonly jobTitle: string | null | undefined;
+    readonly location: string | null | undefined;
+    readonly organization: string | null | undefined;
+    readonly phoneNumber: string | null | undefined;
+    readonly reportsTo: {
+      readonly fullName: string;
+      readonly id: string;
+    } | null | undefined;
+    readonly startedAt: string | null | undefined;
+    readonly status: UserStatus | null | undefined;
+    readonly timezone: string | null | undefined;
+    readonly unixName: string | null | undefined;
+  } | null | undefined;
+};
+export type EmployeeAvatarStoryQuery = {
+  rawResponse: EmployeeAvatarStoryQuery$rawResponse;
+  response: EmployeeAvatarStoryQuery$data;
+  variables: EmployeeAvatarStoryQuery$variables;
+};
+
+const node: ConcreteRequest = (function(){
+var v0 = [
+  {
+    "defaultValue": null,
+    "kind": "LocalArgument",
+    "name": "id"
+  }
+],
+v1 = [
+  {
+    "kind": "Variable",
+    "name": "id",
+    "variableName": "id"
+  }
+],
+v2 = {
+  "alias": null,
+  "args": null,
+  "kind": "ScalarField",
+  "name": "id",
+  "storageKey": null
+},
+v3 = {
+  "alias": null,
+  "args": null,
+  "kind": "ScalarField",
+  "name": "fullName",
+  "storageKey": null
+};
+return {
+  "fragment": {
+    "argumentDefinitions": (v0/*: any*/),
+    "kind": "Fragment",
+    "metadata": null,
+    "name": "EmployeeAvatarStoryQuery",
+    "selections": [
+      {
+        "alias": null,
+        "args": (v1/*: any*/),
+        "concreteType": "EntUser",
+        "kind": "LinkedField",
+        "name": "user",
+        "plural": false,
+        "selections": [
+          {
+            "args": null,
+            "kind": "FragmentSpread",
+            "name": "EmployeeAvatar_fragment"
+          },
+          {
+            "args": null,
+            "kind": "FragmentSpread",
+            "name": "EmployeeHoverCardContent_fragment"
+          }
+        ],
+        "storageKey": null
+      }
+    ],
+    "type": "Query",
+    "abstractKey": null
+  },
+  "kind": "Request",
+  "operation": {
+    "argumentDefinitions": (v0/*: any*/),
+    "kind": "Operation",
+    "name": "EmployeeAvatarStoryQuery",
+    "selections": [
+      {
+        "alias": null,
+        "args": (v1/*: any*/),
+        "concreteType": "EntUser",
+        "kind": "LinkedField",
+        "name": "user",
+        "plural": false,
+        "selections": [
+          (v2/*: any*/),
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "initials",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "avatarUrl",
+            "storageKey": null
+          },
+          (v3/*: any*/),
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "unixName",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "email",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "phoneNumber",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "organization",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "jobTitle",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "concreteType": "EntUser",
+            "kind": "LinkedField",
+            "name": "reportsTo",
+            "plural": false,
+            "selections": [
+              (v2/*: any*/),
+              (v3/*: any*/)
+            ],
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "location",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "timezone",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "startedAt",
+            "storageKey": null
+          },
+          {
+            "alias": null,
+            "args": null,
+            "kind": "ScalarField",
+            "name": "status",
+            "storageKey": null
+          }
+        ],
+        "storageKey": null
+      }
+    ]
+  },
+  "params": {
+    "cacheID": "69697f4a11dae4b7a2fd23ff410e1da9",
+    "id": null,
+    "metadata": {},
+    "name": "EmployeeAvatarStoryQuery",
+    "operationKind": "query",
+    "text": "query EmployeeAvatarStoryQuery(\n  $id: ID!\n) {\n  user(id: $id) {\n    ...EmployeeAvatar_fragment\n    ...EmployeeHoverCardContent_fragment\n    id\n  }\n}\n\nfragment EmployeeAvatarVisual_fragment on EntUser {\n  id\n  initials\n  avatarUrl\n}\n\nfragment EmployeeAvatar_fragment on EntUser {\n  ...EmployeeAvatarVisual_fragment\n  ...EmployeeHoverCard_fragment\n}\n\nfragment EmployeeHoverCardContent_fragment on EntUser {\n  id\n  fullName\n  unixName\n  initials\n  email\n  phoneNumber\n  avatarUrl\n  organization\n  jobTitle\n  reportsTo {\n    id\n    fullName\n    ...EmployeeHoverCard_fragment\n  }\n  location\n  timezone\n  startedAt\n  status\n}\n\nfragment EmployeeHoverCard_fragment on EntUser {\n  id\n}\n"
+  }
+};
+})();
+
+(node as any).hash = "111a93949f9ef32e3a7c856d7437041a";
+
+export default node;

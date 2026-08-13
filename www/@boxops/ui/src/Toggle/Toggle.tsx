@@ -14,15 +14,15 @@ const variantStyles = {
     default: {
       [buttonVars.backgroundColor]: {
         default: backgroundColor.button,
-        ':disabled': `color-mix(in srgb, white 50%, ${backgroundColor.button} 50%)`,
-        ':enabled:hover': `color-mix(in srgb, black 5%, ${backgroundColor.button} 95%)`,
+        ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${backgroundColor.button} 50%)`,
+        ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, ${backgroundColor.button} 95%)`,
       },
     },
     flat: {
       [buttonVars.backgroundColor]: {
         default: 'transparent',
-        ':disabled': 'rgba(255,255,255,0.5)',
-        ':enabled:hover': 'rgba(0,0,0,0.05)',
+        ':disabled': `oklch(from ${backgroundColor.surface} l c h / 50%)`,
+        ':enabled:hover': `oklch(from ${textColor.primary} l c h / 5%)`,
       },
     },
   }),
@@ -32,20 +32,20 @@ const variantStyles = {
 const baseStyles = stylex.create({
   base: {
     [buttonVars.color]: {
-      default: textColor.onLightMedia,
-      ':disabled': `color-mix(in srgb, white 50%, ${textColor.subtle} 50%)`,
+      default: textColor.primary,
+      ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${textColor.subtle} 50%)`,
     },
   },
   selected: {
     [buttonVars.fill]: buttonVars.color,
     [buttonVars.color]: {
       default: semanticColor.accent,
-      ':enabled:hover': `color-mix(in srgb, black 5%, ${semanticColor.accent} 95%)`,
-      ':disabled': `color-mix(in srgb, white 50%, ${semanticColor.accent} 50%)`,
+      ':enabled:hover': `color-mix(in srgb, ${textColor.primary} 5%, ${semanticColor.accent} 95%)`,
+      ':disabled': `color-mix(in srgb, ${backgroundColor.surface} 50%, ${semanticColor.accent} 50%)`,
     },
     [buttonVars.backgroundColor]: {
-      default: 'oklch(66.6% 0.163 257.9 / 16%)',
-      ':enabled:hover': 'oklch(66.6% 0.163 257.9 / 28%)',
+      default: semanticColor.accentSelected,
+      ':enabled:hover': semanticColor.accentSelectedHover,
     },
     [iconVars.fill]: buttonVars.color,
   },

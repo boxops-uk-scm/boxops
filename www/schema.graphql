@@ -3,10 +3,118 @@ interface Node {
 }
 
 type Query {
-  viewer: User
+  viewer: EntUser
+  user(id: ID!): EntUser
+  task(number: Int!): EntTask
+  diff(number: Int!): EntDiff
+  sev(number: Int!): EntSEV
+  oncall(id: ID!): EntOncall
+}
+
+"""
+Timestamps are ISO-8601 strings rather than a custom scalar, so no `customScalarTypes` mapping is
+needed to compile. Worth revisiting as a `DateTime` scalar if the real backend exposes one.
+"""
+enum UserStatus {
+  AVAILABLE
+  AWAY
+  BUSY
+  OFFLINE
 }
 
 type EntUser implements Node {
   id: ID!
   fullName: String!
+  unixName: String
+  initials: String
+  email: String
+  phoneNumber: String
+  avatarUrl: String
+  organization: String
+  jobTitle: String
+  reportsTo: EntUser
+  location: String
+  timezone: String
+  startedAt: String
+  status: UserStatus
+}
+
+type EntComment implements Node {
+  id: ID!
+  body: String
+  author: EntUser
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  CLOSED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+type EntTask implements Node {
+  id: ID!
+  number: Int!
+  title: String!
+  status: TaskStatus!
+  priority: TaskPriority!
+  owner: EntUser
+  tags: [String!]
+}
+
+enum DiffStatus {
+  OPEN
+  MERGED
+  CLOSED
+}
+
+type EntDiff implements Node {
+  id: ID!
+  number: Int!
+  title: String!
+  createdAt: String!
+  mergedAt: String
+  tags: [String!]
+  status: DiffStatus!
+  authorId: ID!
+  author: EntUser
+  comments: [EntComment!]!
+  significantLines: Int!
+  totalLines: Int!
+  projects: [String!]!
+}
+
+enum SEVSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+type EntSEV implements Node {
+  id: ID!
+  number: Int!
+  title: String!
+  stack: String
+  coordinator: EntUser
+  comments: [EntComment!]!
+  createdAt: String!
+  severity: SEVSeverity!
+  tags: [String!]
+  description: String
+}
+
+type EntOncall implements Node {
+  id: ID!
+  name: String!
+  shortName: String
+  products: [String!]!
+  description: String
 }
