@@ -1,3 +1,0 @@
-```release-note:bug
-releases: add missing container image manifests for `*-hsm` variants
-```

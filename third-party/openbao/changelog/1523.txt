@@ -1,3 +1,0 @@
-```release-note:bug
-sdk: Various constants in the `sdk` package mistakenly had no explicit type. They now now typed correctly.
-```

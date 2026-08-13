@@ -1,3 +1,0 @@
-```release-note:bug
-core/namespaces: fixed race condition in namespace deletion operation during instance sealing
-```

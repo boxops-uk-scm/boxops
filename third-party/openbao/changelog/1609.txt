@@ -1,3 +1,0 @@
-```release-note:improvement
-cli: add new subcommand "bao operator validate-config" to validate a configuration file syntax
-```

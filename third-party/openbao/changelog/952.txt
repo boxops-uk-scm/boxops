@@ -1,3 +1,0 @@
-```release-note:improvement
-auth: Use transactions for read-then-write methods in the credential package
-```

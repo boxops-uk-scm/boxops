@@ -1,3 +1,0 @@
-```release-note:improvement
-api/auth/jwt: initial implementation of JWT Auth Method
-```

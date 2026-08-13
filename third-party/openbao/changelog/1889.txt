@@ -1,3 +1,0 @@
-```release-note:bug
-raft: fix memory leak on standby nodes
-```

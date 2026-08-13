@@ -1,3 +1,0 @@
-```release-note:improvement
-cli: Expand handling of -non-interactive to prevent reading from stdin.
-```

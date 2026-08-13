@@ -1,3 +1,0 @@
-```release-note:improvement
-audit: modify the hashWalker to handle nested structs without panicing
-```

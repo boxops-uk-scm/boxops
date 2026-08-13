@@ -1,3 +1,0 @@
-```release-note:improvement
-seal/pkcs11: Support and default to software encryption for RSA key types.
-```

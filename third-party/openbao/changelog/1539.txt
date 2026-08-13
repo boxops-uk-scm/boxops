@@ -1,3 +1,0 @@
-```release-note:bug
-identity/oidc: Fix unintentional lowercasing of namespace accessor in assignments.
-```

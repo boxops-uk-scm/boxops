@@ -1,3 +1,0 @@
-```release-note:bug
-api: Stop marshaling nil interface data and adding it as a request body on an api.Request
-```

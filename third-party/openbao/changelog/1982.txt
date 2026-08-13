@@ -1,3 +1,0 @@
-```release-note:bug
-core/namespaces: only report namespaces which the provided token has access to from `sys/internal/ui/namespaces`
-```

@@ -1,3 +1,0 @@
-```release-note:improvement
-database: Use transactions for read-then-write methods in the database package
-```

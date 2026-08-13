@@ -1,3 +1,0 @@
-```release-note:improvement
-core/listeners: Add a parameter to allow cross-origin requests to include credentials (`Access-Control-Allow-Credentials` header).
-```

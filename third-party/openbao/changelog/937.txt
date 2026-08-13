@@ -1,3 +1,0 @@
-```release-note:bug
-raft: Fix noisy warn on follower-less keyring rotation.
-```

@@ -1,3 +1,0 @@
-```release-note:security
-sdk/framework: prevent additional information disclosure on invalid request. CVE-2025-52893.
-```

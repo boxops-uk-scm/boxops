@@ -1,3 +1,0 @@
-```release-note:security
-auth/userpass: Prevent timing-based leak in userpass auth method. HCSEC-2025-15 / CVE-2025-6011.
-```

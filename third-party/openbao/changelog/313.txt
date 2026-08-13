@@ -1,3 +1,0 @@
-```release-note:bug
-cli/login: Avoid calling the token helper in `get` mode.
-```

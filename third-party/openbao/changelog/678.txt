@@ -1,3 +1,0 @@
-```release-note:improvement
-secret/pki: Add pagination to `tidy` operations for improved scalability in large certificate stores.
-```

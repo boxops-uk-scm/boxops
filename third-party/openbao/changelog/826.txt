@@ -1,3 +1,0 @@
-```release-note:change
-container: Set -dev-no-store-token in default container images, fixing default read-only containers.
-```

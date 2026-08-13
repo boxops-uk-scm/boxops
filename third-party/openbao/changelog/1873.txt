@@ -1,3 +1,0 @@
-```release-note:bug
-core/identity: Entities timestamps are now correctly formatted in `RFC3339Nano`, as previously done so.
-```

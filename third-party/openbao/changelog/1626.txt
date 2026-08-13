@@ -1,3 +1,0 @@
-```release-note:change
-sdk/framework: Remove `LegacyStringToSliceHookFunc`, use `mapstructure.StringToWeakSliceHookFunc` instead.
-```

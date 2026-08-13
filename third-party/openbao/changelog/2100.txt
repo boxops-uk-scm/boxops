@@ -1,3 +1,0 @@
-```release-note:bug
-physical/postgresql: ensure underlying HA lock removal from database causes lock loss, write failures
-```

@@ -1,3 +1,0 @@
-```release-note:improvement
-sdk: Use quay.io/openbao/openbao in containerized testing
-```

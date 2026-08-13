@@ -1,3 +1,0 @@
-```release-note:bug
-core/namespaces: Fix storage failures in namespace creation leading to a total system deadlock.
-```

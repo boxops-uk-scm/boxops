@@ -1,3 +1,0 @@
-```release-note:change
-core: Remove support for Solaris due to lack of Docker support.
-```

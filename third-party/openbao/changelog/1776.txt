@@ -1,3 +1,0 @@
-```release-note:bug
-auth/jwt: Support token renewal with CEL roles.
-```

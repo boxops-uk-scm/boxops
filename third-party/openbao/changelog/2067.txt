@@ -1,3 +1,0 @@
-```release-note:bug
-raft: fix memory leak when using only non-transactional operations. This was a regression introduced in release 2.4.2 with #1889.
-```

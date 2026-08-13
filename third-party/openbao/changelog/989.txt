@@ -1,3 +1,0 @@
-```release-note:improvement
-ssh: Use transactions for read-then-write or multiple write methods in the ssh package
-```

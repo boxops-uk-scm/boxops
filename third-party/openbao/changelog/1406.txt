@@ -1,3 +1,0 @@
-```release-note:feature
-**Namespaces UI Support**: Added namespace UI support, including namespace picker and namespace management pages.
-```

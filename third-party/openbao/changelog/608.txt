@@ -1,3 +1,0 @@
-```release-note:improvement
-storage/postgresql: Add support for transactional storage semantics.
-```

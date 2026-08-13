@@ -1,3 +1,0 @@
-```release-note:bug
-core/namespaces: ensure interrupted namespace creation fails gracefully; prevents identity store panic and partial memory-only namespaces
-```

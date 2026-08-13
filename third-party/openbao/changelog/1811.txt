@@ -1,3 +1,0 @@
-```release-note:improvement
-website: Add an example of current role statement from Valkey.
-```

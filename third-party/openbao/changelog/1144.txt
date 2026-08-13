@@ -1,3 +1,0 @@
-```release-note:feature
-**KMIP Auto-Unseal**: Add support for automatic unsealing of OpenBao using a KMIP protocol.
-```

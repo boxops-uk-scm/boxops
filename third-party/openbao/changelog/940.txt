@@ -1,3 +1,0 @@
-```release-note:feature
-**UI**: Reintroduction of the WebUI.
-```

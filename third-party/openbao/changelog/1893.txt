@@ -1,3 +1,0 @@
-```release-note:bug
-sdk/framework: Reduce memory usage of repeated mounts through singleton pattern regex cache
-```

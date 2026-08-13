@@ -1,3 +1,0 @@
-```release-note:bug
-storage/postgresql: skip table creation automatically on PostgreSQL replicas
-```

@@ -1,3 +1,0 @@
-```release-note:improvement
-openapi: Add response schemas for token store operations and update operation suffixes
-```

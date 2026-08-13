@@ -1,3 +1,0 @@
-```release-note:improvement
-auth: Add token_strictly_bind_ip to support strictly binding issued token to login request's IP address.
-```

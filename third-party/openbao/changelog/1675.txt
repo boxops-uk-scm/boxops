@@ -1,3 +1,0 @@
-```release-note:change
-database: Drop obsolete upgrade check in `roleAtPath()` function introduced in `v0.10` of Vault.
-```

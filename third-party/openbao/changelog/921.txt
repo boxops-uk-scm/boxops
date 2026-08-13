@@ -1,3 +1,0 @@
-```release-note:improvement
-core/mounts: Allow tuning HMAC request and response parameters on sys/, cubbyhole/, and identity/, enabling auditing of core policy changes.
-```

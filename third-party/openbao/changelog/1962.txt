@@ -1,3 +1,0 @@
-```release-note:change
-Remove the deprecated `creation_statements`, `revocation_statements`, `rollback_statements`, and `renew_statements` fields from the dbplugin `Statements` protobuf message
-```

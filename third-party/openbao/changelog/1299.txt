@@ -1,3 +1,0 @@
-```release-note:bug
-storage/postgresql: Remove redundant PermitPool enforced by db.SetMaxOpenConns(...).
-```

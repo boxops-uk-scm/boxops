@@ -1,3 +1,0 @@
-```release-note:improvement
-secrets/pki: Add encode_json and decode_json CEL helpers.
-```

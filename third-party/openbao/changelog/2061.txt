@@ -1,3 +1,0 @@
-```release-note:bug
-command: pki health check error now contains actual mount path instead of a template placeholder.
-```

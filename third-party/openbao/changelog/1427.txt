@@ -1,3 +1,0 @@
-```release-note:feature
-Add ARM64 HSM builds and Alpine-based HSM container images
-```

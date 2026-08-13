@@ -1,3 +1,0 @@
-```release-note:improvement
-rabbitmq: Use transactions for read-then-write methods in the rabbitmq package
-```

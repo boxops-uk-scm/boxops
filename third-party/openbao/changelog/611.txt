@@ -1,3 +1,0 @@
-```release-note:change
-command/debug: Replace mholt/archiver with standard library utils. This may change file permissions but does not affect archive layout.
-```

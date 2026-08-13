@@ -1,3 +1,0 @@
-```release-note:change
-core: Remove mlock functionality from OpenBao and make the "disable_mlock" config option obsolete.
-```

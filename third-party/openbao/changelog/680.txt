@@ -1,3 +1,0 @@
-```release-note:improvement
-secret/pki: Add new endpoint `pki/certs/detailed` to return detailed cert list.
-```

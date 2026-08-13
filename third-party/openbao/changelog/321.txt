@@ -1,3 +1,0 @@
-```release-note:bug
-core/pluings: Fix compatibility when running pre-built Vault plugins.
-```

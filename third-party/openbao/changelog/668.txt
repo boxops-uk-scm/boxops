@@ -1,3 +1,0 @@
-```release-note:improvement
-ui: Remove Vault references on sibebar, splash screen & loading page.
-```

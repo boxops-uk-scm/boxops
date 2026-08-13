@@ -1,3 +1,0 @@
-```release-note:change
-api: Load all CA certificates specified in environment variables.
-```

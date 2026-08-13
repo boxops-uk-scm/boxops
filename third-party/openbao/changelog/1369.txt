@@ -1,3 +1,0 @@
-```release-note:bug
-pki: Truncate should error on expired certificates
-```

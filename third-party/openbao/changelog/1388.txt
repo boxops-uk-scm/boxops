@@ -1,3 +1,0 @@
-```release-note:bug
-secrets/kv: Fix panic on detailed metadata list when results include a directory.
-```

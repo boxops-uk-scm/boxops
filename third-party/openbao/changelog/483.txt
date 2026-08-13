@@ -1,3 +1,0 @@
-```release-note:bug
-physical/cache: Ensure later modifications to entry do not impact cached value.
-```

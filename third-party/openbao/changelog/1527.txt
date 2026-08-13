@@ -1,3 +1,0 @@
-```release-note:bug
-command: fixes typo in Windows command for setting BAO_ADDR in development mode
-```

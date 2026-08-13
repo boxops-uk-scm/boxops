@@ -1,3 +1,0 @@
-```release-note:improvement
-audit: Add http audit device for low-volume, webhook-based audit event reporting.
-```

@@ -1,3 +1,0 @@
-```release-note:bug
-core: Fix server panic on AppRole login requests with invalid parameter typing
-```

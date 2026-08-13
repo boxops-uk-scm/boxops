@@ -1,3 +1,0 @@
-```release-note:bug
-agent/template: add missing backoff mechanism for the templating server
-```

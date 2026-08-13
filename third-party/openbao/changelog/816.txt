@@ -1,3 +1,0 @@
-```release-note:change
-command/server: Prevent and warn about loading of duplicate config file from config directory.
-```
