@@ -4,9 +4,21 @@ import * as stylex from '@stylexjs/stylex';
 import * as React from 'react';
 
 import { Card } from '../Card';
-import { Icon } from '../Icon';
+import { Icon, IconContextProvider } from '../Icon';
 import { usePortalContainer } from '../PortalContainer';
-import { backgroundColor, borderRadius, dividerColor, fontFamily, gap, padding, semanticColor, textColor } from '../tokens.stylex';
+import { Text } from '../Text';
+import {
+  backgroundColor,
+  borderRadius,
+  colorScheme,
+  dividerColor,
+  fontFamily,
+  gap,
+  padding,
+  scrollbarColor,
+  semanticColor,
+  textColor,
+} from '../tokens.stylex';
 import * as bx from '../types';
 
 import { vars } from './vars.stylex';
@@ -265,6 +277,16 @@ const baseStyles = stylex.create({
    * `--anchor-width` and `--available-height` are the positioner's own vars: the list is at least as
    * wide as the field it belongs to, and never taller than the room between the field and the edge
    * of the window, at which point it scrolls instead of being clipped.
+   *
+   * The family is declared here rather than inherited, because there is nothing to inherit it from:
+   * the popup is portalled, so its parent is the portal container and not the field. Everything the
+   * field's own subtree gets for free has to be handed to the popup by hand — the size variant is
+   * applied here for the same reason, and the row text goes through `Text` so it is rendered exactly
+   * as every other menu row in the system is.
+   *
+   * And a surface that scrolls owns a scrollbar: `scrollbarColor` themes it where that is supported,
+   * `colorScheme` gets a correctly-schemed native one everywhere else. `SideNav` and `Sitemap` set
+   * the same pair for the same reason.
    */
   popup: {
     minWidth: 'var(--anchor-width)',
@@ -272,6 +294,9 @@ const baseStyles = stylex.create({
     overflowY: 'auto',
     padding: padding.XS,
     gap: 0,
+    fontFamily: fontFamily.body,
+    colorScheme: colorScheme.ui,
+    scrollbarColor: scrollbarColor.subtle,
   },
   list: {
     display: 'flex',
@@ -325,9 +350,17 @@ const baseStyles = stylex.create({
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   },
+  /**
+   * The label's own ink is the row's — `Text` sets none, so it inherits, which is what carries the
+   * accent onto the selected row and the grey onto a disabled one. The size is inherited too, from
+   * the size variant on the popup: `Text` states 16/24 outright, and a compact select wants 14/20.
+   */
+  itemLabel: {
+    fontSize: 'inherit',
+    lineHeight: 'inherit',
+  },
+  /** `Text`'s `small` is already 14/20, in both sizes — as `TextInput`'s description is. */
   itemDescription: {
-    fontSize: '14px',
-    lineHeight: '20px',
     color: textColor.subtle,
   },
   itemDescriptionDisabled: {
@@ -355,8 +388,8 @@ const baseStyles = stylex.create({
     paddingRight: padding.S,
     paddingTop: padding.XS,
     paddingBottom: padding.XS,
-    fontSize: '14px',
-    lineHeight: '20px',
+  },
+  groupLabelText: {
     fontWeight: 600,
     color: textColor.secondary,
   },
@@ -424,7 +457,7 @@ const Select = Object.assign(
           // What typeahead matches against. Taken from the text content otherwise, which here would
           // also sweep up the description and match on a word the reader never saw as the label.
           label={option.label}
-          render={(itemProps, itemState) => (
+          render={({ children, ...itemProps }, itemState) => (
             <div
               {...itemProps}
               {...stylex.props(
@@ -434,7 +467,15 @@ const Select = Object.assign(
                 itemState.selected && itemState.highlighted && baseStyles.itemSelectedHighlighted,
                 itemState.disabled && baseStyles.itemDisabled,
               )}
-            />
+            >
+              {/* An option's glyph fills when it is the chosen one, which is how `Toggle` marks a
+                  pressed button: the accent alone is a colour the eye has to compare against the
+                  rows above and below, where a filled glyph reads on its own. Set through the icon
+                  context rather than on the icon, so it reaches whatever the caller passed without
+                  the caller having to know. The tick keeps its own `bold` — `CheckIcon` filled is a
+                  check cut out of a square, which is a different glyph rather than a heavier one. */}
+              <IconContextProvider weight={itemState.selected ? 'fill' : 'regular'}>{children}</IconContextProvider>
+            </div>
           )}
         >
           {option.icon && (
@@ -443,11 +484,16 @@ const Select = Object.assign(
             </span>
           )}
           <span {...stylex.props(baseStyles.itemBody)}>
-            <SelectBase.ItemText {...stylex.props(baseStyles.itemText)}>{option.label}</SelectBase.ItemText>
+            {/* `Text` inside the part rather than as the part: `Text` computes its own class and a
+                `className` handed to it would replace that, taking the family and the smoothing with
+                it. Nested is how `SideNav` writes a row's label too. */}
+            <SelectBase.ItemText {...stylex.props(baseStyles.itemText)}>
+              <Text xstyle={baseStyles.itemLabel}>{option.label}</Text>
+            </SelectBase.ItemText>
             {option.description !== undefined && (
-              <span {...stylex.props(baseStyles.itemDescription, option.disabled && baseStyles.itemDescriptionDisabled)}>
+              <Text as="small" xstyle={[baseStyles.itemDescription, option.disabled && baseStyles.itemDescriptionDisabled]}>
                 {option.description}
-              </span>
+              </Text>
             )}
           </span>
           <SelectBase.ItemIndicator
@@ -569,13 +615,19 @@ const Select = Object.assign(
                       {...stylex.props(baseStyles.positioner)}
                     >
                       <SelectBase.Popup>
-                        <Card xstyle={[baseStyles.popup, sizeStyle]}>
+                        {/* `StyleXStyles` types `colorScheme` as a literal union and a token
+                            reference reads as `string`, so a style that sets it from a var does not
+                            satisfy a typed `xstyle`. Asserted at this boundary rather than widening
+                            the token — `Sitemap` does the same, and says so at more length. */}
+                        <Card xstyle={[baseStyles.popup as stylex.StyleXStyles, sizeStyle]}>
                           <SelectBase.List {...stylex.props(baseStyles.list)}>
                             {isGrouped(options)
                               ? options.map((group, index) => (
                                   <SelectBase.Group key={index}>
                                     <SelectBase.GroupLabel {...stylex.props(baseStyles.groupLabel)}>
-                                      {group.label}
+                                      <Text as="small" xstyle={baseStyles.groupLabelText}>
+                                        {group.label}
+                                      </Text>
                                     </SelectBase.GroupLabel>
                                     {group.items.map(renderOption)}
                                   </SelectBase.Group>
