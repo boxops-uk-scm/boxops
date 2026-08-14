@@ -77,6 +77,8 @@ import { OncallHoverCardStory } from '../stories/OncallHoverCardStory';
 import { SEVHoverCardStory } from '../stories/SEVHoverCardStory';
 import { TaskHoverCardStory } from '../stories/TaskHoverCardStory';
 
+import { stage } from './stage.stylex';
+
 export function meta() {
   return [{ title: 'Text' }];
 }
@@ -113,12 +115,21 @@ const styles = stylex.create({
     position: 'sticky',
     insetBlockStart: 0,
     zIndex: 10,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '1rem',
     paddingBlock: padding.S,
     paddingInline: '2rem',
     backgroundColor: backgroundColor.navbar,
     borderBlockEndWidth: '1px',
     borderBlockEndStyle: 'solid',
     borderBlockEndColor: dividerColor.subtle,
+  },
+  // Sized to its longest option rather than left to fill the bar. The popup takes the trigger's
+  // width as a floor, so this is also what stops the list from spanning half the pane.
+  stageSelect: {
+    width: '180px',
   },
   main: {
     inlineSize: '100%',
@@ -195,8 +206,10 @@ const styles = stylex.create({
     gap: '1rem',
     alignItems: 'center',
   },
+  // The ground is the pane's to choose — see `stageStyles` and the picker in the top bar.
   componentStage: {
-    backgroundImage: 'url(https://boxops-static.s3.eu-north-1.amazonaws.com/public/checkboard.svg)',
+    backgroundColor: stage.backgroundColor,
+    backgroundImage: stage.backgroundImage,
     backgroundSize: '64px',
     borderColor: dividerColor.subtle,
     borderStyle: 'solid',
@@ -389,6 +402,33 @@ const TOOLS_MENU_ITEMS: readonly ToolsMenu.Item[] = [
   { label: 'Create URL', icon: Phosphor.LinkSimpleIcon },
   { label: 'Shortcuts', icon: Phosphor.ArrowSquareOutIcon, hasSubmenu: true },
   { label: 'Recently opened', icon: Phosphor.ClockIcon, hasSubmenu: true },
+];
+
+/**
+ * The two grounds a stage can take, and the only place the checkerboard is written down.
+ *
+ * Transparent is the honest default for a gallery — it shows where a component's own surface ends,
+ * and catches anything that paints a ground it should not. `card` is the second question a reader
+ * has: how this looks where it will actually sit. It is the card colour rather than the surface
+ * because that is what a component is on in an app, and because in dark mode the two differ, so the
+ * stage stays visible against the pane instead of disappearing into it.
+ */
+const stageStyles = stylex.create({
+  transparent: {
+    [stage.backgroundColor]: 'transparent',
+    [stage.backgroundImage]: 'url(https://boxops-static.s3.eu-north-1.amazonaws.com/public/checkboard.svg)',
+  },
+  card: {
+    [stage.backgroundColor]: backgroundColor.card,
+    [stage.backgroundImage]: 'none',
+  },
+});
+
+type StageBackground = keyof typeof stageStyles;
+
+const STAGE_OPTIONS: Select.Options = [
+  { value: 'transparent', label: 'Transparent', icon: Phosphor.CheckerboardIcon },
+  { value: 'card', label: 'Card', icon: Phosphor.SquareIcon },
 ];
 
 const lorem =
@@ -1706,6 +1746,10 @@ const TEAM_FACES = ['/avatar-1.jpg', '/avatar-2.jpg', '/avatar-3.jpg', '/avatar-
 export default function IndexRoute() {
   const [lightPane, setLightPane] = React.useState<HTMLDivElement | null>(null);
   const [darkPane, setDarkPane] = React.useState<HTMLDivElement | null>(null);
+  // One per pane rather than one for the page: half the point of a split screen is being able to
+  // hold one side still and change the other.
+  const [lightStage, setLightStage] = React.useState<StageBackground>('transparent');
+  const [darkStage, setDarkStage] = React.useState<StageBackground>('transparent');
 
   return (
     <main {...stylex.props(styles.split)}>
@@ -1713,8 +1757,16 @@ export default function IndexRoute() {
         <PortalContainerProvider value={lightPane}>
           <div {...stylex.props(styles.paneLabel)}>
             <Heading as="h2">Light</Heading>
+            <Select
+              aria-label="Light pane stage background"
+              variants={{ size: 'compact' }}
+              options={STAGE_OPTIONS}
+              value={lightStage}
+              onValueChange={(value) => setLightStage((value ?? 'transparent') as StageBackground)}
+              xstyle={styles.stageSelect}
+            />
           </div>
-          <div {...stylex.props(styles.main)}>
+          <div {...stylex.props(styles.main, stageStyles[lightStage])}>
             <DemoContent idPrefix="light" />
           </div>
         </PortalContainerProvider>
@@ -1723,8 +1775,16 @@ export default function IndexRoute() {
         <PortalContainerProvider value={darkPane}>
           <div {...stylex.props(styles.paneLabel)}>
             <Heading as="h2">Dark</Heading>
+            <Select
+              aria-label="Dark pane stage background"
+              variants={{ size: 'compact' }}
+              options={STAGE_OPTIONS}
+              value={darkStage}
+              onValueChange={(value) => setDarkStage((value ?? 'transparent') as StageBackground)}
+              xstyle={styles.stageSelect}
+            />
           </div>
-          <div {...stylex.props(styles.main)}>
+          <div {...stylex.props(styles.main, stageStyles[darkStage])}>
             <DemoContent idPrefix="dark" />
           </div>
         </PortalContainerProvider>
