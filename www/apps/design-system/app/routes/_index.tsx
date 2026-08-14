@@ -206,11 +206,16 @@ const styles = stylex.create({
     gap: '1rem',
     alignItems: 'center',
   },
-  // The ground is the pane's to choose — see `stageStyles` and the picker in the top bar.
+  // The ground is the pane's to choose — see `stageStyles` and the picker in the top bar. The size
+  // is the checkerboard's tile, which holds four squares, so this is 16px of check.
+  //
+  // Both dimensions, not the one the fetched asset needed: an SVG carries an aspect ratio, so `64px`
+  // meant 64 by 64. A gradient has none, and the second `auto` resolves to the full height of the
+  // stage — which draws stripes down a very tall tile rather than a checkerboard.
   componentStage: {
     backgroundColor: stage.backgroundColor,
     backgroundImage: stage.backgroundImage,
-    backgroundSize: '64px',
+    backgroundSize: '32px 32px',
     borderColor: dividerColor.subtle,
     borderStyle: 'solid',
     borderWidth: '1px',
@@ -412,11 +417,33 @@ const TOOLS_MENU_ITEMS: readonly ToolsMenu.Item[] = [
  * has: how this looks where it will actually sit. It is the card colour rather than the surface
  * because that is what a component is on in an app, and because in dark mode the two differ, so the
  * stage stays visible against the pane instead of disappearing into it.
+ *
+ * The checkerboard is drawn here rather than fetched. It used to be an SVG on S3 — 32px squares of
+ * near-black at 5% — which is a light-mode asset: 5% black over a dark pane is invisible, so the
+ * dark side had no checkerboard at all, just a flat panel claiming to be transparent.
+ *
+ * A second asset would not fix it. These panes are *forced* themes, not the reader's — so neither a
+ * `prefers-color-scheme` media query inside the SVG nor one out here can tell which pane it is
+ * drawing for; both would answer with the reader's OS setting and get one of the two panes wrong.
+ * What does know is the token: `backgroundColor.secondary` is the 5% wash over the surface, and
+ * `themes.stylex` gives it 5% black in the light theme and 5% white in the dark one. A gradient
+ * built on it is therefore correct in each pane by construction, and costs no request.
+ *
+ * A conic gradient is the shorthand for a checkerboard: four quadrants of one tile, alternating.
+ * `backgroundSize` on the stage makes the tile 32px, so the squares land at 16px — the size the
+ * fetched asset drew them at, since nothing about that was wrong.
  */
+const CHECKERBOARD = `conic-gradient(
+  ${backgroundColor.secondary} 25%,
+  transparent 0 50%,
+  ${backgroundColor.secondary} 0 75%,
+  transparent 0
+)`;
+
 const stageStyles = stylex.create({
   transparent: {
     [stage.backgroundColor]: 'transparent',
-    [stage.backgroundImage]: 'url(https://boxops-static.s3.eu-north-1.amazonaws.com/public/checkboard.svg)',
+    [stage.backgroundImage]: CHECKERBOARD,
   },
   card: {
     [stage.backgroundColor]: backgroundColor.card,
