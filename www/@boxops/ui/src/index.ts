@@ -51,3 +51,5 @@ export { ProfileMenu, UncontrolledProfileMenu } from './ProfileMenu';
 
 // --- new in v3, with no v1 or v2 ancestor ---
 export { TextInput } from './TextInput';
+export { Checkbox } from './Checkbox';
+export { Radio, RadioGroup } from './Radio';

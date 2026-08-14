@@ -41,6 +41,9 @@ import {
   AvatarGroup,
   Sitemap,
   TextInput,
+  Checkbox,
+  Radio,
+  RadioGroup,
   ProfileMenu,
   UncontrolledProfileMenu,
 } from '@boxops/ui';
@@ -319,6 +322,20 @@ const styles = stylex.create({
     display: 'flex',
     flexDirection: 'column',
     gap: '1rem',
+    alignItems: 'flex-start',
+  },
+  // Boxes and buttons are small, so the stage puts several columns of them side by side rather than
+  // running one very long list down the page.
+  choiceStage: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '2rem',
+    alignItems: 'flex-start',
+  },
+  choiceColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: gap.S,
     alignItems: 'flex-start',
   },
   avatarRow: {
@@ -1471,6 +1488,53 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
           message="More than five years ago."
         />
         <TextInput label="Rota" name="rota" defaultValue="design-system-platform" status="success" message="Rota found." />
+      </section>
+      <Heading isContent>Checkbox</Heading>
+      <section {...stylex.props(styles.choiceStage, styles.componentStage)}>
+        <div {...stylex.props(styles.choiceColumn)}>
+          <Checkbox label="Ship on merge" defaultChecked />
+          <Checkbox label="Notify the rota" description="An email goes out the moment a build turns red." />
+          {/* The dash, for a box standing in for a group that is part ticked. */}
+          <Checkbox label="Some regions" indeterminate description="Ticked in two of five regions." />
+          {/* No label at all — a box for a table row, named for screen readers only. */}
+          <Checkbox aria-label="Select row" />
+        </div>
+        <div {...stylex.props(styles.choiceColumn)}>
+          <Checkbox label="Disabled" disabled />
+          <Checkbox label="Disabled, ticked" disabled defaultChecked />
+          <Checkbox label="Read only" readOnly defaultChecked description="Settled upstream; shown, not pressable." />
+        </div>
+        <div {...stylex.props(styles.choiceColumn)}>
+          <Checkbox variants={{ size: 'compact' }} label="Compact" defaultChecked />
+          <Checkbox variants={{ size: 'compact' }} label="Compact, with a description" description="14/20, as the field is." />
+          {/* Wraps, to show the box staying on the first line rather than drifting to the middle. */}
+          <Checkbox
+            label="A label long enough to wrap onto a second line, which is where start alignment earns itself"
+            xstyle={styles.clamped}
+          />
+        </div>
+      </section>
+      <Heading isContent>Radio</Heading>
+      <section {...stylex.props(styles.choiceStage, styles.componentStage)}>
+        <RadioGroup label="Deploy to" name="environment" defaultValue="staging">
+          <Radio value="staging" label="Staging" />
+          <Radio value="canary" label="Canary" description="One box, for an hour, before the rest." />
+          <Radio value="production" label="Production" />
+          <Radio value="archive" label="Archive" disabled description="Nothing has shipped here since 2019." />
+        </RadioGroup>
+        {/* Two short choices, so they sit in a row. */}
+        <RadioGroup label="Rollout" defaultValue="staged" variants={{ orientation: 'horizontal' }}>
+          <Radio value="staged" label="Staged" variants={{ size: 'compact' }} />
+          <Radio value="all" label="All at once" variants={{ size: 'compact' }} />
+        </RadioGroup>
+        <RadioGroup label="Disabled group" defaultValue="second" disabled>
+          <Radio value="first" label="First" />
+          <Radio value="second" label="Second" />
+        </RadioGroup>
+        <RadioGroup label="Read only" defaultValue="second" readOnly>
+          <Radio value="first" label="First" />
+          <Radio value="second" label="Second" />
+        </RadioGroup>
       </section>
     </>
   );
