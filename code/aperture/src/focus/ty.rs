@@ -141,7 +141,7 @@ impl Checker<'_> {
     fn stmt(&mut self, ast: &Ast, stmt: &QueryStmt<NodeId>) {
         match stmt {
             QueryStmt::Implicit(id) => {
-                self.infer(ast, *id);
+                self.generator(ast, *id);
             }
             QueryStmt::Negation(id) => {
                 self.nyi(ast, *id, Code::NyiNegation, "negation");
@@ -151,12 +151,45 @@ impl Checker<'_> {
         }
     }
 
+    /// A pattern in **generating** position — a statement, or the right side of a
+    /// bind that generates.
+    ///
+    /// The difference from [`infer`](Self::infer) is disjunction, and it is a real
+    /// one: as a *value*, `A | B` needs one type, so the branches unify. As a
+    /// *statement* each branch generates on its own, so `test.Foo _ | test.Bar _`
+    /// is two perfectly good generators whose types could not unify and do not
+    /// need to — the statement produces rows, not a value.
+    ///
+    /// Both still have one type when something reads them, which is why a
+    /// generating disjunction that *binds* its row still unifies: that is
+    /// [`bind`](Self::bind)'s question, asked of the result rather than here.
+    fn generator(&mut self, ast: &Ast, id: NodeId) -> Ty {
+        let ExprKind::Disjunction(branches) = ast.store().kind(id) else {
+            return self.infer(ast, id);
+        };
+
+        let branches = branches.clone();
+        let mut last = Ty::Error;
+
+        for branch in branches.iter() {
+            last = self.generator(ast, *branch);
+        }
+
+        self.annotate(id, last.clone());
+        last
+    }
+
     /// `lhs = rhs`.
     ///
-    /// Only the easy half is implemented — the left side is a variable being bound
-    /// for the first time, or a wildcard. Everything structural is full unification
-    /// and deferred ([open decisions](../../../docs/open-decisions.md)); a literal
-    /// on the left can never be a target at all.
+    /// What is checked here is the **left side**: a variable being bound, a
+    /// wildcard, or a record whose every leaf is one of those — all three are a
+    /// destructuring, which binds names to pieces and compares nothing. What the
+    /// right side has to be for that to work is flatten's question, because it is
+    /// the phase that knows where a value lives.
+    ///
+    /// What stays deferred here is a left side that is neither: a literal (which
+    /// can never be a target), or a generator — both want genuine unification
+    /// ([open decisions](../../../docs/open-decisions.md)).
     fn bind(&mut self, ast: &Ast, lhs: NodeId, rhs: NodeId) {
         match ast.store().kind(lhs) {
             ExprKind::Wildcard => {
@@ -164,18 +197,88 @@ impl Checker<'_> {
                 self.annotate(lhs, ty);
             }
 
-            ExprKind::Var(symbol) if self.lookup(*symbol).is_none() => {
+            // A variable the query has not mentioned yet, or one it has mentioned
+            // that this statement says what *is* — a row, or a compile-time constant.
+            // Neither is unification. `test.Ref {of = P}; P = test.Foo …` says `P` is
+            // one variable named twice and `reorder` picks the loop order;
+            // `test.Foo {id = N}; N = 1` says `N` is `1`, which flatten substitutes at
+            // every use. Both are questions about *where in the plan* the answer comes
+            // from, and deciding either here would decide it in source order — the one
+            // order the query might not have used.
+            //
+            // What is left for `nyi/bind-unification` needs two things compared at
+            // runtime, with nothing constant to substitute: `X = Y` with both bound
+            // (which wants a register-to-register residual), a generator or a record on
+            // the left, or a field read on the right.
+            //
+            // Claiming the same variable *twice* — two rows, or two constants — is
+            // unification too, and flatten refuses it: only flatten knows whether a
+            // variable is already a row or a constant rather than a capture.
+            ExprKind::Var(symbol)
+                if self.lookup(*symbol).is_none()
+                    || matches!(ast.store().kind(rhs), ExprKind::Fact(..))
+                    || ast.is_constant(rhs) =>
+            {
                 let symbol = *symbol;
-                // Introduced *before* the right side is inferred, so that both
-                // occurrences in `X = {a = X}` are the same type variable. Inferring
-                // first would quietly make two of them, and the occurs check could
-                // then never fire.
-                let var = self.fresh_var_id();
-                self.env.push((symbol, var));
+                // A fresh variable is introduced *before* the right side is
+                // inferred, so that both occurrences in `X = {a = X}` are the same
+                // type variable. Inferring first would quietly make two of them, and
+                // the occurs check could then never fire. One already introduced
+                // keeps the type variable it has — that is what makes the two
+                // occurrences of `P` the same `P`.
+                let var = match self.lookup(symbol) {
+                    Some(var) => var,
+                    None => {
+                        let var = self.fresh_var_id();
+                        self.env.push((symbol, var));
+                        var
+                    }
+                };
                 self.annotate(lhs, Ty::Var(var));
 
                 let ty = self.infer(ast, rhs);
                 if let Err(err) = self.unify(&Ty::Var(var), &ty) {
+                    self.report(ast, rhs, err);
+                }
+            }
+
+            // **Two variables the query has already mentioned.** Symmetric, and not
+            // a definition of either: both are somewhere by the time this runs, so
+            // it constrains them to be equal per row. Typing it is just making the
+            // two agree; flatten decides where the comparison goes.
+            ExprKind::Var(symbol)
+                if self.lookup(*symbol).is_some()
+                    && matches!(ast.store().kind(rhs), ExprKind::Var(other)
+                        if self.lookup(*other).is_some()) =>
+            {
+                let left = Ty::Var(self.lookup(*symbol).expect("bound above"));
+                self.annotate(lhs, left.clone());
+
+                let right = self.infer(ast, rhs);
+                if let Err(err) = self.unify(&left, &right) {
+                    self.report(ast, rhs, err);
+                }
+            }
+
+            // A record on the left: a **destructuring**, not unification. Every
+            // variable in it is bound to the piece of the right side it lines up
+            // with, which is the same substitution a scalar bind gets and needs
+            // nothing compared at runtime.
+            //
+            // The gate is the *left* side only. What the right side has to be is a
+            // question about where its pieces live, and flatten answers it: a
+            // constant destructures into literals, anything naming a place
+            // destructures into pieces of that place, and a value in no register
+            // draws `nyi/value-bind` there. What cannot be relaxed is the left side:
+            // a *literal* leaf (`{a = 1} = {a = 2}`) would bind nothing and so mean
+            // `true` where it means the empty relation — see
+            // [`Ast::is_destructurable`].
+            ExprKind::Record(_) if ast.is_destructurable(lhs) => {
+                // The left side first, so its variables are introduced before the
+                // right side is inferred — the discipline the variable arm explains.
+                let pattern = self.infer(ast, lhs);
+                let value = self.infer(ast, rhs);
+                if let Err(err) = self.unify(&pattern, &value) {
                     self.report(ast, rhs, err);
                 }
             }
@@ -252,10 +355,14 @@ impl Checker<'_> {
             // variables are scoped to it, and it has already been reported, so
             // descending would only add diagnostics about a construct we have
             // declined.
-            ExprKind::Never => {
-                self.nyi(ast, id, Code::NyiNever, "the empty pattern `never`");
-                Ty::Error
-            }
+            // **`never` is polymorphic**, which is what "the identity of `|`" means
+            // in a system with no subtyping: a fresh variable takes whatever type
+            // the position demands, so `A | never` is `A`'s type and `never` alone
+            // is whatever it is asked to be. Phase 2 declined a `Ty::Never`
+            // constructor as speculative; this is the same answer without one, and
+            // the empty relation needs nothing else — it matches no rows, so no
+            // value of any type ever comes out of it.
+            ExprKind::Never => self.fresh_var(),
             ExprKind::Select(..) => {
                 self.nyi(
                     ast,
@@ -265,16 +372,49 @@ impl Checker<'_> {
                 );
                 Ty::Error
             }
+            // **Every branch has the one type the disjunction has.** Unified rather
+            // than merely compared, so a branch may *inform* the type — `never | 1`
+            // is `int`, and the fresh variable `never` contributed is what makes
+            // that work.
+            //
+            // Variables are deliberately **not** scoped per branch here. A variable
+            // some branch does not bind is a *safety* question, not a typing one:
+            // flatten takes the intersection of what the branches capture, and range
+            // restriction then reports the read that has nothing behind it — at the
+            // read, which is where a person can act on it.
             ExprKind::Disjunction(branches) => {
-                self.nyi(ast, id, Code::NyiDisjunction, "disjunction");
+                let branches = branches.clone();
+                let result = self.fresh_var();
+
                 for branch in branches.iter() {
-                    self.infer(ast, *branch);
+                    let branch_ty = self.infer(ast, *branch);
+
+                    if let Err(err) = self.unify(&result, &branch_ty) {
+                        self.report(ast, *branch, err);
+                    }
                 }
-                Ty::Error
+
+                result
             }
-            ExprKind::Subquery(_) => {
-                self.nyi(ast, id, Code::NyiSubquery, "a subquery");
-                Ty::Error
+            // **A subquery is a query, and its variables are its own.** The body is
+            // checked, then the environment is truncated back — so a name used
+            // inside says nothing about the same name outside, which is what makes
+            // `(Y where …)` writable next to an outer `Y`.
+            //
+            // Only the environment is rolled back, not the substitution or the
+            // annotations: the types the subquery worked out are real and the side
+            // table keeps them. That is why this is not [`rollback`](Self::rollback),
+            // which is for a scope that *failed*.
+            ExprKind::Subquery(query) => {
+                let scope = self.env.len();
+
+                for stmt in query.body() {
+                    self.stmt(ast, stmt);
+                }
+
+                let ty = self.infer(ast, *query.head());
+                self.env.truncate(scope);
+                ty
             }
         };
 
@@ -961,20 +1101,10 @@ mod tests {
     #[test]
     fn deferred_constructs_report_themselves() {
         for (source, code) in [
-            ("X where X = never", "nyi/never"),
             ("X.alt? where X = test.Foo _", "nyi/union-select"),
-            (
-                "X where test.Foo {id = X} | test.Bar {id = X}",
-                "nyi/disjunction",
-            ),
             (
                 "X where test.Foo {id = X}; !test.Bar {id = X}",
                 "nyi/negation",
-            ),
-            ("X where X = (Y where test.Foo {id = Y})", "nyi/subquery"),
-            (
-                "X where test.Foo {id = X}; test.Bar {id = Y}; X = Y",
-                "nyi/bind-unification",
             ),
         ] {
             let checked = compile(source);
@@ -982,11 +1112,177 @@ mod tests {
         }
     }
 
+    /// **Binding a row a field has already mentioned is an ordering question**, and
+    /// typecheck's business here is types only.
+    ///
+    /// `test.Ref {of = P}; P = test.Foo …` is the same query as those two statements
+    /// the other way round, and compiles to the same plan —
+    /// [`reorder`](crate::focus::reorder::reorder) picks the order that binds before
+    /// it reads. So `P` is one variable with one type whichever statement mentions
+    /// it first, and *which* statement binds it is not typecheck's call to make.
+    ///
+    /// This is the half of `pattern = pattern` that never needed unification. The
+    /// rule it replaces refused every bind whose left side was already bound, which
+    /// conflated it with the cases that do — those are still deferred, next test.
+    #[test]
+    fn a_row_may_be_bound_after_a_field_mentions_it() {
+        assert_eq!(
+            head_ty("P where test.Ref {of = P}; P = test.Foo {id = 1}"),
+            "fact(0)"
+        );
+
+        // The bind is symmetric, as Angle's reference says `A = B` is: the same
+        // query written either way round has the same type.
+        assert_eq!(
+            head_ty("P where P = test.Foo {id = 1}; test.Ref {of = P}"),
+            "fact(0)"
+        );
+
+        // Two statements claiming one row is unification, not ordering — but it is
+        // *flatten* that says so, from the whole statement list, because deciding it
+        // here would be deciding it in source order again. Typecheck sees only that
+        // the types agree, which they do.
+        assert!(
+            all_codes("X where X = test.Foo {id = 1}; X = test.Foo {id = 2}").is_empty(),
+            "the row claim is flatten's to refuse"
+        );
+
+        // A second claim of a *different* predicate is a plain type error, caught
+        // here because the bind unifies against what the variable already is.
+        assert_eq!(
+            all_codes("X where X = test.Foo {id = 1}; X = test.Bar {id = 2}"),
+            ["reject/type-mismatch"]
+        );
+    }
+
+    /// **A constant may be bound after a field has captured the variable.**
+    ///
+    /// `test.Foo {id = N}; N = 1` says what `N` *is*, and a constant is substituted at
+    /// every use rather than compared at runtime — so as with the row case above, the
+    /// only thing that made this look like unification was the order it was written in.
+    /// Flatten does the folding and pins the plan equality; typecheck's part is that
+    /// the two types agree.
+    #[test]
+    fn a_constant_may_be_bound_after_a_field_captures_it() {
+        assert_eq!(head_ty("X where test.Foo {id = N, name = X}; N = 1"), "str");
+        assert_eq!(
+            head_ty("X where test.Nested {outer = X}; X = {inner = 1}"),
+            "{inner=int}"
+        );
+
+        // A constant of the wrong type is a plain type error, not a deferral.
+        assert_eq!(
+            all_codes("X where test.Foo {id = N, name = X}; N = \"one\""),
+            ["reject/type-mismatch"]
+        );
+
+        // Two constants for one variable is unification, and flatten's to refuse —
+        // only it knows the variable is already a constant rather than a capture.
+        assert!(all_codes("Y where Y = 1; Y = 2").is_empty());
+    }
+
+    /// **A record on the left, matched against a constant, is destructuring** — every
+    /// variable in it is bound to a piece of a value already known, which is the same
+    /// substitution as a scalar constant and needs nothing compared at runtime.
+    #[test]
+    fn a_constant_may_be_destructured_into_a_record() {
+        assert_eq!(head_ty("X where {a = X} = {a = 1}"), "int");
+
+        // To any depth, and beside a wildcard, which binds nothing.
+        assert_eq!(head_ty("X where {a = {b = X}} = {a = {b = 1}}"), "int");
+        assert_eq!(head_ty("X where {a = X, b = _} = {a = 1, b = 2}"), "int");
+
+        // The shapes still have to agree, and a mismatch is a type error rather than
+        // a deferral.
+        assert_eq!(
+            all_codes("X where {a = X} = {a = 1}; test.Foo {name = X}"),
+            ["reject/type-mismatch"]
+        );
+    }
+
+    /// **A literal on the left of a destructuring stays deferred**, and this is the
+    /// trap the feature above walks past.
+    ///
+    /// `{a = 1} = {a = 2}` *typechecks* — both sides are `int` — and binds nothing. A
+    /// flatten that accepted it would emit no constraint at all, so the statement would
+    /// silently mean **true** where it means the empty relation. Deciding it needs the
+    /// two constants' bytes compared, which is unification; refusing it is what keeps
+    /// "binds nothing" from ever reaching flatten.
+    #[test]
+    fn a_literal_inside_a_destructured_record_is_deferred() {
+        for source in [
+            "X where test.Foo {id = X}; {a = 1} = {a = 2}",
+            // Refused even where the two agree: deciding *that* is the same byte
+            // comparison, and a query saying it is degenerate either way.
+            "X where test.Foo {id = X}; {a = 1} = {a = 1}",
+            // And where only one leaf is a literal, so the rest would have folded.
+            "X where {a = X, b = 2} = {a = 1, b = 2}",
+        ] {
+            assert_eq!(
+                all_codes(source),
+                ["nyi/bind-unification"],
+                "for {source:?}"
+            );
+        }
+    }
+
+    /// The shapes that genuinely need unification stay deferred — the narrowings
+    /// above must not have swallowed them.
+    ///
+    /// What these have in common is **two things to compare at runtime and nothing
+    /// constant to substitute**, which is why they are the ones left: each wants a
+    /// register-to-register residual, or a structural decomposition, or both.
+    #[test]
+    fn genuine_unification_is_still_deferred() {
+        for source in [
+            // A field read on the right is per-row, so there is nothing to fold —
+            // and the types agree here, so it is the shape being refused and not them.
+            "X where test.Foo {name = X}; Y = test.Foo _; X = Y.name",
+            // A prefix denotes a range rather than a value, so nothing can be
+            // substituted for it either.
+            "X where test.Foo {name = X}; X = \"a\"..",
+            // Generator against generator: the left side is not a variable at all, so
+            // there is nothing to bind — and "these two facts are the same fact" is the
+            // same thing flatten refuses when two statements claim one row.
+            "X where test.Foo {id = X} = test.Bar {id = X}",
+        ] {
+            assert_eq!(
+                all_codes(source),
+                ["nyi/bind-unification"],
+                "for {source:?}"
+            );
+        }
+    }
+
+    /// **Where the record gate now is: the left side only.**
+    ///
+    /// A record on the left destructures against whatever the right side is, and
+    /// *what the right side is* is flatten's question — it knows where a value
+    /// lives and typecheck does not. So a record against a non-constant record is
+    /// no longer refused here; it is refused there, and by the code that says why:
+    /// `{a = Y}` names no place, so it would have to be built.
+    #[test]
+    fn what_a_record_destructures_against_is_flattens_question() {
+        // Typecheck passes it through; the corpus pins what flatten then says
+        // (`nyi/value-bind` — `{a = Y}` names no place).
+        assert_eq!(
+            all_codes("X where test.Foo {id = X}; {a = X} = {a = Y}"),
+            [] as [&str; 0]
+        );
+
+        // ...and a **literal** leaf on the left is still refused here, because that
+        // is a property of the left side alone.
+        assert_eq!(
+            all_codes("X where test.Foo {id = X}; {a = 1} = {a = Y}"),
+            ["nyi/bind-unification"],
+        );
+    }
+
     /// A deferred construct's message says "not implemented yet", not "unsupported":
     /// the distinction is the whole point of the permissive grammar.
     #[test]
     fn deferred_messages_say_yet() {
-        let checked = compile("X where X = never");
+        let checked = compile("X.alt? where X = test.Foo _");
         let first = checked.diagnostics.iter().next().expect("a diagnostic");
         assert!(
             first.message.contains("not implemented yet"),

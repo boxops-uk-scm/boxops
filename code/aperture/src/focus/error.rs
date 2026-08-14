@@ -38,6 +38,14 @@ pub enum ApertureError {
     #[error("resume cursor names {cursor} level(s) but the plan has {plan}")]
     CursorPlanMismatch { cursor: usize, plan: usize },
 
+    /// A resume cursor naming an alternative the level it is replayed against
+    /// does not have — the same untrusted-input case as
+    /// [`CursorPlanMismatch`](Self::CursorPlanMismatch), one level down. The
+    /// level count matching does not make the sources match, since two plans of
+    /// the same shape can disagree about how many alternatives a level has.
+    #[error("resume cursor names source {index} of a level with {sources}")]
+    CursorSourceOutOfRange { index: usize, sources: usize },
+
     #[error("resume key not found")]
     BadResumeKey,
 
@@ -57,6 +65,22 @@ pub enum ApertureError {
 
     #[error("dangling fact id {0:?}: key present but no entity in the `entities` column family")]
     DanglingFactId(FactId),
+
+    /// A stored reference naming a **different predicate** than the field it sits
+    /// in is declared to reference.
+    ///
+    /// Reported rather than followed, because the row it names would be read
+    /// against the declared predicate's key layout: every path in the fetching
+    /// level's residuals, and every projection off the register it binds, was
+    /// compiled from that layout. Following it anyway decodes another type's bytes
+    /// at those offsets and answers with whatever is there.
+    #[error(
+        "a reference declared to name {expected:?} names {found:?}, whose key has a different shape"
+    )]
+    ReferenceCrossesPredicate {
+        expected: PredicateId,
+        found: PredicateId,
+    },
 
     #[error("operation cancelled")]
     Cancelled,

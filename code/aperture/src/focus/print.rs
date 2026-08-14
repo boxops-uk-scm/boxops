@@ -15,14 +15,14 @@
 //! `parse ∘ print == id` on trees is claimed, and only that is tested.
 //!
 //! The hard part is parentheses. The grammar has three precedence levels, and a
-//! child looser than its position allows has to be wrapped — see [`Level`].
+//! child looser than its position allows has to be wrapped — see [`Prec`].
 
 use std::fmt::Write as _;
 
 use crate::focus::{
     iter::Address,
-    plan::{FieldPath, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart, Step},
-    schema::{LocalInterner, PredicateTy, Schema, Symbol},
+    plan::{FieldPath, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart, Source, Step},
+    schema::{LocalInterner, PredicateRef, PredicateTy, Schema, Symbol},
     syntax::{Ast, ExprKind, FieldRef, Literal, NodeId, NodeSpan, Query, QueryStmt, narrow_offset},
 };
 
@@ -39,7 +39,7 @@ use crate::focus::{
 /// be ordered here, because an access chain's base may be a chain (`X.a.b`) while an
 /// application in that position needs wrapping (`(test.Foo X).name`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Level {
+enum Prec {
     Primary,
     Chain,
     Application,
@@ -73,7 +73,7 @@ pub fn plan(plan: &Plan, schema: &Schema, interner: &LocalInterner) -> String {
 
     for step in plan.body.iter() {
         let generator = match step {
-            Step::Scan(generator) => generator,
+            Step::Level(generator) => generator,
             // A derived bind names the register it computes, since it has no
             // predicate to be about and no scan to narrow.
             Step::Derive(derived) => {
@@ -82,45 +82,94 @@ pub fn plan(plan: &Plan, schema: &Schema, interner: &LocalInterner) -> String {
             }
         };
 
-        let predicate = schema.get(generator.access.predicate_id);
-        let name = predicate.as_ref().and_then(|p| p.name()).unwrap_or("?");
-        let key_ty = predicate.as_ref().map(|p| p.key().ty);
-        let field = |path: &FieldPath| field_name(key_ty, path, schema);
+        // A path read out of some *other* register is named against the key of
+        // whatever predicate that register holds, which is a different predicate
+        // with different field names. Naming it against this level's key gave
+        // `r0.module` for a register holding a `src.Module`, whose key has no
+        // `module` field at all.
+        let register_field = |address: &Address, path: &FieldPath| {
+            let predicate = register_key(plan, address, schema);
+            let key_ty = predicate.as_ref().map(|p| p.key().ty);
 
-        let _ = write!(out, "  {} <- {name}", Address::new(level));
+            format!("{address}.{}", field_name(key_ty, path, schema))
+        };
 
-        match &generator.access.seek_key {
-            SeekKey::Prefix(bytes) if bytes.is_empty() => out.push_str(" scan"),
-            SeekKey::Prefix(_) => out.push_str(" seek[<const>]"),
-            SeekKey::Composite(parts) => {
-                let parts: Vec<String> = parts
-                    .iter()
-                    .map(|part| match part {
-                        SeekKeyPart::Bytes(_) => "<const>".to_owned(),
-                        SeekKeyPart::RegisterField { address, path } => {
-                            format!("{address}.{}", field(path))
-                        }
-                        SeekKeyPart::RegisterFactId(address) => format!("{address}#"),
-                    })
-                    .collect();
+        let _ = write!(out, "  {} <-", Address::new(level));
 
-                let _ = write!(out, " seek[{}]", parts.join(" "));
-            }
+        // A level with no sources produces nothing. Rendered as the keyword for
+        // it rather than as a blank, because "this level answers nothing" is the
+        // most important thing a plan can say about itself.
+        if generator.sources.is_empty() {
+            out.push_str(" never");
         }
 
-        for Residual { path, op } in generator.residuals.iter() {
-            let at = field(path);
+        for (alternative, source) in generator.sources.iter().enumerate() {
+            // Alternatives after the first are stacked under the level, so a
+            // single-source level — every level focus compiles today — reads
+            // exactly as it did before there was more than one.
+            if alternative > 0 {
+                let _ = write!(out, "\n     |");
+            }
 
-            let _ = match op {
-                ResidualOp::EqConst(_) => write!(out, "\n       where {at} == <const>"),
-                ResidualOp::Prefix(_) => write!(out, "\n       where {at} starts with <const>"),
-                ResidualOp::EqRegisterField { address, path } => {
-                    write!(out, "\n       where {at} == {address}.{}", field(path))
+            let predicate = schema.get(source.predicate_id());
+            let name = predicate.as_ref().and_then(|p| p.name()).unwrap_or("?");
+            let key_ty = predicate.as_ref().map(|p| p.key().ty);
+            let field = |path: &FieldPath| field_name(key_ty, path, schema);
+
+            let _ = write!(out, " {name}");
+
+            match source {
+                Source::Seek { access, .. } => match &access.seek_key {
+                    SeekKey::Prefix(bytes) if bytes.is_empty() => out.push_str(" scan"),
+                    SeekKey::Prefix(_) => out.push_str(" seek[<const>]"),
+                    SeekKey::Composite(parts) => {
+                        let parts: Vec<String> = parts
+                            .iter()
+                            .map(|part| match part {
+                                SeekKeyPart::Bytes(_) => "<const>".to_owned(),
+                                SeekKeyPart::RegisterField { address, path } => {
+                                    register_field(address, path)
+                                }
+                                SeekKeyPart::RegisterFactId(address) => format!("{address}#"),
+                            })
+                            .collect();
+
+                        let _ = write!(out, " seek[{}]", parts.join(" "));
+                    }
+                },
+
+                // Named for the reference it follows rather than for a range,
+                // because that is the whole of what this level does: one row, the
+                // one that field points at. `fetch[r0.of]` reads against the
+                // *outer* register's key — the same rule a spliced seek part
+                // follows, and the same trap if it were named against this one.
+                Source::Fetch {
+                    reference, path, ..
+                } => {
+                    let _ = write!(out, " fetch[{}]", register_field(reference, path));
                 }
-                ResidualOp::EqRegisterFactId(address) => {
-                    write!(out, "\n       where {at} == {address}#")
-                }
-            };
+            }
+
+            for Residual { path, op } in source.residuals().iter() {
+                let at = field(path);
+
+                let _ = match op {
+                    ResidualOp::EqConst(_) => write!(out, "\n       where {at} == <const>"),
+                    ResidualOp::Prefix(_) => {
+                        write!(out, "\n       where {at} starts with <const>")
+                    }
+                    ResidualOp::EqRegisterField { address, path } => {
+                        write!(
+                            out,
+                            "\n       where {at} == {}",
+                            register_field(address, path)
+                        )
+                    }
+                    ResidualOp::EqRegisterFactId(address) => {
+                        write!(out, "\n       where {at} == {address}#")
+                    }
+                };
+            }
         }
 
         out.push('\n');
@@ -141,20 +190,7 @@ pub fn plan(plan: &Plan, schema: &Schema, interner: &LocalInterner) -> String {
 /// predicate that register holds is recorded by the level that binds it — so the field
 /// has a name here as much as in a seek, just one indirection further away.
 fn projection(plan: &Plan, project: &Project, schema: &Schema, interner: &LocalInterner) -> String {
-    // Found by asking which level *binds* this register, rather than by indexing
-    // the body with the register number. Those were the same number while every
-    // register came from a level of its own; a derived bind writes a register with
-    // no level behind it, so indexing would name an unrelated predicate's fields.
-    let key_of = |address: &Address| {
-        plan.body
-            .iter()
-            .filter_map(|step| match step {
-                Step::Scan(generator) => Some(generator),
-                Step::Derive(_) => None,
-            })
-            .find(|generator| generator.binds.contains(address))
-            .and_then(|generator| schema.get(generator.access.predicate_id))
-    };
+    let key_of = |address: &Address| register_key(plan, address, schema);
 
     match project {
         Project::Lit(value) => format!("{value:?}"),
@@ -182,6 +218,30 @@ fn projection(plan: &Plan, project: &Project, schema: &Schema, interner: &LocalI
                 .join(", ")
         ),
     }
+}
+
+/// The predicate whose key a register holds.
+///
+/// Found by asking which level *binds* this register, rather than by indexing the
+/// body with the register number. Those were the same number while every register
+/// came from a level of its own; a derived bind writes a register with no level
+/// behind it, so indexing would name an unrelated predicate's fields.
+fn register_key<'a>(
+    plan: &Plan,
+    address: &Address,
+    schema: &'a Schema,
+) -> Option<PredicateRef<'a>> {
+    plan.body
+        .iter()
+        .filter_map(|step| match step {
+            Step::Level(generator) => Some(generator),
+            Step::Derive(_) => None,
+        })
+        .find(|level| level.binds.contains(address))
+        // `None` for a disjunction spanning predicates: there is no single key to
+        // name a field against, and falling back to the index says so.
+        .and_then(|level| level.predicate_id())
+        .and_then(|predicate| schema.get(predicate))
 }
 
 /// A field path as the schema names it — `of`, or `outer.inner` for a nested step.
@@ -316,22 +376,22 @@ impl Printer<'_> {
     // ---- focus source ---------------------------------------------------------
 
     fn query(&self, out: &mut Spanned, query: &Query<NodeId>) {
-        self.pattern(out, *query.head(), Level::Disjunction);
+        self.pattern(out, *query.head(), Prec::Disjunction);
         out.push(" where ");
         out.join("; ", query.body(), |out, stmt| self.stmt(out, stmt));
     }
 
     fn stmt(&self, out: &mut Spanned, stmt: &QueryStmt<NodeId>) {
         match stmt {
-            QueryStmt::Implicit(id) => self.pattern(out, *id, Level::Disjunction),
+            QueryStmt::Implicit(id) => self.pattern(out, *id, Prec::Disjunction),
             QueryStmt::Bind(lhs, rhs) => {
-                self.pattern(out, *lhs, Level::Disjunction);
+                self.pattern(out, *lhs, Prec::Disjunction);
                 out.push(" = ");
-                self.pattern(out, *rhs, Level::Disjunction);
+                self.pattern(out, *rhs, Prec::Disjunction);
             }
             QueryStmt::Negation(id) => {
                 out.push("!");
-                self.pattern(out, *id, Level::Disjunction);
+                self.pattern(out, *id, Prec::Disjunction);
             }
         }
     }
@@ -340,7 +400,7 @@ impl Printer<'_> {
     ///
     /// The wrapping parens are emitted *outside* the recorded span — see
     /// [`Spanned::span`] for why that is lowering's convention and not a choice.
-    fn pattern(&self, out: &mut Spanned, id: NodeId, permitted: Level) {
+    fn pattern(&self, out: &mut Spanned, id: NodeId, permitted: Prec) {
         let wrapped = self.level(id) > permitted;
         if wrapped {
             out.push("(");
@@ -351,12 +411,12 @@ impl Printer<'_> {
         }
     }
 
-    fn level(&self, id: NodeId) -> Level {
+    fn level(&self, id: NodeId) -> Prec {
         match self.ast.store().kind(id) {
-            ExprKind::Disjunction(_) => Level::Disjunction,
-            ExprKind::Fact(..) => Level::Application,
-            ExprKind::Access(..) | ExprKind::Select(..) => Level::Chain,
-            _ => Level::Primary,
+            ExprKind::Disjunction(_) => Prec::Disjunction,
+            ExprKind::Fact(..) => Prec::Application,
+            ExprKind::Access(..) | ExprKind::Select(..) => Prec::Chain,
+            _ => Prec::Primary,
         }
     }
 
@@ -387,7 +447,7 @@ impl Printer<'_> {
                 out.join(", ", fields.iter(), |out, (name, value)| {
                     out.push(self.name(*name));
                     out.push(" = ");
-                    self.pattern(out, *value, Level::Disjunction);
+                    self.pattern(out, *value, Prec::Disjunction);
                 });
                 out.push("}");
             }
@@ -395,16 +455,16 @@ impl Printer<'_> {
             // An access chain's base is a primary or another chain; anything looser
             // is wrapped.
             ExprKind::Access(FieldRef::Key(name), base) => {
-                self.pattern(out, *base, Level::Chain);
+                self.pattern(out, *base, Prec::Chain);
                 out.push(".");
                 out.push(self.name(*name));
             }
             ExprKind::Access(FieldRef::Value, base) => {
-                self.pattern(out, *base, Level::Chain);
+                self.pattern(out, *base, Prec::Chain);
                 out.push(".value");
             }
             ExprKind::Select(alt, base) => {
-                self.pattern(out, *base, Level::Chain);
+                self.pattern(out, *base, Prec::Chain);
                 out.push(".");
                 out.push(self.name(*alt));
                 out.push("?");
@@ -422,12 +482,12 @@ impl Printer<'_> {
                     .unwrap_or_else(|| format!("unknown.Predicate{}", predicate.0));
                 out.push(&name);
                 out.push(" ");
-                self.pattern(out, *key, Level::Application);
+                self.pattern(out, *key, Prec::Application);
             }
 
             ExprKind::Disjunction(branches) => {
                 out.join(" | ", branches.iter(), |out, branch| {
-                    self.pattern(out, *branch, Level::Application)
+                    self.pattern(out, *branch, Prec::Application)
                 });
             }
 
@@ -604,14 +664,161 @@ pub fn escape(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::focus::{
+        compile::Compilation,
         corpus,
         cst::CstNode,
         diag::Diagnostics,
         lower::lower,
         parse::parse,
+        plan::{Access, Level as PlanLevel},
+        schema::PredicateId,
         syntax::{proptest::arb_query_spec, source_range},
     };
     use ::proptest::prelude::*;
+
+    /// **A register's field is named against that register's predicate.**
+    ///
+    /// The rendering exists to answer "which field narrowed this scan", so a wrong
+    /// name is worse than an index: both `from` and `id` are real field names here,
+    /// and naming `r0`'s path against *this* level's key silently swapped one for
+    /// the other. Nothing caught it because this renderer had no test and only the
+    /// shell called it.
+    #[test]
+    fn a_spliced_register_is_named_against_its_own_predicate() {
+        let schema = corpus::schema();
+
+        // `r0` holds a `test.Edge` (key `{from, to}`); the level seeking on it is a
+        // `test.Foo` (key `{id, name}`). Path 0 is `from` there and `id` here.
+        let mut compilation = Compilation::new(
+            "X where test.Edge {from = X, to = _}; test.Foo {id = X, name = _}",
+            &schema,
+        );
+        let compiled = compilation.plan().expect("a plan");
+        let rendered = plan(&compiled, &schema, compilation.interner());
+
+        assert!(
+            rendered.contains("seek[r0.from]"),
+            "expected the register's own field name, got:\n{rendered}"
+        );
+
+        // And a scalar-keyed level reading a record-keyed register: the field has a
+        // name on one side and none on the other.
+        let mut compilation =
+            Compilation::new("X where test.Foo {name = X, id = _}; test.Name X", &schema);
+        let compiled = compilation.plan().expect("a plan");
+        let rendered = plan(&compiled, &schema, compilation.interner());
+
+        assert!(
+            rendered.contains("seek[r0.name]"),
+            "expected the register's own field name, got:\n{rendered}"
+        );
+    }
+
+    /// The id of the predicate `name`, found by asking the schema rather than by
+    /// hardcoding a number the fixture is free to renumber.
+    fn predicate_id(schema: &Schema, name: &str) -> PredicateId {
+        (0..64)
+            .map(PredicateId)
+            .find(|id| schema.get(*id).and_then(|p| p.name()) == Some(name))
+            .unwrap_or_else(|| panic!("no predicate called {name}"))
+    }
+
+    /// The **residual** arm names the other register against its own predicate
+    /// too — the same fault as the seek, one arm along, and the arm a fix to the
+    /// seek alone would have left behind.
+    #[test]
+    fn a_residual_against_a_register_is_named_against_its_own_predicate() {
+        let schema = corpus::schema();
+
+        // `r0` holds a `test.Foo` (key `{id, name}`); the level filtering against
+        // it is a `test.Edge` (key `{from, to}`). `from` is a wildcard, so the
+        // seek prefix closes and `to = X` becomes a residual reading `r0`'s field
+        // 0 — which is `id` there and `from` here.
+        let mut compilation = Compilation::new(
+            "X where test.Foo {id = X, name = _}; test.Edge {from = _, to = X}",
+            &schema,
+        );
+        let compiled = compilation.plan().expect("a plan");
+        let rendered = plan(&compiled, &schema, compilation.interner());
+
+        assert!(
+            rendered.contains("where to == r0.id"),
+            "expected `to == r0.id` — this level's field against the register's \
+             own — got:\n{rendered}"
+        );
+    }
+
+    /// The **head** names a register against the predicate of the level that
+    /// binds it, not against the last level or the level whose number matches.
+    #[test]
+    fn a_projected_register_is_named_against_its_own_predicate() {
+        let schema = corpus::schema();
+
+        // `r0` is a `test.Foo` (`{id, name}`) and `r1` a `test.Link` (`{at, of}`).
+        // Projecting `r0`'s field 1 is `name`; against `test.Link` it would read
+        // `of`, which is a real field name and so fails silently.
+        let mut compilation = Compilation::new(
+            "Y where test.Foo {id = _, name = Y}; test.Link {at = 1, of = _}",
+            &schema,
+        );
+        let compiled = compilation.plan().expect("a plan");
+        let rendered = plan(&compiled, &schema, compilation.interner());
+
+        assert!(
+            rendered.contains("head r0.name"),
+            "expected the head to name `r0`'s own field, got:\n{rendered}"
+        );
+    }
+
+    /// A register bound by a **disjunction spanning predicates** has no single key
+    /// to be named against, and the renderer says so by falling back to the index
+    /// rather than picking one of the alternatives.
+    ///
+    /// Reachable only from a hand-built plan today, since flatten emits
+    /// single-source levels — the same standing as the derive steps `projection`
+    /// already has to handle.
+    #[test]
+    fn a_register_bound_by_a_disjunction_across_predicates_falls_back_to_the_index() {
+        let schema = corpus::schema();
+        let interner = LocalInterner::new(schema.interner().clone());
+
+        let foo = predicate_id(&schema, "test.Foo");
+        let edge = predicate_id(&schema, "test.Edge");
+
+        let source = |predicate| Source::Seek {
+            access: Access {
+                predicate_id: predicate,
+                seek_key: SeekKey::Prefix(Box::new([])),
+            },
+            residuals: Box::new([]),
+        };
+
+        let compiled = Plan {
+            nvars: 1,
+            body: Box::new([Step::Level(PlanLevel {
+                sources: Box::new([source(foo), source(edge)]),
+                binds: Box::new([Address::new(0)]),
+            })]),
+            head: Project::RegisterField {
+                address: Address::new(0),
+                path: FieldPath::field(0),
+                ty: PredicateTy::Int,
+            },
+        };
+
+        let rendered = plan(&compiled, &schema, &interner);
+
+        assert!(
+            rendered.contains("head r0.0"),
+            "expected the index, since `id` and `from` are both wrong for half the \
+             rows, got:\n{rendered}"
+        );
+        // Both alternatives are still named, each against its own key.
+        assert!(
+            rendered.contains("test.Foo scan") && rendered.contains("test.Edge scan"),
+            "expected both alternatives, got:\n{rendered}"
+        );
+    }
 
     /// Parse and lower `source`, requiring both to be clean.
     fn tree(source: &str) -> (Ast, LocalInterner, Schema) {

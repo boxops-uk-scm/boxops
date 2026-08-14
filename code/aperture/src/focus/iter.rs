@@ -7,12 +7,13 @@ use tokio_util::sync::CancellationToken;
 use crate::focus::{
     error::{ApertureError, StoreCodecError, StoreError},
     plan::{
-        Computed, FactId, FactStore, FieldPath, Generator, Plan, Project, Residual, ResidualOp,
-        SeekKey, SeekKeyPart, Step,
+        Access, Computed, FactId, FactStore, FieldPath, Plan, Project, Residual, ResidualOp,
+        SeekKey, SeekKeyPart, Source, Step,
     },
-    schema::{LocalInterner, PREDICATE_ID_SIZE},
+    schema::{LocalInterner, PREDICATE_ID_SIZE, PredicateId},
     tuple::{
-        MARK_ESCAPE, MARK_RECORD, MARK_TERM, Value, decode_typed, fact_ref_bytes, skip, strinc,
+        MARK_ESCAPE, MARK_RECORD, MARK_TERM, TupleDecoder, Value, decode_typed, fact_ref_bytes,
+        skip, strinc,
     },
 };
 
@@ -423,8 +424,44 @@ impl<'a> Deadline<'a> {
     }
 }
 
+/// The rows an open [`Source`] has left to hand out.
+///
+/// One iterator for both source kinds, so that [`StackFrame::next`] — the loop that
+/// counts rows against the deadline and checks residuals — is written once. The
+/// alternative was a second `next`, which would have meant two places where a row
+/// becomes machine state and two chances for one of them to skip the length check
+/// there.
+///
+/// [`Fetched`](Rows::Fetched) is a **relation of at most one row**, not a special
+/// case of a scan: it is taken at open, so the point read happens once per opening
+/// of the level rather than once per `next` call, and draining it is the same
+/// `None` a scan gives at its end.
+enum Rows<S: FactStore> {
+    Scan(S::Scan),
+    Fetched(Option<(ByteView, FactId)>),
+}
+
+impl<S: FactStore> Iterator for Rows<S> {
+    type Item = Result<(ByteView, FactId), ApertureError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Rows::Scan(scan) => scan.next(),
+            Rows::Fetched(row) => row.take().map(Ok),
+        }
+    }
+}
+
 struct StackFrame<S: FactStore> {
-    scan: Option<S::Scan>,
+    rows: Option<Rows<S>>,
+    /// Which of the level's [`Source`]s is being drained.
+    ///
+    /// Alternatives are concatenated, so this only ever moves forward while the
+    /// level is open, and is reset when it closes — a level re-entered from an
+    /// outer level's next row starts at its first source again. Saved into the
+    /// [`Cursor`] beside the row, because "which branch produced this" is not
+    /// recoverable from the row itself.
+    source: usize,
     current: Option<Register>,
     field_offsets: Box<[FieldOffsets]>,
     /// Whether a [`Step::Derive`] at this position has produced its one value —
@@ -439,17 +476,29 @@ struct StackFrame<S: FactStore> {
 impl<S: FactStore> StackFrame<S> {
     fn closed(nvars: usize) -> Self {
         Self {
-            scan: None,
+            rows: None,
+            source: 0,
             current: None,
             field_offsets: vec![FieldOffsets::new(); nvars].into_boxed_slice(),
             derived_produced: false,
         }
     }
 
+    /// Close the level: no live scan, no row, and back to its first source.
+    ///
+    /// Resetting `source` is what makes a level re-entered from an outer row
+    /// produce all of its alternatives again rather than resuming where the last
+    /// pass through it happened to stop.
+    fn close(&mut self) {
+        self.rows = None;
+        self.source = 0;
+        self.current = None;
+    }
+
     fn open(
         &mut self,
         store: &S,
-        generator: &Generator,
+        source: &Source,
         state: &MachineState,
         resume_at: Option<&[u8]>,
     ) -> Result<(), ApertureError> {
@@ -461,24 +510,104 @@ impl<S: FactStore> StackFrame<S> {
         // out-of-range slice.
         self.field_offsets.iter_mut().for_each(|fo| fo.clear());
 
-        let prefix = self.build_prefix(state, generator)?;
-        let hi = strinc(&prefix);
-        let lo = resume_at.unwrap_or(&prefix);
+        self.rows = Some(match source {
+            Source::Seek { access, .. } => {
+                let prefix = self.build_prefix(state, access)?;
+                let hi = strinc(&prefix);
+                let lo = resume_at.unwrap_or(&prefix);
 
-        self.scan = Some(store.scan(lo, hi.as_deref())?);
+                // A resume position must lie inside the range of the source it is
+                // being replayed into. It does for any cursor this executor built;
+                // it need not for one rebuilt from the wire, and the two ways it
+                // can be wrong are a panic and a wrong answer — `lo > hi` panics
+                // inside `BTreeMap`, and a `lo` below the prefix silently re-scans
+                // rows the level already emitted. Checked here because this is the
+                // one place a saved position becomes a scan bound, so it covers
+                // every `FactStore` at once.
+                if resume_at.is_some_and(|at| {
+                    at < prefix.as_slice() || hi.as_deref().is_some_and(|hi| at >= hi)
+                }) {
+                    return Err(ApertureError::BadResumeKey);
+                }
+
+                Rows::Scan(store.scan(lo, hi.as_deref())?)
+            }
+
+            // A point read takes no resume position: the row is whichever one the
+            // reference names, so replaying the outer registers is what puts this
+            // level back where it was. `resume` still checks the fact id it gets
+            // against the saved one, which is what catches a cursor replayed
+            // against a store where the reference now names something else.
+            Source::Fetch {
+                reference,
+                path,
+                predicate_id,
+                ..
+            } => Rows::Fetched(self.follow(store, state, *reference, path, *predicate_id)?),
+        });
+
         self.current = None;
 
         Ok(())
     }
 
+    /// Read the reference at `path` of the row in `reference`, and fetch the fact
+    /// it names.
+    ///
+    /// The register it yields is `predicate_id ++ key`, byte for byte the row a
+    /// scan of that fact would have produced — which is what lets everything
+    /// downstream (residuals, splices, projection, the cursor) treat a fetched row
+    /// as an ordinary one. `entities` stores the key beside the value, so the
+    /// concatenation is the one allocation here, once per opening of the level and
+    /// on the same footing as [`build_prefix`](Self::build_prefix)'s.
+    fn follow(
+        &mut self,
+        store: &S,
+        state: &MachineState,
+        reference: Address,
+        path: &FieldPath,
+        predicate_id: PredicateId,
+    ) -> Result<Option<(ByteView, FactId)>, ApertureError> {
+        let key = state.fact(reference)?.key();
+        let span = get_field_span(&mut self.field_offsets, &key, reference, path)?;
+
+        let fact_id = TupleDecoder::new(&key[span])
+            .take_fact_id()
+            .map_err(ApertureError::Decode)?;
+
+        // The declared referent decides how this row's bytes are read; see
+        // [`Source::Fetch`].
+        if fact_id.predicate() != predicate_id {
+            return Err(ApertureError::ReferenceCrossesPredicate {
+                expected: predicate_id,
+                found: fact_id.predicate(),
+            });
+        }
+
+        // A reference naming no fact is a fault in the data, not a query that
+        // answers nothing: `keys` and `entities` are written together
+        // ([I12](../../docs/invariants.md#i12)) and an id is never reused
+        // ([I11](../../docs/invariants.md#i11)), so there is no legitimate way to
+        // arrive here. Dropping the row instead would answer short and say nothing.
+        let entity = store
+            .point(fact_id)?
+            .ok_or(ApertureError::DanglingFactId(fact_id))?;
+
+        let mut bytes = Vec::with_capacity(PREDICATE_ID_SIZE + entity.key.len());
+        bytes.extend_from_slice(&predicate_id.0.to_be_bytes());
+        bytes.extend_from_slice(&entity.key);
+
+        Ok(Some((ByteView::from(bytes), fact_id)))
+    }
+
     fn build_prefix(
         &mut self,
         state: &MachineState,
-        generator: &Generator,
+        access: &Access,
     ) -> Result<Vec<u8>, ApertureError> {
-        let mut prefix = generator.access.predicate_id.0.to_be_bytes().to_vec();
+        let mut prefix = access.predicate_id.0.to_be_bytes().to_vec();
 
-        match &generator.access.seek_key {
+        match &access.seek_key {
             SeekKey::Prefix(bytes) => prefix.extend_from_slice(bytes.as_ref()),
             SeekKey::Composite(parts) => {
                 for part in parts.iter() {
@@ -514,12 +643,12 @@ impl<S: FactStore> StackFrame<S> {
     fn next(
         &mut self,
         state: &MachineState,
-        generator: &Generator,
+        source: &Source,
         deadline: &mut Deadline<'_>,
     ) -> Result<Option<Register>, ApertureError> {
-        let scan = self.scan.as_mut().ok_or(ApertureError::AdvanceAfterClose)?;
+        let rows = self.rows.as_mut().ok_or(ApertureError::AdvanceAfterClose)?;
 
-        for row in scan {
+        for row in rows {
             deadline.tick()?;
 
             let (key_bytes, fact_id) = row?;
@@ -542,12 +671,8 @@ impl<S: FactStore> StackFrame<S> {
                 bytes: key_bytes,
             };
 
-            if Self::check_residuals(
-                &mut self.field_offsets,
-                state,
-                &generator.residuals,
-                &current,
-            )? {
+            if Self::check_residuals(&mut self.field_offsets, state, source.residuals(), &current)?
+            {
                 self.current = Some(current.clone());
                 return Ok(Some(current));
             }
@@ -613,7 +738,21 @@ pub struct Executor<S: FactStore> {
     projection_offsets: Box<[FieldOffsets]>,
 }
 
-pub struct Cursor(Vec<Register>);
+/// One open level's position: the row it stopped on, and **which of the level's
+/// sources produced it**.
+///
+/// The source index is not recoverable from the row. The alternatives of one
+/// level can overlap — the same fact can be reachable from more than one of
+/// them — and the ones after the live source have not run yet, so resuming into
+/// the wrong alternative both re-emits rows and skips rows. It is the whole of
+/// what disjunction adds to the token ([chapter 5](../../docs/05-resume.md)).
+#[derive(Debug, Clone)]
+pub struct Entry {
+    source: usize,
+    row: Register,
+}
+
+pub struct Cursor(Vec<Entry>);
 
 pub struct Row<'a, S: FactStore> {
     store: &'a S,
@@ -745,17 +884,22 @@ impl<S: FactStore> Executor<S> {
     /// levels if a frame in the middle were ever empty, and `resume` pairs cursor
     /// entries with scan steps **by order**.
     pub fn build_cursor(&self) -> Cursor {
-        let saved: Vec<Register> = self
+        let saved: Vec<Entry> = self
             .stack
             .iter()
-            .filter_map(|f| f.current.as_ref().map(Register::to_detached))
+            .filter_map(|f| {
+                f.current.as_ref().map(|row| Entry {
+                    source: f.source,
+                    row: row.to_detached(),
+                })
+            })
             .collect();
 
         debug_assert_eq!(
             saved.len(),
             self.plan.body[..=self.depth]
                 .iter()
-                .filter(|step| step.is_scan())
+                .filter(|step| step.is_level())
                 .count(),
             "a suspend cursor must name every level up to `depth`, contiguously"
         );
@@ -800,22 +944,35 @@ impl<S: FactStore> Executor<S> {
             let frame = &mut ex.stack[index];
 
             match &ex.plan.body[index] {
-                Step::Scan(generator) => {
+                Step::Level(level) => {
                     // Cannot run out: the length check above pinned the cursor to
                     // exactly this plan's level count.
                     let saved = saved_rows.next().ok_or(ApertureError::BadResumeKey)?;
 
-                    frame.open(&ex.store, generator, &ex.state, Some(&saved.bytes))?;
+                    // Back into the alternative that produced the saved row, not
+                    // into the first one: the sources after it have not run, and
+                    // the ones before it are done. Out of range is untrusted
+                    // input rather than an impossibility — the level count
+                    // matching says nothing about how many sources a level has.
+                    let source = level.sources.get(saved.source).ok_or(
+                        ApertureError::CursorSourceOutOfRange {
+                            index: saved.source,
+                            sources: level.sources.len(),
+                        },
+                    )?;
+                    frame.source = saved.source;
+
+                    frame.open(&ex.store, source, &ex.state, Some(&saved.row.bytes))?;
 
                     let row = frame
-                        .next(&ex.state, generator, &mut deadline)?
+                        .next(&ex.state, source, &mut deadline)?
                         .ok_or(ApertureError::BadResumeKey)?;
 
-                    if row.fact_id != saved.fact_id {
+                    if row.fact_id != saved.row.fact_id {
                         return Err(ApertureError::BadResumeKey);
                     }
 
-                    for var_address in generator.binds.iter() {
+                    for var_address in level.binds.iter() {
                         ex.state.registers[var_address.0] = Some(Slot::Fact(row.clone()));
                     }
                     frame.current = Some(row);
@@ -916,14 +1073,27 @@ impl<S: FactStore> Executor<S> {
             // whether its iterator is open; a derive step, having no iterator, needs
             // the one bit below.
             match &self.plan.body[self.depth] {
-                Step::Scan(generator) => {
-                    if frame.scan.is_none() {
-                        frame.open(&self.store, generator, &self.state, None)?;
+                Step::Level(level) => {
+                    // No alternative left to open — which is both "every source
+                    // has been drained" and, for a level with no sources at all,
+                    // "the empty relation". One arm, because the machine's answer
+                    // to the two is the same: close and back up.
+                    let Some(source) = level.sources.get(frame.source) else {
+                        frame.close();
+                        if self.depth == 0 {
+                            return Ok(Iteratee::Done(acc));
+                        }
+                        self.depth -= 1;
+                        continue;
+                    };
+
+                    if frame.rows.is_none() {
+                        frame.open(&self.store, source, &self.state, None)?;
                     }
 
-                    match frame.next(&self.state, generator, &mut deadline)? {
+                    match frame.next(&self.state, source, &mut deadline)? {
                         Some(register) => {
-                            for var_address in generator.binds.iter() {
+                            for var_address in level.binds.iter() {
                                 let slot = self
                                     .state
                                     .registers
@@ -934,13 +1104,12 @@ impl<S: FactStore> Executor<S> {
                             frame.current = Some(register);
                             self.depth += 1;
                         }
+                        // This alternative is drained; the next round of the loop
+                        // opens the one after it, or backs out above if there is
+                        // none. Backtracking lives in one place for both.
                         None => {
-                            frame.scan = None;
-                            frame.current = None;
-                            if self.depth == 0 {
-                                return Ok(Iteratee::Done(acc));
-                            }
-                            self.depth -= 1;
+                            frame.rows = None;
+                            frame.source += 1;
                         }
                     }
                 }
@@ -996,7 +1165,7 @@ mod tests {
         },
         mem_store::MemStore,
         plan::{
-            Access, DerivedBind, Entity, FactId, FieldPath, Generator, Plan, Project, Residual,
+            Access, DerivedBind, Entity, FactId, FieldPath, Level, Plan, Project, Residual,
             ResidualOp, SeekKey, SeekKeyPart,
             proptest::{PlanAndStore, arb_interruption_schedule, arb_plan_and_store, cut_points},
         },
@@ -1228,21 +1397,20 @@ mod tests {
         let interner = interner_with(&["n"]);
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
-                Generator {
-                    access: Access {
+            body: Step::levels([
+                Level::seek(
+                    Access {
                         predicate_id: nested,
                         seek_key: SeekKey::Prefix(Box::new([])),
                     },
-                    binds: Box::new([Address::new(0)]),
-                    // `tag = "a"`, one step inside the record.
-                    residuals: Box::new([Residual {
+                    Box::new([Address::new(0)]), // `tag = "a"`, one step inside the record.
+                    Box::new([Residual {
                         path: FieldPath::nested(0, [1]),
                         op: ResidualOp::EqConst(str_field("a").into_boxed_slice()),
                     }]),
-                },
-                Generator {
-                    access: Access {
+                ),
+                Level::seek(
+                    Access {
                         predicate_id: ints,
                         // ...seeking on `inner`, also one step inside.
                         seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterField {
@@ -1250,9 +1418,9 @@ mod tests {
                             path: FieldPath::nested(0, [0]),
                         }])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([]),
-                },
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
             ]),
             head: Project::Record(Box::new([(
                 interner.get("n").expect("interned above"),
@@ -1339,7 +1507,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head,
         };
 
@@ -1381,7 +1549,7 @@ mod tests {
     fn a_plan_with_no_steps_yields_exactly_one_row() {
         let plan = Plan {
             nvars: 0,
-            body: Step::scans([]),
+            body: Step::levels([]),
             head: Project::Lit(Value::Int(1)),
         };
 
@@ -1414,7 +1582,7 @@ mod tests {
         // No residual: every row matches, so every `next()` returns immediately.
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -1468,7 +1636,7 @@ mod tests {
     fn a_short_keys_row_is_an_error_not_a_panic() {
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(PredicateId(0), 0)]),
+            body: Step::levels([scan_all(PredicateId(0), 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -1499,19 +1667,19 @@ mod tests {
 
         let two_level = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(person, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: knows,
                         seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterField {
                             address: Address::new(0),
                             path: FieldPath::field(0),
                         }])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([]),
-                },
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
             ]),
             head: Project::FactRef(Address::new(1)),
         };
@@ -1531,7 +1699,7 @@ mod tests {
 
         let one_level = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(person, 0)]),
+            body: Step::levels([scan_all(person, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -1568,7 +1736,7 @@ mod tests {
         // Two registers, one generator binding r0: nothing ever binds r1.
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(1)),
         };
 
@@ -1589,7 +1757,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(7)),
         };
 
@@ -1683,7 +1851,7 @@ mod tests {
 
         let plan = || Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -1711,7 +1879,7 @@ mod tests {
 
         let plan = || Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -1746,6 +1914,9 @@ mod tests {
             (3, &|| three_level_seek_join(&interner)),
         ] {
             let (store, plan) = mk();
+            // Kept to check each entry against the level that produced it; the
+            // executor consumes the one it runs.
+            let shape = plan.clone();
             let cursor = suspend_after_first_row(store, plan);
 
             assert_eq!(
@@ -1760,15 +1931,24 @@ mod tests {
             // the store that produced the bytes has been dropped.
             for (level, saved) in cursor.0.iter().enumerate() {
                 assert!(
-                    saved.bytes.len() > PREDICATE_ID_SIZE,
+                    saved.row.bytes.len() > PREDICATE_ID_SIZE,
                     "level {level}'s saved row is {} byte(s) — no key follows the \
                      predicate id",
-                    saved.bytes.len()
+                    saved.row.bytes.len()
                 );
                 assert_ne!(
-                    saved.fact_id.raw(),
+                    saved.row.fact_id.raw(),
                     0,
                     "level {level} saved the reserved fact id, which is never a fact"
+                );
+                // The alternative that produced the row has to be one this plan's
+                // level actually has, or resume replays into a source that does
+                // not exist.
+                let sources = shape.level(level).expect("a level").sources.len();
+                assert!(
+                    saved.source < sources,
+                    "level {level} saved source {} of {sources}",
+                    saved.source
                 );
             }
         }
@@ -1788,17 +1968,17 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([Generator {
-                access: Access {
+            body: Step::levels([Level::seek(
+                Access {
                     predicate_id: pred,
                     seek_key: SeekKey::Prefix(Box::new([])),
                 },
-                binds: Box::new([Address::new(0)]),
-                residuals: Box::new([Residual {
+                Box::new([Address::new(0)]),
+                Box::new([Residual {
                     path: FieldPath::field(0),
                     op: ResidualOp::EqConst(str_field("beta").into_boxed_slice()),
                 }]),
-            }]),
+            )]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(0),
@@ -1823,14 +2003,14 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([Generator {
-                access: Access {
+            body: Step::levels([Level::seek(
+                Access {
                     predicate_id: pred,
                     seek_key: SeekKey::Prefix(Box::new([])),
                 },
-                binds: Box::new([Address::new(0)]),
-                residuals: Box::new([]),
-            }]),
+                Box::new([Address::new(0)]),
+                Box::new([]),
+            )]),
             head: Project::Value {
                 address: Address::new(0),
                 ty: PredicateTy::Int,
@@ -1860,15 +2040,324 @@ mod tests {
     }
 
     /// A single generator that scans a whole predicate and binds one register.
-    fn scan_all(predicate_id: PredicateId, bind: usize) -> Generator {
-        Generator {
-            access: Access {
+    fn scan_all(predicate_id: PredicateId, bind: usize) -> Level {
+        Level::seek(
+            Access {
                 predicate_id,
                 seek_key: SeekKey::Prefix(Box::new([])),
             },
-            binds: Box::new([Address::new(bind)]),
+            Box::new([Address::new(bind)]),
+            Box::new([]),
+        )
+    }
+
+    // ---- a level's sources -------------------------------------------------
+    //
+    // A level's rows come from its sources, tried in order and concatenated, so
+    // the count is the construct: none is the empty relation, one is a scan, and
+    // several is a disjunction ([the query-surface note]). These pin all three
+    // against the machine rather than against flatten, which emits only the
+    // middle one — the same way derived binds were guarded ahead of a producer.
+    //
+    // [the query-surface note]: ../../docs/query-surface.md
+
+    /// A source seeking one exact integer key of `predicate`.
+    fn seek_int(predicate: PredicateId, key: i64, bind: usize) -> Source {
+        let _ = bind;
+        Source::Seek {
+            access: Access {
+                predicate_id: predicate,
+                seek_key: SeekKey::Prefix(i64_field(key).into_boxed_slice()),
+            },
             residuals: Box::new([]),
         }
+    }
+
+    /// A plan of one level over `sources`, projecting the bound row's key.
+    fn one_level(sources: Box<[Source]>) -> Plan {
+        Plan {
+            nvars: 1,
+            body: Box::new([Step::Level(Level {
+                sources,
+                binds: Box::new([Address::new(0)]),
+            })]),
+            head: Project::RegisterField {
+                address: Address::new(0),
+                path: FieldPath::field(0),
+                ty: PredicateTy::Int,
+            },
+        }
+    }
+
+    fn three_int_facts(p: PredicateId) -> MemStore {
+        let mut store = MemStore::new();
+        store.insert(p, i64_field(10), 1);
+        store.insert(p, i64_field(20), 2);
+        store.insert(p, i64_field(30), 3);
+        store
+    }
+
+    /// **A level with no sources is the empty relation.** Not an error and not
+    /// one row — the level is exhausted the moment it is entered, so the plan
+    /// answers nothing at all.
+    #[test]
+    fn a_level_with_no_sources_produces_no_rows() {
+        let p = PredicateId(0);
+
+        assert_eq!(run(three_int_facts(p), one_level(Box::new([]))), vec![]);
+    }
+
+    /// An empty level inside a join annihilates it, rather than being skipped:
+    /// the outer level still runs, and finds nothing to pair with.
+    #[test]
+    fn an_empty_level_annihilates_the_join_around_it() {
+        let p = PredicateId(0);
+
+        let plan = Plan {
+            nvars: 2,
+            body: Box::new([
+                Step::Level(Level {
+                    sources: Box::new([Source::Seek {
+                        access: Access {
+                            predicate_id: p,
+                            seek_key: SeekKey::Prefix(Box::new([])),
+                        },
+                        residuals: Box::new([]),
+                    }]),
+                    binds: Box::new([Address::new(0)]),
+                }),
+                Step::Level(Level::empty(Box::new([Address::new(1)]))),
+            ]),
+            head: Project::RegisterField {
+                address: Address::new(0),
+                path: FieldPath::field(0),
+                ty: PredicateTy::Int,
+            },
+        };
+
+        assert_eq!(run(three_int_facts(p), plan), vec![]);
+    }
+
+    /// **Several sources concatenate, in source order** — not in key order, and
+    /// without deduplication. Both halves matter: the sources here are drawn so
+    /// that source order and key order disagree, and so that one row is produced
+    /// by two of them.
+    #[test]
+    fn sources_concatenate_in_order_and_do_not_deduplicate() {
+        let p = PredicateId(0);
+
+        let plan = one_level(Box::new([
+            seek_int(p, 30, 0),
+            seek_int(p, 10, 0),
+            seek_int(p, 30, 0),
+        ]));
+
+        assert_eq!(
+            run(three_int_facts(p), plan),
+            vec![Value::Int(30), Value::Int(10), Value::Int(30)]
+        );
+    }
+
+    /// A source matching nothing is skipped without ending the level — the one
+    /// that follows it still runs.
+    #[test]
+    fn an_empty_source_does_not_end_the_level() {
+        let p = PredicateId(0);
+
+        let plan = one_level(Box::new([
+            seek_int(p, 99, 0),
+            seek_int(p, 20, 0),
+            seek_int(p, 98, 0),
+        ]));
+
+        assert_eq!(run(three_int_facts(p), plan), vec![Value::Int(20)]);
+    }
+
+    /// A level re-entered from an outer row starts at its **first** source
+    /// again, rather than carrying on from wherever the previous pass stopped.
+    ///
+    /// The bug this catches is a level that produces its alternatives for the
+    /// first outer row and only its last alternative thereafter — which is what
+    /// leaving the source index alone on close would do.
+    #[test]
+    fn a_level_restarts_its_sources_for_each_outer_row() {
+        let outer = PredicateId(0);
+        let inner = PredicateId(1);
+
+        let mut store = MemStore::new();
+        store.insert(outer, i64_field(1), 1);
+        store.insert(outer, i64_field(2), 2);
+        store.insert(inner, i64_field(10), 1);
+        store.insert(inner, i64_field(20), 2);
+
+        let plan = Plan {
+            nvars: 2,
+            body: Box::new([
+                Step::Level(Level::seek(
+                    Access {
+                        predicate_id: outer,
+                        seek_key: SeekKey::Prefix(Box::new([])),
+                    },
+                    Box::new([Address::new(0)]),
+                    Box::new([]),
+                )),
+                Step::Level(Level {
+                    sources: Box::new([seek_int(inner, 20, 1), seek_int(inner, 10, 1)]),
+                    binds: Box::new([Address::new(1)]),
+                }),
+            ]),
+            head: Project::RegisterField {
+                address: Address::new(1),
+                path: FieldPath::field(0),
+                ty: PredicateTy::Int,
+            },
+        };
+
+        // Both alternatives, in source order, once per outer row.
+        assert_eq!(
+            run(store, plan),
+            vec![
+                Value::Int(20),
+                Value::Int(10),
+                Value::Int(20),
+                Value::Int(10)
+            ]
+        );
+    }
+
+    /// **[I4](../../docs/invariants.md#i4) across a disjunction.** Suspending
+    /// while a later source is the live one and resuming must reproduce the
+    /// uninterrupted run exactly.
+    ///
+    /// This is what the source index on a cursor entry is for: a saved row says
+    /// *where* a level stopped and not *which alternative* it stopped in, and
+    /// the two are independent — the same key can be reachable from more than
+    /// one source, and the sources after the live one have not run yet.
+    #[test]
+    fn resume_across_a_multi_source_level_equals_an_uninterrupted_run() {
+        let p = PredicateId(0);
+
+        let mk = || {
+            (
+                three_int_facts(p),
+                one_level(Box::new([
+                    seek_int(p, 10, 0),
+                    seek_int(p, 20, 0),
+                    seek_int(p, 30, 0),
+                ])),
+            )
+        };
+
+        let interner = interner_with(&[]);
+        let (uninterrupted, _) = run_with_suspends(mk, &interner, &BTreeSet::new()).unwrap();
+
+        assert_eq!(
+            uninterrupted,
+            vec![Value::Int(10), Value::Int(20), Value::Int(30)]
+        );
+
+        // Every cut point, including the two that fall while a source other than
+        // the first is the live one.
+        for cut in 1..=uninterrupted.len() {
+            let (resumed, suspends) =
+                run_with_suspends(mk, &interner, &BTreeSet::from([cut])).unwrap();
+
+            assert!(suspends > 0, "cut at {cut} did not suspend");
+            assert_eq!(resumed, uninterrupted, "cut after row {cut}");
+        }
+    }
+
+    /// A cursor is rebuilt from the wire, so a source index it names may not
+    /// exist in the plan it is replayed against. **Reported, not panicked** — the
+    /// level count matching says nothing about how many alternatives a level has,
+    /// so this is untrusted input rather than an impossibility.
+    #[test]
+    fn a_cursor_naming_a_source_the_level_lacks_is_reported() {
+        let p = PredicateId(0);
+
+        let plan = one_level(Box::new([seek_int(p, 10, 0)]));
+        let cursor = suspend_after_first_row(three_int_facts(p), plan);
+
+        // The same plan, and a cursor pointing at an alternative it never had.
+        let forged = Cursor(
+            cursor
+                .0
+                .into_iter()
+                .map(|entry| Entry { source: 7, ..entry })
+                .collect(),
+        );
+
+        let resumed = Executor::resume(
+            three_int_facts(p),
+            one_level(Box::new([seek_int(p, 10, 0)])),
+            forged,
+        );
+
+        assert!(
+            matches!(
+                resumed,
+                Err(ApertureError::CursorSourceOutOfRange {
+                    index: 7,
+                    sources: 1
+                })
+            ),
+            "expected the source index to be rejected, got {resumed:?}",
+            resumed = resumed.map(|_| "an executor")
+        );
+    }
+
+    /// A saved position outside the range of the source it is replayed into is
+    /// **an error, not a panic**. It was a panic: `lo > hi` is unreachable for a
+    /// cursor this executor built, and it is a `BTreeMap` panic one level down
+    /// for a cursor that names a different alternative than the one that saved
+    /// it — which is exactly what a forged or stale cursor does.
+    #[test]
+    fn a_cursor_position_outside_its_source_is_reported() {
+        let p = PredicateId(0);
+
+        // Suspend inside the *second* alternative, so the saved key is 20.
+        let plan = one_level(Box::new([seek_int(p, 10, 0), seek_int(p, 20, 0)]));
+        let interner = interner_with(&[]);
+        let ex = Executor::new(three_int_facts(p), plan);
+        let out = ex
+            .enumerate(
+                0usize,
+                |n, mut row| {
+                    let _ = row.to_value(&interner)?;
+                    // Row 1 is source 0's; suspend after row 2, inside source 1.
+                    if n + 1 == 2 {
+                        Ok(Stream::Suspend(n + 1))
+                    } else {
+                        Ok(Stream::Continue(n + 1))
+                    }
+                },
+                &CancellationToken::new(),
+            )
+            .expect("a run");
+
+        let Iteratee::Suspended(_, cursor) = out else {
+            panic!("expected a suspend");
+        };
+
+        // Replayed against a plan whose only alternative seeks 10: the level
+        // count matches and source 0 exists, but the saved key is not in it.
+        let resumed = Executor::resume(
+            three_int_facts(p),
+            one_level(Box::new([seek_int(p, 10, 0)])),
+            Cursor(
+                cursor
+                    .0
+                    .into_iter()
+                    .map(|entry| Entry { source: 0, ..entry })
+                    .collect(),
+            ),
+        );
+
+        assert!(
+            matches!(resumed, Err(ApertureError::BadResumeKey)),
+            "expected a bad resume key, got {resumed:?}",
+            resumed = resumed.map(|_| "an executor")
+        );
     }
 
     // A one-level scan projects a key field, in ascending key order regardless
@@ -1884,7 +2373,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(0),
@@ -1916,17 +2405,17 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([Generator {
-                access: Access {
+            body: Step::levels([Level::seek(
+                Access {
                     predicate_id: p,
                     seek_key: SeekKey::Prefix(Box::new([])),
                 },
-                binds: Box::new([Address::new(0)]),
-                residuals: Box::new([Residual {
+                Box::new([Address::new(0)]),
+                Box::new([Residual {
                     path: FieldPath::field(0),
                     op: ResidualOp::Prefix(prefix.into_boxed_slice()),
                 }]),
-            }]),
+            )]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(0),
@@ -1965,19 +2454,19 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(person, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: knows,
                         seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterField {
                             address: Address::new(0),
                             path: FieldPath::field(0),
                         }])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([]),
-                },
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
             ]),
             head: Project::Record(Box::new([
                 (
@@ -2051,26 +2540,25 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(outer, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: inner,
                         seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterField {
                             address: Address::new(0),
                             path: FieldPath::field(0),
                         }])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    // Fills this frame's offset cache for register 0 mid-scan.
-                    residuals: Box::new([Residual {
+                    Box::new([Address::new(1)]), // Fills this frame's offset cache for register 0 mid-scan.
+                    Box::new([Residual {
                         path: FieldPath::field(1),
                         op: ResidualOp::EqRegisterField {
                             address: Address::new(0),
                             path: FieldPath::field(1),
                         },
                     }]),
-                },
+                ),
             ]),
             head: Project::Record(Box::new([
                 (
@@ -2150,18 +2638,18 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(person, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: refs,
                         seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterFactId(
                             Address::new(0),
                         )])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([]),
-                },
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
             ]),
             head: Project::RegisterField {
                 address: Address::new(0),
@@ -2200,19 +2688,19 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(person, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: links,
                         seek_key: SeekKey::Prefix(Box::new([])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([Residual {
+                    Box::new([Address::new(1)]),
+                    Box::new([Residual {
                         path: FieldPath::field(1),
                         op: ResidualOp::EqRegisterFactId(Address::new(0)),
                     }]),
-                },
+                ),
             ]),
             head: Project::RegisterField {
                 address: Address::new(1),
@@ -2242,18 +2730,18 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(person, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: refs,
                         seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterFactId(
                             Address::new(0),
                         )])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([]),
-                },
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
             ]),
             head: Project::FactRef(Address::new(1)),
         };
@@ -2270,6 +2758,364 @@ mod tests {
             0,
             "a fact-id splice must not read `entities`",
         );
+    }
+
+    // ---- reading through a reference ---------------------------------------
+    //
+    // The other half of cross-fact navigation, and the half that costs a lookup:
+    // *following* a reference compares ids already in a register, while *reading
+    // through* one needs the referenced fact's key bytes, which live only in
+    // `entities`. `Source::Fetch` is that read, as a relation of at most one row.
+
+    /// Two people, and one `refs` fact pointing at each — the store every fetch
+    /// test below is about.
+    ///
+    /// `refs` rows are keyed *by the reference itself*, so they scan in id order:
+    /// `person#1`'s row first.
+    fn people_and_refs(person: PredicateId, refs: PredicateId) -> MemStore {
+        let mut store = MemStore::new();
+
+        for (sequence, (id, name)) in [(10i64, "ann"), (20, "bob")].into_iter().enumerate() {
+            let sequence = sequence as u64 + 1;
+            store.insert(
+                person,
+                compose(&[&i64_field(id), &str_field(name)]),
+                sequence,
+            );
+            store.insert(
+                refs,
+                fact_ref_field(FactId::new(person, sequence).unwrap()),
+                sequence,
+            );
+        }
+
+        store
+    }
+
+    /// Scan `refs`, then follow each row's reference to the fact it names.
+    fn scan_then_fetch(person: PredicateId, refs: PredicateId, head: Project) -> Plan {
+        Plan {
+            nvars: 2,
+            body: Step::levels([
+                scan_all(refs, 0),
+                Level::fetch(
+                    Address::new(0),
+                    FieldPath::field(0),
+                    person,
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
+            ]),
+            head,
+        }
+    }
+
+    /// **A fetch binds the fact its reference names**, whose fields are then read
+    /// like any other row's.
+    #[test]
+    fn a_fetch_binds_the_fact_its_reference_names() {
+        let (person, refs) = (PredicateId(0), PredicateId(1));
+
+        let plan = scan_then_fetch(
+            person,
+            refs,
+            Project::RegisterField {
+                address: Address::new(1),
+                path: FieldPath::field(0),
+                ty: PredicateTy::Int,
+            },
+        );
+
+        assert_eq!(
+            run(people_and_refs(person, refs), plan),
+            vec![Value::Int(10), Value::Int(20)],
+        );
+    }
+
+    /// **A fetched row is the row a scan would have produced** — `predicate_id ++
+    /// key`, byte for byte.
+    ///
+    /// Asserted through a *third* level that splices a field of the fetched
+    /// register into its seek, because that is what depends on the bytes being
+    /// exactly right: `entities` stores the key without its predicate tag, so a
+    /// fetch that forgot to put the tag back would have `Register::key` slice four
+    /// bytes off the front of the real key and splice rubbish — matching nothing,
+    /// silently. Reading a field of the fetched row alone would not catch it; the
+    /// name would just decode from the wrong offset.
+    #[test]
+    fn a_fetched_row_is_the_row_a_scan_would_have_produced() {
+        let (person, refs, name) = (PredicateId(0), PredicateId(1), PredicateId(2));
+
+        let mut store = people_and_refs(person, refs);
+        store.insert(name, str_field("ann"), 1);
+        store.insert(name, str_field("bob"), 2);
+
+        let plan = Plan {
+            nvars: 3,
+            body: Step::levels([
+                scan_all(refs, 0),
+                Level::fetch(
+                    Address::new(0),
+                    FieldPath::field(0),
+                    person,
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
+                Level::seek(
+                    Access {
+                        predicate_id: name,
+                        // The fetched person's `name` field, spliced.
+                        seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterField {
+                            address: Address::new(1),
+                            path: FieldPath::field(1),
+                        }])),
+                    },
+                    Box::new([Address::new(2)]),
+                    Box::new([]),
+                ),
+            ]),
+            head: Project::RegisterField {
+                address: Address::new(2),
+                path: FieldPath::field(0),
+                ty: PredicateTy::Str,
+            },
+        };
+
+        assert_eq!(
+            run(store, plan),
+            vec![Value::Str("ann".into()), Value::Str("bob".into())],
+        );
+    }
+
+    /// A residual on a fetch filters the fetched row, so the level answers with
+    /// one row or none.
+    ///
+    /// Not decoration: `apply_compares` puts `X = Y` on whichever level binds
+    /// later, and that can be the fetch — so a source that ignored its residuals
+    /// would drop the comparison and answer with rows the query excluded.
+    #[test]
+    fn a_residual_on_a_fetch_filters_the_fetched_row() {
+        let (person, refs) = (PredicateId(0), PredicateId(1));
+
+        let keeps_bob = Level::fetch(
+            Address::new(0),
+            FieldPath::field(0),
+            person,
+            Box::new([Address::new(1)]),
+            Box::new([Residual {
+                path: FieldPath::field(1),
+                op: ResidualOp::EqConst(str_field("bob").into_boxed_slice()),
+            }]),
+        );
+
+        let plan = Plan {
+            nvars: 2,
+            body: Step::levels([scan_all(refs, 0), keeps_bob]),
+            head: Project::RegisterField {
+                address: Address::new(1),
+                path: FieldPath::field(0),
+                ty: PredicateTy::Int,
+            },
+        };
+
+        assert_eq!(
+            run(people_and_refs(person, refs), plan),
+            vec![Value::Int(20)]
+        );
+    }
+
+    /// **A fetch reads `entities` once per row the level above it produces** —
+    /// not once per row that level *examines*.
+    ///
+    /// The distinction is [I6](../../../docs/invariants.md#i6)'s. A point read per
+    /// examined row is what I6 forbids, and is what a value pattern would cost; a
+    /// fetch is a level of its own, so it is opened only when an outer row has
+    /// already survived every residual on it. Here two of the three `refs` rows
+    /// are rejected by the outer level, and exactly one fetch happens.
+    #[test]
+    fn a_fetch_reads_entities_once_per_row_it_is_opened_for() {
+        let (person, refs) = (PredicateId(0), PredicateId(1));
+
+        let mut store = people_and_refs(person, refs);
+        store.insert(
+            refs,
+            fact_ref_field(FactId::new(person, 1).unwrap()),
+            3, // a third `refs` row, pointing back at person#1
+        );
+
+        let only_the_second = Level::seek(
+            Access {
+                predicate_id: refs,
+                seek_key: SeekKey::Prefix(Box::new([])),
+            },
+            Box::new([Address::new(0)]),
+            Box::new([Residual {
+                path: FieldPath::field(0),
+                op: ResidualOp::EqConst(
+                    fact_ref_field(FactId::new(person, 2).unwrap()).into_boxed_slice(),
+                ),
+            }]),
+        );
+
+        let plan = Plan {
+            nvars: 2,
+            body: Step::levels([
+                only_the_second,
+                Level::fetch(
+                    Address::new(0),
+                    FieldPath::field(0),
+                    person,
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
+            ]),
+            head: Project::RegisterField {
+                address: Address::new(1),
+                path: FieldPath::field(0),
+                ty: PredicateTy::Int,
+            },
+        };
+
+        let (spy, point_calls) = PointSpy::new(store);
+
+        assert_eq!(
+            collect_rows(spy, plan, &interner_with(&[])).unwrap(),
+            vec![Value::Int(20)],
+        );
+        assert_eq!(
+            point_calls.load(Ordering::Relaxed),
+            1,
+            "one fetch per row the outer level produced, not per row it examined",
+        );
+    }
+
+    /// A reference naming no fact is **reported**, not skipped.
+    ///
+    /// Both column families are written together ([I12]) and an id is never
+    /// reused ([I11]), so there is no legitimate way to reach one — and answering
+    /// short would report a query as complete while silently dropping the rows a
+    /// corrupt store could not answer.
+    ///
+    /// [I11]: ../../../docs/invariants.md#i11
+    /// [I12]: ../../../docs/invariants.md#i12
+    #[test]
+    fn a_reference_naming_no_fact_is_reported() {
+        let (person, refs) = (PredicateId(0), PredicateId(1));
+
+        let mut store = MemStore::new();
+        store.insert(person, compose(&[&i64_field(10), &str_field("ann")]), 1);
+        store.insert(refs, fact_ref_field(FactId::new(person, 7).unwrap()), 1);
+
+        let plan = scan_then_fetch(person, refs, Project::FactRef(Address::new(1)));
+
+        assert!(matches!(
+            collect_rows(store, plan, &interner_with(&[])),
+            Err(ApertureError::DanglingFactId(_)),
+        ));
+    }
+
+    /// A reference naming a **different predicate** than the plan declares is
+    /// refused rather than followed.
+    ///
+    /// The fetched row would be read against the declared key layout — every
+    /// residual path and every projection off it was compiled from that — so
+    /// following it decodes another predicate's bytes at those offsets and answers
+    /// with whatever is there.
+    #[test]
+    fn a_reference_naming_another_predicate_is_refused() {
+        let (person, refs, other) = (PredicateId(0), PredicateId(1), PredicateId(2));
+
+        let mut store = MemStore::new();
+        store.insert(other, i64_field(99), 1);
+        store.insert(refs, fact_ref_field(FactId::new(other, 1).unwrap()), 1);
+
+        let plan = scan_then_fetch(person, refs, Project::FactRef(Address::new(1)));
+
+        assert!(matches!(
+            collect_rows(store, plan, &interner_with(&[])),
+            Err(ApertureError::ReferenceCrossesPredicate { .. }),
+        ));
+    }
+
+    /// **[I4](../../docs/invariants.md#i4) across a fetch.** A fetch level saves an
+    /// ordinary cursor entry and is re-read on resume, which is sound because the
+    /// row it produces is a function of the registers outside it — replaying those
+    /// puts it back exactly where it was.
+    #[test]
+    fn resume_across_a_fetch_level_equals_an_uninterrupted_run() {
+        let (person, refs) = (PredicateId(0), PredicateId(1));
+
+        let mk = || {
+            (
+                people_and_refs(person, refs),
+                scan_then_fetch(
+                    person,
+                    refs,
+                    Project::RegisterField {
+                        address: Address::new(1),
+                        path: FieldPath::field(0),
+                        ty: PredicateTy::Int,
+                    },
+                ),
+            )
+        };
+
+        let interner = interner_with(&[]);
+        let (uninterrupted, _) = run_with_suspends(mk, &interner, &BTreeSet::new()).unwrap();
+
+        assert_eq!(uninterrupted, vec![Value::Int(10), Value::Int(20)]);
+
+        for cut in 1..=uninterrupted.len() {
+            let (resumed, suspends) =
+                run_with_suspends(mk, &interner, &BTreeSet::from([cut])).unwrap();
+
+            assert!(suspends > 0, "cut at {cut} did not suspend");
+            assert_eq!(resumed, uninterrupted, "cut after row {cut}");
+        }
+    }
+
+    /// A cursor replayed where the reference now names **another fact** is
+    /// refused.
+    ///
+    /// A fetch takes no resume position — the id decides the row — so what catches
+    /// this is the fact-id check every level's replay makes. Without it a resume
+    /// against a store the cursor was not built from would carry on from a row it
+    /// never stopped on.
+    #[test]
+    fn a_fetch_resumed_where_the_reference_moved_is_refused() {
+        let (person, refs) = (PredicateId(0), PredicateId(1));
+
+        let head = || Project::RegisterField {
+            address: Address::new(1),
+            path: FieldPath::field(0),
+            ty: PredicateTy::Int,
+        };
+
+        let cursor = suspend_after_first_row(
+            people_and_refs(person, refs),
+            scan_then_fetch(person, refs, head()),
+        );
+
+        // The same `refs` keys, pointing the other way about.
+        let mut moved = MemStore::new();
+        for (sequence, (id, name)) in [(10i64, "ann"), (20, "bob")].into_iter().enumerate() {
+            let sequence = sequence as u64 + 1;
+            moved.insert(
+                person,
+                compose(&[&i64_field(id), &str_field(name)]),
+                sequence,
+            );
+            moved.insert(
+                refs,
+                fact_ref_field(FactId::new(person, 3 - sequence).unwrap()),
+                sequence,
+            );
+        }
+
+        assert!(matches!(
+            Executor::resume(moved, scan_then_fetch(person, refs, head()), cursor),
+            Err(ApertureError::BadResumeKey),
+        ));
     }
 
     // A three-level join (friends-of-friends): Person(a) → Knows(a, b) →
@@ -2302,18 +3148,18 @@ mod tests {
 
         let plan = Plan {
             nvars: 3,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(person, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: knows,
                         seek_key: seek_first_on(0),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([]),
-                },
-                Generator {
-                    access: Access {
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
+                Level::seek(
+                    Access {
                         predicate_id: knows,
                         // splice r1's second field (b) into the inner prefix.
                         seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterField {
@@ -2321,9 +3167,9 @@ mod tests {
                             path: FieldPath::field(1),
                         }])),
                     },
-                    binds: Box::new([Address::new(2)]),
-                    residuals: Box::new([]),
-                },
+                    Box::new([Address::new(2)]),
+                    Box::new([]),
+                ),
             ]),
             head: Project::Record(Box::new([
                 (
@@ -2382,23 +3228,22 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(r, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: r,
                         seek_key: SeekKey::Prefix(Box::new([])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    // inner.field0 == outer(r0).field1
-                    residuals: Box::new([Residual {
+                    Box::new([Address::new(1)]), // inner.field0 == outer(r0).field1
+                    Box::new([Residual {
                         path: FieldPath::field(0),
                         op: ResidualOp::EqRegisterField {
                             address: Address::new(0),
                             path: FieldPath::field(1),
                         },
                     }]),
-                },
+                ),
             ]),
             head: Project::Record(Box::new([
                 (
@@ -2442,7 +3287,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -2463,7 +3308,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -2541,7 +3386,7 @@ mod tests {
         let interner = interner_with(&["got", "want"]);
         let plan = Plan {
             nvars: 2,
-            body: Box::new([derive(1, Value::Int(7)), Step::Scan(scan_all(p, 0))]),
+            body: Box::new([derive(1, Value::Int(7)), Step::Level(scan_all(p, 0))]),
             head: Project::Record(Box::new([
                 (
                     interner.get("got").expect("interned"),
@@ -2594,7 +3439,7 @@ mod tests {
                     store.insert(p, i64_field(v), i as u64 + 1);
                 }
 
-                let scan = Step::Scan(scan_all(p, 0));
+                let scan = Step::Level(scan_all(p, 0));
                 let computed = derive(1, Value::Int(99));
                 let body: Box<[Step]> = if above {
                     Box::new([computed, scan])
@@ -2719,7 +3564,7 @@ mod tests {
 
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(0),
@@ -2747,19 +3592,19 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(person, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: knows,
                         seek_key: SeekKey::Composite(Box::new([SeekKeyPart::RegisterField {
                             address: Address::new(0),
                             path: FieldPath::field(0),
                         }])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([]),
-                },
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
             ]),
             head: Project::Record(Box::new([
                 (
@@ -2815,24 +3660,24 @@ mod tests {
 
         let plan = Plan {
             nvars: 3,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(person, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: knows,
                         seek_key: seek_on(0, 0),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([]),
-                },
-                Generator {
-                    access: Access {
+                    Box::new([Address::new(1)]),
+                    Box::new([]),
+                ),
+                Level::seek(
+                    Access {
                         predicate_id: knows,
                         seek_key: seek_on(1, 1),
                     },
-                    binds: Box::new([Address::new(2)]),
-                    residuals: Box::new([]),
-                },
+                    Box::new([Address::new(2)]),
+                    Box::new([]),
+                ),
             ]),
             head: Project::Record(Box::new([
                 (
@@ -2878,22 +3723,22 @@ mod tests {
 
         let plan = Plan {
             nvars: 2,
-            body: Step::scans([
+            body: Step::levels([
                 scan_all(r, 0),
-                Generator {
-                    access: Access {
+                Level::seek(
+                    Access {
                         predicate_id: r,
                         seek_key: SeekKey::Prefix(Box::new([])),
                     },
-                    binds: Box::new([Address::new(1)]),
-                    residuals: Box::new([Residual {
+                    Box::new([Address::new(1)]),
+                    Box::new([Residual {
                         path: FieldPath::field(0),
                         op: ResidualOp::EqRegisterField {
                             address: Address::new(0),
                             path: FieldPath::field(1),
                         },
                     }]),
-                },
+                ),
             ]),
             head: Project::Record(Box::new([
                 (
@@ -2988,6 +3833,84 @@ mod tests {
             assert_eq!(suspends, cuts.len(), "expected one suspend per scheduled row");
             assert_eq!(rows, model, "schedule {cuts:?} changed the run");
         }
+    }
+
+    /// **The census.** The battery above says nothing about disjunction unless
+    /// the generator draws one — and, more sharply, unless it takes a cut *while
+    /// a source other than the first is live*. That second half is the whole
+    /// claim: resuming into the first alternative when the row came from a later
+    /// one is precisely the bug the source index on a cursor entry prevents, and
+    /// a battery that only ever suspends inside source 0 cannot see it.
+    ///
+    /// Counted over the generator rather than asserted per case, for the reason
+    /// Phase 4's census records: it is a claim about what is *drawn*, and one
+    /// case proves nothing either way.
+    #[test]
+    fn the_battery_reaches_a_cut_inside_a_later_source() {
+        use ::proptest::{
+            strategy::{Strategy, ValueTree},
+            test_runner::TestRunner,
+        };
+
+        const RUNS: usize = 300;
+
+        let mut runner = TestRunner::deterministic();
+        let mut multi_source = 0usize;
+        let mut cut_in_a_later_source = 0usize;
+
+        for _ in 0..RUNS {
+            let spec = arb_plan_and_store()
+                .new_tree(&mut runner)
+                .unwrap()
+                .current();
+            let interner = spec.interner();
+            let (store, plan) = spec.build(&interner);
+
+            if plan.body.iter().all(|step| match step {
+                Step::Level(level) => level.sources.len() < 2,
+                Step::Derive(_) => true,
+            }) {
+                continue;
+            }
+            multi_source += 1;
+
+            // Suspend after every row, and look for a cursor that names a later
+            // alternative — which is a cut taken while that alternative was live.
+            let mut ex = Executor::new(store, plan);
+            loop {
+                let out = ex
+                    .enumerate(
+                        (),
+                        |(), mut row| {
+                            row.to_value(&interner)?;
+                            Ok(Stream::Suspend(()))
+                        },
+                        &CancellationToken::new(),
+                    )
+                    .expect("a run");
+
+                let Iteratee::Suspended((), cursor) = out else {
+                    break;
+                };
+
+                if cursor.0.iter().any(|entry| entry.source > 0) {
+                    cut_in_a_later_source += 1;
+                }
+
+                let (store, plan) = spec.build(&interner);
+                ex = Executor::resume(store, plan, cursor).expect("resume");
+            }
+        }
+
+        assert!(
+            multi_source > 0,
+            "{RUNS} generated plans held no level with more than one source"
+        );
+        assert!(
+            cut_in_a_later_source > 0,
+            "{multi_source} multi-source plan(s), but no cut was ever taken while a \
+             source other than the first was live — the source index is untested"
+        );
     }
 
     // ---- The same battery, against fjall (1d) -----------------------------
@@ -3087,14 +4010,14 @@ mod tests {
         // Three variables bind to each whole row; no residuals; no projection.
         let bind_plan = Plan {
             nvars: 3,
-            body: Step::scans([Generator {
-                access: Access {
+            body: Step::levels([Level::seek(
+                Access {
                     predicate_id: p,
                     seek_key: SeekKey::Prefix(Box::new([])),
                 },
-                binds: Box::new([Address::new(0), Address::new(1), Address::new(2)]),
-                residuals: Box::new([]),
-            }]),
+                Box::new([Address::new(0), Address::new(1), Address::new(2)]),
+                Box::new([]),
+            )]),
             head: Project::FactRef(Address::new(0)),
         };
 
@@ -3113,7 +4036,7 @@ mod tests {
         store2.insert(p, compose(&[&i64_field(1), &i64_field(2)]), 1);
         let proj_plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(1),
@@ -3143,17 +4066,17 @@ mod tests {
         let (spy, calls) = PointSpy::new(store);
         let plan = Plan {
             nvars: 1,
-            body: Step::scans([Generator {
-                access: Access {
+            body: Step::levels([Level::seek(
+                Access {
                     predicate_id: p,
                     seek_key: SeekKey::Prefix(Box::new([])),
                 },
-                binds: Box::new([Address::new(0)]),
-                residuals: Box::new([Residual {
+                Box::new([Address::new(0)]),
+                Box::new([Residual {
                     path: FieldPath::field(0),
                     op: ResidualOp::EqConst(i64_field(2).into_boxed_slice()),
                 }]),
-            }]),
+            )]),
             head: Project::RegisterField {
                 address: Address::new(0),
                 path: FieldPath::field(0),
@@ -3175,7 +4098,7 @@ mod tests {
         let (spy2, calls2) = PointSpy::new(store2);
         let value_plan = Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, 0)]),
+            body: Step::levels([scan_all(p, 0)]),
             head: Project::Value {
                 address: Address::new(0),
                 ty: PredicateTy::Int,
@@ -3222,7 +4145,7 @@ mod tests {
 
         let plan = |bind| Plan {
             nvars: 1,
-            body: Step::scans([scan_all(p, bind)]),
+            body: Step::levels([scan_all(p, bind)]),
             head: Project::FactRef(Address::new(0)),
         };
 

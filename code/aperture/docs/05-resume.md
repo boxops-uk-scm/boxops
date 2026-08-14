@@ -43,9 +43,28 @@ iterator across an idle portal. To continue, rebuild with `Executor::resume(stor
 cursor)` against a *fresh* snapshot; that is exactly what the wire path does when a portal
 wakes up.
 
-These two are a pair: I8 says "don't keep anything alive across a suspend," which *forces*
+The alternative is a rule kept by hand, and the reference implementation shows what that looks
+like: Glean's cross-suspend safety rests on a comment — "Don't keep any pointers in local
+registers across `Suspend`, because they won't be valid when we resume"
+(`glean/db/Glean/Query/Codegen.hs:120-129`) — with a live workaround for it in the array
+generator, which re-reads its output buffer every iteration because the previous one may have
+suspended (`glean/db/Glean/Query/Codegen.hs:879-887`). A rule like that is broken by whoever
+does not read the note. A signature cannot be.
+
+I4 and I8 are a pair: I8 says "don't keep anything alive across a suspend," which *forces*
 the cursor to be pure bytes, and I4 says "and yet reproduce the run exactly." The tension
 between them is the whole design problem.
+
+**Read I8 as two claims, because only the first is unusual.** The first is a **per-query
+immutable view**: `FjallDb::reader` takes exactly one `fjall::Snapshot` and every scan of that
+query reads through it, so a run cannot half-see a write that landed under it. Glean has no
+equivalent — `GetSnapshot` appears nowhere in `glean/rocksdb/`, and each `seek` opens a fresh
+iterator at whatever superversion is current — so Aperture's intra-page isolation is the
+*stronger* of the two. The second claim, releasing it at suspend, Glean also satisfies, by the
+trivial route of having nothing to release. So the goal I8 exists for stands exactly as
+argued — **an idle portal must pin no LSM generation** — but Aperture has to arrange it
+deliberately *because* it holds a real snapshot while running, not because anyone else fails
+to.
 
 ---
 
@@ -54,7 +73,8 @@ between them is the whole design problem.
 On suspend, the executor builds a `Cursor` from the frame stack:
 
 ```rust
-struct Cursor(Vec<Register>);   // one detached Register per loop *level*
+struct Cursor(Vec<Entry>);              // one entry per open loop *level*
+struct Entry { source: usize, row: Register }
 ```
 
 One entry per **level**, not per plan step: a [`Step::Derive`](04-executor.md#the-plan-ir) holds
@@ -63,6 +83,13 @@ no row and contributes nothing, because it is recomputed on restore instead
 *every* level — which is what makes resume's replay-by-order sound, and why its length check is
 `!= plan.levels()` rather than a bound.
 
+**An entry says which of the level's [sources](04-executor.md#the-plan-ir) produced the row**,
+and that is not recoverable from the row itself. Alternatives can overlap, so one fact is
+reachable from more than one of them; and the sources *after* the live one have not run yet.
+Resuming into the wrong alternative therefore re-emits rows and skips rows at once. A
+single-source level — every level focus compiles today — says `0`, so this is the shape the
+token had all along with the part that was implied now written down.
+
 For each level it saves that level's `current` row — but **detached**: `ByteView`
 bytes are copied to owned memory (`to_detached`) so the cursor references no shared buffer,
 no iterator, no snapshot ([I9](invariants.md#i9)'s "copy out only at escape boundaries").
@@ -70,7 +97,28 @@ The saved `Register` is `{ fact_id, key bytes }` — enough to find the row agai
 prove it's the same one.
 
 That's the entire token. No open cursors, no plan pointer beyond what the caller re-supplies,
-no snapshot. It can be written to a socket and read back an hour later.
+no snapshot — nothing in it that a socket could not carry.
+
+**A resume token is client-held on both sides of the comparison.** Glean's continuation is
+opaque bytes handed back to the caller and passed in again
+(`glean/if/glean.thrift:397-406`), self-contained down to the compiled program —
+`restartCompiled` takes no compiled query, because the program comes out of the blob
+(`glean/hs/Glean/RTS/Foreign/Query.hsc:136-174`) — and so resumable in a *different process*.
+Neither system keeps a server-side cursor object alive between pages. What differs is what the
+token **weighs**, itemised in
+[chapter 4](04-executor.md#why-a-state-machine-and-not-recursion--i7), and what it **proves**,
+which is the rest of this chapter.
+
+**The wire form is a seam, not a fact yet.** `Cursor` is an in-process `Vec<Register>`: no
+encoder, **no version tag, no checksum**. The level-count check above is also the *only* plan
+identity it carries — `CursorPlanMismatch` catches a wrong length, not a wrong plan — and
+entries are then paired with scan steps by order, so two same-shaped plans over overlapping
+predicates accept each other's cursors, with the `fact_id` check below the only thing between
+that and a wrong answer. Glean closes both holes with two fields, which is the measure of what
+closing them costs: its continuation carries a version plus an FNV-1 checksum over the blob and
+the return type (`glean/db/Glean/Query/UserQuery.hs:1258-1283`). A version field and a plan
+fingerprint are the cheap part to copy when the encoder lands, and the transport-codec sketch
+kept in `src/focus.rs` is where it goes.
 
 ---
 
@@ -93,6 +141,15 @@ At a derive step, recompute its value into its slot. Nothing is consumed from th
 nothing needs to be: purity ([I14](invariants.md#i14)) is what makes recomputing equivalent to
 having saved it.
 
+**A [`Fetch`](04-executor.md#fetching-through-a-reference) level takes no saved position, and
+still consumes an entry.** Step 1 has nothing to do for it: the row is whichever one the
+reference names, so re-binding the *outer* registers is what puts the level back where it was
+— the recompute rule, arrived at from the other direction. What it keeps is step 3, and that
+is not ceremony: the check is what catches a cursor replayed against a store where the
+reference now names another fact, which is the one way this level can silently move. Saving an
+ordinary entry rather than nothing also keeps one rule for the whole token — one entry per
+level, paired by order — instead of a second rule about which levels count.
+
 Then set `depth` to the innermost step and hand back to `enumerate`, which — because
 that innermost frame's scan is already open and positioned — calls `next()` and thereby
 **advances past** the last-emitted row. Outer levels are *not* advanced; they stay pinned on
@@ -112,6 +169,15 @@ detailed in [chapter 3](03-storage-model.md).
 
 If the saved key no longer resolves to the saved fact, that's not silent — it's
 `BadResumeKey`, a real error on a data path ([conventions](conventions.md)).
+
+**The *direction* of that check is where the safety lives.** Aperture saves `(key, fact_id)`
+and verifies the row re-read at the key. Glean runs it the other way — save the id, then
+`factById(id)` → key → `seek(…, restart)` (`glean/rts/query.cpp:710-735`) — which is a
+self-consistency check that cannot fail once the id resolves at all. Its token carries no `Repo`
+field either (`glean/if/glean.thrift:397-406`), so a continuation replayed against a *different*
+DB of the same schema finds a valid fact of the right type at that id and **silently resumes at
+the wrong row**: skipped rows and duplicated rows, no error. Key→id catches that case; id→key
+cannot see it.
 
 ---
 
@@ -136,6 +202,15 @@ row" bug. Full methodology in [chapter on testing](testing.md); the acceptance b
 2-, and 3-level plans at every cut point, against both `MemStore` and fjall (I8 needs the
 latter).
 
+**The reference implementation does not hold this property** — which is the strongest available
+argument for I4 owning a mechanical guard rather than a review rule. Glean's per-query
+result-dedup set lives in the stack-local query executor and is **not** part of the
+continuation (`glean/rts/query.cpp:181-189,240,427-436`), so a query whose rows can yield the
+same fact id twice is deduplicated *within* a page and not across one: the paged run and the
+uninterrupted run differ observably, in results, in production. A property tested at every cut
+point is what catches that class of thing before it ships; nothing about it is visible to
+inspection.
+
 ---
 
 ## Suspend vs cancel vs terminal unwind
@@ -155,6 +230,22 @@ every `CANCELLATION_STRIDE` rows. The executor is deliberately **not `async`** �
 is blocking CPU/IO, and making it async would only colour the whole codebase for no benefit
 (see [scope](../PLAN.md) and [conventions](conventions.md)).
 
+**Cancellation converges with Glean; suspend depth does not.** Glean polls in the same place
+and counts the same thing — a timeout/interrupt check at the top of `next`, sampled every 100th
+call (`glean/rts/query.cpp:26-28,304-319`) — i.e. rows **examined**, independently reaching the
+conclusion [open decisions](open-decisions.md) records for Aperture. But Glean's cancellation
+is **global only**: `interruptRunningQueries` aborts every query started before the interrupt.
+A per-query `CancellationToken` is a facility Aperture has and Glean does not.
+
+The gap runs the other way on suspend *depth*. Glean carries a second suspend site *inside*
+the generator loop, so a `max_time_ms` timeout hands back a **resumable** continuation even
+with zero results (`glean/db/Glean/Query/Codegen.hs:1017-1024`). Aperture cannot: a deadline
+or a rows-scanned cap unwinds terminally (the table above), and a `Cursor` of one saved row
+per level has no analogue of Glean's per-iterator `first` bit — the flag saying whether the
+position it names has already been consumed — so it cannot *represent* a mid-descent position
+at all. A resumable time slice is that bit plus the [I4](invariants.md#i4) proof that resuming
+from it is exact: deferred, with the seam in the right place rather than done.
+
 ---
 
 ## The seam to the wire
@@ -166,11 +257,24 @@ is I8 (nothing pinned while idle). The wire protocol chapter builds portals, chu
 streaming, and per-stream cancellation directly on this — see
 [Operations](aperture-cli-design.md).
 
-Later features extend the cursor without reshaping it: **disjunction** (`|`) adds a
-per-branch discriminant to the token; keep the `Cursor` type extensible to that
-([`PLAN.md`](../PLAN.md) Phase 6b owns it, sequenced immediately after the `Register → Slot`
-promotion of Phase 6 so the token — and [I4](invariants.md#i4) with it — is settled once
-rather than twice).
+**The disjunction half of that is now paid.** The per-branch discriminant this section was
+kept for is the `source` on an entry, and [I4](invariants.md#i4) is re-established over
+generated plans holding a multi-source level, with a census asserting the battery takes a cut
+*while a later alternative is live* — the cut that a source index is the only defence against.
+What it cost is the measure of the trade: in a register machine a branch's return address is
+just another register the continuation was saving anyway, and here it was a token change, a
+resume change and a battery extension ([chapter
+4](04-executor.md#why-a-state-machine-and-not-recursion--i7)). The remaining extension is a
+branch that *contains a join*, whose entry holds a nested cursor rather than a row
+([the query-surface note](query-surface.md), [`PLAN.md`](../PLAN.md) Phase 6b).
+
+**A cursor is untrusted, and both new ways to malform one are errors rather than panics.** An
+entry naming a source the level does not have is `CursorSourceOutOfRange` — the level-count
+check one level down, since two plans of the same shape can disagree about how many
+alternatives a level has. A saved position outside the range of the source it is replayed into
+is `BadResumeKey`, checked where a saved position becomes a scan bound so that it covers every
+`FactStore` at once: unchecked, `lo > hi` is a **panic** inside the store's range, and a `lo`
+below the prefix silently re-scans rows the level already emitted.
 
 ---
 

@@ -195,6 +195,13 @@ pub const CORPUS: &[Entry] = &[
          seek, so the reference is followed without a store read",
     ),
     entry(
+        "P where test.Ref {of = P}; P = test.Foo {id = 1}",
+        Supported("test.Foo#1"),
+        "**the same join written in the order that reads before it binds** — the \
+         statement that captures `P` is second, so `reorder` moves it first; the \
+         same rows as the spelling above, because it is the same plan",
+    ),
+    entry(
         "P where P = test.Foo {id = 1}; test.Link {at = X, of = P}",
         Supported("test.Foo#1"),
         "the same compare once the seek prefix has closed — a capture at `at` closes \
@@ -221,9 +228,10 @@ pub const CORPUS: &[Entry] = &[
     // ---- deferred constructs: parse, then say so by name ----
     entry(
         "X where test.Foo {id = X} | test.Bar {id = X}",
-        Diagnosed(Code::NyiDisjunction),
-        "disjunction survives flattening as a node (never DNF-expanded); the \
-         union-of-streams operator is a deferred feature",
+        Supported("1; 2; 3; 1; 2"),
+        "**a disjunction**, which is one level with an alternative per branch — \
+         never DNF-expanded across conjuncts, and the rows are the branches' \
+         concatenated in order rather than merged or deduplicated",
     ),
     entry(
         "X where test.Foo {id = X}; !test.Bar {id = X}",
@@ -232,8 +240,9 @@ pub const CORPUS: &[Entry] = &[
     ),
     entry(
         "X where X = (Y where test.Foo {id = Y})",
-        Diagnosed(Code::NyiSubquery),
-        "subquery as a pattern",
+        Supported("1; 2; 3"),
+        "**a subquery**, which inlines: its statements become the enclosing \
+         query's and its head is the value the bind names",
     ),
     entry(
         "X.alt? where X = test.Foo _",
@@ -243,14 +252,52 @@ pub const CORPUS: &[Entry] = &[
     ),
     entry(
         "X where X = never",
-        Diagnosed(Code::NyiNever),
-        "the empty pattern",
+        Supported(""),
+        "**the empty pattern**: a level with no alternative to open, which is \
+         exhausted the moment it is entered",
+    ),
+    entry(
+        "Y where X = test.Foo _; Y = X.name",
+        Supported("ann; bob; ann"),
+        "an **alias**: a name for a value that is already in a register, so it \
+         substitutes exactly as a constant does — no register, no step, and the same \
+         plan as projecting the read directly",
+    ),
+    entry(
+        "Y where X = test.Foo _; Y = X.name; test.Name Y",
+        Supported("ann; bob; ann"),
+        "the alias reaching a **key field**, where it splices the register it names \
+         rather than comparing a value — the point of substituting a location",
+    ),
+    entry(
+        "Y where test.Foo {name = X}; Y = X",
+        Supported("ann; bob; ann"),
+        "`var = var` with only one side bound: the same substitution with an empty path",
+    ),
+    entry(
+        "Y where X = test.Foo _; Y = X.value",
+        Supported("one; two; three"),
+        "a `.value` alias projects; matching on it stays deferred ([I6](invariants.md))",
+    ),
+    entry(
+        "X where test.Nested {outer = {inner = Y}}; X = {inner = Y}",
+        Diagnosed(Code::NyiValueBind),
+        "what is left of the value bind: a record mentioning a **captured** variable \
+         is in no register and differs per row, so it would have to be *built* — the \
+         derived bind the machine has a step for and the language has no producer for",
+    ),
+    entry(
+        "Y where test.Ref {of = P}; Y = P.name",
+        Supported("ann; bob"),
+        "naming a read *through* a reference is the same substitution: the alias names \
+         the fetched row's field, so it is the same plan as writing the read in place",
     ),
     entry(
         "X where test.Foo {id = X}; test.Bar {id = Y}; X = Y",
-        Diagnosed(Code::NyiBindUnification),
-        "`var = var` with both sides already bound — the hard half of \
-         `pattern = pattern` (docs/open-decisions.md)",
+        Supported("1; 2"),
+        "`var = var` with **both** sides already bound: a residual on whichever \
+         level binds later, which is where a value already in a register is \
+         compared against another",
     ),
     entry(
         "X where test.Foo {id = X} = test.Bar {id = X}",
@@ -258,9 +305,34 @@ pub const CORPUS: &[Entry] = &[
         "generator = generator — also the hard half",
     ),
     entry(
+        "X where P = test.Nested _; {inner = X} = P.outer",
+        Supported("1; 7"),
+        "a record pattern **destructuring a place** rather than a constant: each \
+         piece names a piece of `P`'s row, so this is the same plan as `X = \
+         P.outer.inner` and as the nested-pattern spelling",
+    ),
+    entry(
+        "X where P = test.Wide _; {extra = _, inner = X} = P.outer",
+        Supported("2"),
+        "a **wildcard piece** binds nothing and cannot fail — the tautology Glean's \
+         expansion drops, which decomposing against a slot never builds",
+    ),
+    entry(
         "X where {a = X} = {a = 1}",
-        Diagnosed(Code::NyiBindUnification),
-        "anonymous record = anonymous record — also the hard half",
+        Supported("1"),
+        "a record **destructured against a constant**: each variable folds into its \
+         piece, so this is exactly the sugar it looks like — the same plan as writing \
+         `X = 1`. Sound only because the right side is constant, and only because a \
+         literal leaf on the *left* is refused: `{a = 1} = {a = 2}` would bind nothing \
+         and so mean `true` where it means the empty relation",
+    ),
+    entry(
+        "X where test.Foo {id = X}; {a = X} = {a = Y}",
+        Diagnosed(Code::NyiValueBind),
+        "the same shape with a **non-constant** right side. The line between the two \
+         deferrals is where a value *is*: `{a = Y}` is in no register and would have \
+         to be built, which is the value bind — where two things that are each \
+         somewhere would only need comparing, which is the bind unification above",
     ),
     // ---- meaningless: parses, rejected with a clear diagnostic ----
     entry(
@@ -359,12 +431,42 @@ pub const CORPUS: &[Entry] = &[
          literal written in place",
     ),
     entry(
+        "Z where test.Bar {id = Z}; Z = 1",
+        Supported("1"),
+        "**the same fold written after the field that captures the variable** — the \
+         fold is collected from the whole body before any statement is lowered, so \
+         this reaches `emit` with the same bindings as the spelling above and is the \
+         same plan. No reordering involved: a constant takes no level to move",
+    ),
+    entry(
         "X where X = {inner = 1}; test.Nested {outer = X}",
         Supported("{inner = 1}"),
         "a **record** of constants folds too, and narrows a nested key field. The \
          wrapped form `constant` writes is right inside a field and would be wrong \
          for a whole key — safe because `key` destructures the top-level record \
          itself, and a bare variable as a whole key is `nyi/whole-key` first",
+    ),
+    entry(
+        "X where test.Nested {outer = X}; X = {inner = 1}",
+        Supported("{inner = 1}"),
+        "and the record fold the other way round, at a record-typed field — the \
+         wrapped-bytes trap above, reached from the spelling that names the variable \
+         first",
+    ),
+    entry(
+        "{x = A.x, y = A.y} where A = {x = 2, y = 3}",
+        Supported("{x = 2, y = 3}"),
+        "**reading a field through a folded constant is folded too**: the substitution \
+         goes through the *access*, not just the variable. Stopping at the variable \
+         declined quietly here, so flatten returned no plan with nothing reported — \
+         found as a panic from the shell",
+    ),
+    entry(
+        "A.x where A = {x = 1}; test.Bar {id = A.x}",
+        Supported("1"),
+        "the same read at a **key field**, narrowing the seek exactly as the literal in \
+         place would. This is the half that was worse: the constraint was dropped with \
+         no diagnostic, so the level matched every row",
     ),
     entry(
         "{a = X, b = Z} where test.Edge {from = X, to = _}; Z = 7",
@@ -375,17 +477,36 @@ pub const CORPUS: &[Entry] = &[
     ),
     entry(
         "X.name where test.Ref {of = X}",
-        Diagnosed(Code::NyiFactField),
-        "**reading through** a reference: `X` holds a fact id, and its fields are in \
-         another fact's key, so this needs cross-fact navigation (`Access::Fetch`). \
-         Capturing and projecting the reference itself is supported",
+        Supported("ann; bob"),
+        "**reading through** a reference: `X` holds a fact id and its fields are in \
+         another fact's key, so the fact it names is fetched into a level of its own \
+         (`Source::Fetch`) and read from there. *Following* a reference still reads \
+         nothing — that is the id compare above",
     ),
     entry(
         "X.value where test.Ref {of = X}",
-        Diagnosed(Code::NyiFactField),
-        "the same through the value side, and the arm that used to decline *quietly* \
-         — reachable only once a reference can be captured, which is what makes the \
-         `flatten_ordered` promise-guard load-bearing here",
+        Supported("one; two"),
+        "the same through the value side: one register, and the value one point read \
+         further off it — the arm that used to decline *quietly*, which is what makes \
+         the `flatten_ordered` promise-guard load-bearing here",
+    ),
+    entry(
+        "N where test.Deep {via = R}; N = R.of.name",
+        Supported("ann; bob"),
+        "a **chain** of references is a chain of fetches, each reading the register the \
+         one before it bound — two hops, three levels, and no join",
+    ),
+    entry(
+        "{a = X.id, b = X.name} where test.Ref {of = X}",
+        Supported("{a = 1, b = ann}; {a = 2, b = bob}"),
+        "two reads of one reference are **one** fetch: a second level would read the \
+         same row again for every row above it, and could never disagree with the first",
+    ),
+    entry(
+        "P.id where test.Ref {of = P}; test.Bar {id = P.id}",
+        Supported("1; 2"),
+        "a field read through a reference **narrows** the level that reads it — the \
+         fetch is an outer level, so its register splices into the seek below it",
     ),
     entry(
         "Y where Y = test.Foo _; test.Name Y.value",
@@ -395,9 +516,9 @@ pub const CORPUS: &[Entry] = &[
     ),
     entry(
         "Y where test.Foo Y",
-        Diagnosed(Code::NyiWholeKey),
-        "a stored key is its fields with no wrapper, so a record key is not one \
-         field and has no path to project; name its fields instead",
+        Supported("{id = 1, name = ann}; {id = 2, name = bob}; {id = 3, name = ann}"),
+        "**a whole key**, which is its fields: a stored key is flat, so the record \
+         is built one field at a time and needs no operator of its own",
     ),
     // ---- meaningless at flatten ----
     entry(

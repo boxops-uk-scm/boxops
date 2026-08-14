@@ -245,11 +245,183 @@ pub struct Residual {
     pub op: ResidualOp,
 }
 
+/// Where one level's rows come from, and the filters that apply to rows out of
+/// **this** source.
+///
+/// Residuals belong here rather than on the [`Level`] because a residual is a
+/// [`FieldPath`] into a row, and two sources of one level are two different key
+/// layouts — a path that names a field of one names different bytes, or no bytes
+/// at all, in the other.
 #[derive(Debug, Clone)]
-pub struct Generator {
-    pub access: Access,
+pub enum Source {
+    Seek {
+        access: Access,
+        residuals: Box<[Residual]>,
+    },
+    /// **The fact a reference names** — one row, reached by id rather than by
+    /// scanning for it.
+    ///
+    /// `reference` is a register bound at an outer level and `path` a fact-typed
+    /// field of its key, so the id is already in hand: this is the second lookup
+    /// that [`SeekKeyPart::RegisterFactId`] deliberately avoids, and the reason it
+    /// could avoid it is that *following* a reference compares ids while *reading
+    /// through* one needs the other fact's key bytes, which live only in
+    /// `entities`.
+    ///
+    /// A source rather than a step, because a point read is a relation of at most
+    /// one row and the machine's job over it is a scan's exactly: open, drain, move
+    /// on. That is what keeps `enumerate` unchanged
+    /// ([the query-surface note](../../../docs/query-surface.md)).
+    ///
+    /// `predicate_id` is the field's **declared** referent, and is checked against
+    /// the id actually stored. It is not redundant with [`FactId::predicate`]: every
+    /// `path` in this source's residuals — and every projection off the register it
+    /// binds — was compiled against the declared key layout, so a reference that
+    /// names another predicate would decode a different type's bytes at that offset
+    /// and answer, silently, with whatever was there.
+    Fetch {
+        reference: Address,
+        path: FieldPath,
+        predicate_id: PredicateId,
+        residuals: Box<[Residual]>,
+    },
+}
+
+impl Source {
+    /// The residuals rows out of this source are filtered by.
+    #[must_use]
+    pub fn residuals(&self) -> &[Residual] {
+        match self {
+            Source::Seek { residuals, .. } | Source::Fetch { residuals, .. } => residuals,
+        }
+    }
+
+    /// The residuals, to add one to.
+    pub fn residuals_mut(&mut self) -> &mut Box<[Residual]> {
+        match self {
+            Source::Seek { residuals, .. } | Source::Fetch { residuals, .. } => residuals,
+        }
+    }
+
+    /// How this source's scan is narrowed — `None` for a source that does not
+    /// scan.
+    #[must_use]
+    pub fn seek_key(&self) -> Option<&SeekKey> {
+        match self {
+            Source::Seek { access, .. } => Some(&access.seek_key),
+            Source::Fetch { .. } => None,
+        }
+    }
+
+    /// The predicate this source draws from, when it draws from exactly one.
+    #[must_use]
+    pub fn predicate_id(&self) -> PredicateId {
+        match self {
+            Source::Seek { access, .. } => access.predicate_id,
+            Source::Fetch { predicate_id, .. } => *predicate_id,
+        }
+    }
+}
+
+/// One **loop level**: the rows it iterates, and the registers it binds them to.
+///
+/// `sources` are the level's alternatives, tried in order and concatenated — so
+/// the count is the construct:
+///
+/// | sources | what it is |
+/// |---|---|
+/// | 0 | the **empty relation** — the level is exhausted the moment it is entered |
+/// | 1 | an ordinary scan, which is every plan focus compiles today |
+/// | N | a **disjunction**, one branch per source |
+///
+/// They are one node rather than three because the machine's job is identical in
+/// all three: open a source, drain it, move to the next, and back up when there is
+/// no next. Counting is the only thing that differs, which is why `never` needs no
+/// arm of its own and no case in [`enumerate`](crate::focus::iter::Executor::enumerate).
+///
+/// `binds` is the level's, not a source's: every alternative binds the same
+/// variables, which is what makes a register mean one thing whichever branch
+/// filled it (see [the query-surface note](../../../docs/query-surface.md)).
+#[derive(Debug, Clone)]
+pub struct Level {
+    pub sources: Box<[Source]>,
     pub binds: Box<[Address]>,
-    pub residuals: Box<[Residual]>,
+}
+
+impl Level {
+    /// A level with a single [`Source::Seek`] — the shape every plan had before
+    /// a level could have alternatives, and still the shape of any level flatten
+    /// emits.
+    #[must_use]
+    pub fn seek(access: Access, binds: Box<[Address]>, residuals: Box<[Residual]>) -> Self {
+        Self {
+            sources: Box::new([Source::Seek { access, residuals }]),
+            binds,
+        }
+    }
+
+    /// A level with a single [`Source::Fetch`] — the fact a reference names,
+    /// bound to a register of its own so that everything downstream reads it as
+    /// an ordinary row.
+    #[must_use]
+    pub fn fetch(
+        reference: Address,
+        path: FieldPath,
+        predicate_id: PredicateId,
+        binds: Box<[Address]>,
+        residuals: Box<[Residual]>,
+    ) -> Self {
+        Self {
+            sources: Box::new([Source::Fetch {
+                reference,
+                path,
+                predicate_id,
+                residuals,
+            }]),
+            binds,
+        }
+    }
+
+    /// A level that produces nothing — zero sources.
+    ///
+    /// Not reachable from focus text yet (`never` is [Phase
+    /// 6b](../../../PLAN.md)); the machine handles it because it falls out of
+    /// counting, and it is guarded so that it stays that way.
+    #[must_use]
+    pub fn empty(binds: Box<[Address]>) -> Self {
+        Self {
+            sources: Box::new([]),
+            binds,
+        }
+    }
+
+    /// This level's only source, when it has exactly one.
+    ///
+    /// Every level flatten emits is single-source, so this is what a caller
+    /// reasoning about *the* seek of a level means — and `None` is the honest
+    /// answer for a disjunction, where there is no such thing.
+    #[must_use]
+    pub fn sole_source(&self) -> Option<&Source> {
+        match &*self.sources {
+            [source] => Some(source),
+            _ => None,
+        }
+    }
+
+    /// The predicate this level's rows come from, when every source agrees.
+    ///
+    /// `None` for the empty relation, and for a disjunction spanning predicates —
+    /// where there is no single answer, and a caller that wants to name a field
+    /// has to say which source it means.
+    #[must_use]
+    pub fn predicate_id(&self) -> Option<PredicateId> {
+        let first = self.sources.first()?.predicate_id();
+
+        self.sources
+            .iter()
+            .all(|source| source.predicate_id() == first)
+            .then_some(first)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -311,21 +483,21 @@ pub struct DerivedBind {
 /// of truth for one ordering, with nothing to say which wins.
 #[derive(Debug, Clone)]
 pub enum Step {
-    Scan(Generator),
+    Level(Level),
     Derive(DerivedBind),
 }
 
 impl Step {
-    /// A body of scans only — every plan's shape before derived binds, and still
+    /// A body of levels only — every plan's shape before derived binds, and still
     /// the shape of any query without one.
     #[must_use]
-    pub fn scans<const N: usize>(generators: [Generator; N]) -> Box<[Step]> {
-        Box::new(generators.map(Step::Scan))
+    pub fn levels<const N: usize>(levels: [Level; N]) -> Box<[Step]> {
+        Box::new(levels.map(Step::Level))
     }
 
     #[must_use]
-    pub fn is_scan(&self) -> bool {
-        matches!(self, Step::Scan(_))
+    pub fn is_level(&self) -> bool {
+        matches!(self, Step::Level(_))
     }
 }
 
@@ -348,7 +520,7 @@ impl Plan {
     /// name which.
     #[must_use]
     pub fn levels(&self) -> usize {
-        self.body.iter().filter(|step| step.is_scan()).count()
+        self.body.iter().filter(|step| step.is_level()).count()
     }
 
     /// The `n`th **loop level**, skipping derive steps.
@@ -357,11 +529,11 @@ impl Plan {
     /// about join order wants: `body[n]` is the `n`th *step*, which is a different
     /// thing as soon as a plan derives anything.
     #[must_use]
-    pub fn level(&self, n: usize) -> Option<&Generator> {
+    pub fn level(&self, n: usize) -> Option<&Level> {
         self.body
             .iter()
             .filter_map(|step| match step {
-                Step::Scan(generator) => Some(generator),
+                Step::Level(level) => Some(level),
                 Step::Derive(_) => None,
             })
             .nth(n)
@@ -411,8 +583,8 @@ pub mod proptest {
     use ::proptest::prelude::*;
 
     use super::{
-        Access, FieldPath, Generator, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart,
-        Step,
+        Access, FieldPath, Level, Plan, Project, Residual, ResidualOp, SeekKey, SeekKeyPart,
+        Source, Step,
     };
     use crate::focus::{
         fixtures::{compose, i64_field, interner_with, str_field},
@@ -547,7 +719,17 @@ pub mod proptest {
         /// The `(level, field)` spliced into this level's scan prefix; `None` is a
         /// full scan of the predicate.
         seek: Option<(usize, usize)>,
-        residual: Option<ResidualSpec>,
+        /// One entry per [`Source`], each holding that source's residual — so the
+        /// length is the construct: one is a scan, more is a **disjunction**.
+        ///
+        /// Every alternative reads the same predicate and the same seek, and
+        /// differs only in what it filters. That is deliberate rather than a
+        /// simplification: sources over *different* predicates would bind one
+        /// register to two key layouts, which needs the exported-value rule the
+        /// language cannot ask for yet ([the query-surface note]).
+        ///
+        /// [the query-surface note]: ../../../docs/query-surface.md
+        sources: Vec<Option<ResidualSpec>>,
     }
 
     #[derive(Debug, Clone)]
@@ -621,8 +803,8 @@ pub mod proptest {
                 .levels
                 .iter()
                 .enumerate()
-                .map(|(level, spec)| Generator {
-                    access: Access {
+                .map(|(level, spec)| {
+                    let access = Access {
                         predicate_id: PredicateId(spec.predicate as u32),
                         seek_key: match spec.seek {
                             None => SeekKey::Prefix(Box::new([])),
@@ -633,26 +815,40 @@ pub mod proptest {
                                 }]))
                             }
                         },
-                    },
-                    binds: Box::new([Address::new(level)]),
-                    residuals: match &spec.residual {
-                        None => Box::new([]),
-                        Some(ResidualSpec::EqConst { field, val }) => Box::new([Residual {
-                            path: FieldPath::field(*field),
-                            op: ResidualOp::EqConst(val.encode().into_boxed_slice()),
-                        }]),
-                        Some(ResidualSpec::EqRegisterField {
-                            field,
-                            level: ref_level,
-                            ref_field,
-                        }) => Box::new([Residual {
-                            path: FieldPath::field(*field),
-                            op: ResidualOp::EqRegisterField {
-                                address: Address::new(*ref_level),
-                                path: FieldPath::field(*ref_field),
+                    };
+
+                    let sources = spec
+                        .sources
+                        .iter()
+                        .map(|residual| Source::Seek {
+                            access: access.clone(),
+                            residuals: match residual {
+                                None => Box::new([]) as Box<[Residual]>,
+                                Some(ResidualSpec::EqConst { field, val }) => {
+                                    Box::new([Residual {
+                                        path: FieldPath::field(*field),
+                                        op: ResidualOp::EqConst(val.encode().into_boxed_slice()),
+                                    }])
+                                }
+                                Some(ResidualSpec::EqRegisterField {
+                                    field,
+                                    level: ref_level,
+                                    ref_field,
+                                }) => Box::new([Residual {
+                                    path: FieldPath::field(*field),
+                                    op: ResidualOp::EqRegisterField {
+                                        address: Address::new(*ref_level),
+                                        path: FieldPath::field(*ref_field),
+                                    },
+                                }]),
                             },
-                        }]),
-                    },
+                        })
+                        .collect();
+
+                    Level {
+                        sources,
+                        binds: Box::new([Address::new(level)]),
+                    }
                 })
                 .collect::<Vec<_>>()
                 .into_boxed_slice();
@@ -689,7 +885,7 @@ pub mod proptest {
                 nvars: self.levels.len(),
                 // Every level the generator draws is a scan; a derive step is a
                 // shape it does not yet reach, and the census says so.
-                body: body.into_iter().map(Step::Scan).collect(),
+                body: body.into_iter().map(Step::Level).collect(),
                 head: Project::Record(head),
             }
         }
@@ -723,6 +919,8 @@ pub mod proptest {
         field: u8,
         reference: u8,
         constant: u8,
+        /// Whether this level gets a second [`Source`] — see [`LevelSpec::sources`].
+        alternative: u8,
     }
 
     #[derive(Debug, Clone)]
@@ -859,10 +1057,27 @@ pub mod proptest {
                 ),
             };
 
+            // A second alternative on some levels, filtering differently, so the
+            // battery sees a level whose rows come from more than one source —
+            // and, at a cut point, a suspend taken while the *second* one is live.
+            let mut sources = vec![residual];
+
+            if draw.alternative.is_multiple_of(3) {
+                sources.push(Some(ResidualSpec::EqConst {
+                    field,
+                    val: constant_for(
+                        &facts[predicate],
+                        field,
+                        fields[field],
+                        draw.constant.wrapping_add(1),
+                    ),
+                }));
+            }
+
             resolved.push(LevelSpec {
                 predicate,
                 seek,
-                residual,
+                sources,
             });
         }
 
@@ -910,17 +1125,19 @@ pub mod proptest {
             0u8..PICKS,
             0u8..PICKS,
             0u8..PICKS,
+            0u8..PICKS,
         )
-            .prop_map(|(predicate, seek, residual, field, reference, constant)| {
-                LevelDraw {
+            .prop_map(
+                |(predicate, seek, residual, field, reference, constant, alternative)| LevelDraw {
                     predicate,
                     seek,
                     residual,
                     field,
                     reference,
                     constant,
-                }
-            })
+                    alternative,
+                },
+            )
     }
 
     fn arb_head() -> impl Strategy<Value = HeadDraw> {
