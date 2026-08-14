@@ -13,6 +13,18 @@ export const vars = stylex.defineVars({
   color: null,
   backgroundColor: null,
   borderColor: null,
+  /**
+   * The tint of the 3px ring inside the frame — and a var rather than a value for a reason worth
+   * stating, because getting it wrong is a bug this component already had.
+   *
+   * Two separate things decide the ring: *whether* there is one (focus, or an open popup) and *what
+   * colour* it is (the accent, or whatever status the caller asserted). Those are known in different
+   * places. Written as a colour, the status style has to restate the whole `box-shadow` — and since
+   * it is applied after the open style, its own `default` then overrode the open one, so a field in
+   * error lost its ring the moment the list opened. Naming the colour lets the status style say only
+   * the half it knows.
+   */
+  ringColor: null,
   placeholderColor: null,
   labelColor: null,
   messageColor: null,

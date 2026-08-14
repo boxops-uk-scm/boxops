@@ -30,19 +30,29 @@ const STATUS_ICON = {
   success: Phosphor.CheckCircleIcon,
 } as const satisfies Record<Select.Status, React.FC<IconProps>>;
 
-/** `TextInput`'s treatment, restated: bold hue on the frame, and the ring under it in the same hue. */
+/**
+ * `TextInput`'s treatment, restated: bold hue on the frame, and the ring under it in the same hue.
+ *
+ * Colours only. Whether the ring is drawn at all is the frame's business — it depends on focus and
+ * on whether the list is open, neither of which a status knows anything about. Stating the
+ * `box-shadow` here as well is what previously left a field in error with no ring once its list was
+ * open: this style is applied after the open one, so its `default` won.
+ *
+ * Flat values rather than per-state ones, too. A field that is in error is in error whether or not
+ * the pointer is over it, so the hover the base frame declares has nothing to say here.
+ */
 const statusStyles = stylex.create({
   error: {
-    [vars.borderColor]: { default: semanticColor.negative, ':focus-visible': semanticColor.negative },
-    boxShadow: { default: null, ':focus-visible': `inset 0 0 0 3px ${semanticColor.negativeSubtle}` },
+    [vars.borderColor]: semanticColor.negative,
+    [vars.ringColor]: semanticColor.negativeSubtle,
   },
   warning: {
-    [vars.borderColor]: { default: semanticColor.warning, ':focus-visible': semanticColor.warning },
-    boxShadow: { default: null, ':focus-visible': `inset 0 0 0 3px ${semanticColor.warningSubtle}` },
+    [vars.borderColor]: semanticColor.warning,
+    [vars.ringColor]: semanticColor.warningSubtle,
   },
   success: {
-    [vars.borderColor]: { default: semanticColor.positive, ':focus-visible': semanticColor.positive },
-    boxShadow: { default: null, ':focus-visible': `inset 0 0 0 3px ${semanticColor.positiveSubtle}` },
+    [vars.borderColor]: semanticColor.positive,
+    [vars.ringColor]: semanticColor.positiveSubtle,
   },
 });
 
@@ -169,9 +179,12 @@ const baseStyles = stylex.create({
       ':enabled:hover': semanticColor.accent,
       ':focus-visible': semanticColor.accent,
     },
+    // The accent is only the default tint; a status replaces it by setting the var, and the shadow
+    // below never has to be restated to say so.
+    [vars.ringColor]: semanticColor.accentSubtle,
     boxShadow: {
       default: null,
-      ':focus-visible': `inset 0 0 0 3px ${semanticColor.accentSubtle}`,
+      ':focus-visible': `inset 0 0 0 3px ${vars.ringColor}`,
     },
     outline: {
       default: null,
@@ -183,10 +196,13 @@ const baseStyles = stylex.create({
    *
    * Not a pseudo-class, because there is none for it: the trigger is only `:focus-visible` while it
    * holds focus, and while the popup is open it does not. Base UI reports it as state instead.
+   *
+   * The border is the accent outright, which a status then overrides — but the ring is only asked
+   * for here, in whatever tint is in force. That division is the whole point of `vars.ringColor`.
    */
   triggerOpen: {
     [vars.borderColor]: semanticColor.accent,
-    boxShadow: `inset 0 0 0 3px ${semanticColor.accentSubtle}`,
+    boxShadow: `inset 0 0 0 3px ${vars.ringColor}`,
   },
   triggerDisabled: {
     [vars.color]: textColor.disabled,
