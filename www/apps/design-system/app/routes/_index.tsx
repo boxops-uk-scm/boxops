@@ -44,6 +44,7 @@ import {
   Checkbox,
   Radio,
   RadioGroup,
+  Select,
   ProfileMenu,
   UncontrolledProfileMenu,
 } from '@boxops/ui';
@@ -337,6 +338,17 @@ const styles = stylex.create({
     flexDirection: 'column',
     gap: gap.S,
     alignItems: 'flex-start',
+  },
+  // A select is as wide as it is told to be — its trigger fills the field, and the field fills
+  // whatever it is in. Given a width here so the stage is not a column of fields sized to their
+  // labels, and so the popup (at least as wide as its anchor) has something to inherit.
+  selectField: {
+    width: '260px',
+  },
+  // The status message floats rather than pushing what follows down, which is the point of it — so
+  // a column of fields that all have one needs the room left for it by hand.
+  selectStatusColumn: {
+    gap: '2.5rem',
   },
   avatarRow: {
     display: 'flex',
@@ -1536,9 +1548,106 @@ function DemoContent({ idPrefix }: { idPrefix: string }) {
           <Radio value="second" label="Second" />
         </RadioGroup>
       </section>
+      <Heading isContent>Select</Heading>
+      <section {...stylex.props(styles.choiceStage, styles.componentStage)}>
+        <div {...stylex.props(styles.choiceColumn)}>
+          {/* Not `environment`: the radio group above already submits under that name, and two
+              controls sharing one is a bug waiting for the form that contains both. */}
+          <Select
+            label="Environment"
+            name="deployEnvironment"
+            placeholder="Choose one"
+            options={ENVIRONMENTS}
+            xstyle={styles.selectField}
+          />
+          {/* An option that needs a sentence to itself, and one that says which is which with a glyph. */}
+          <Select
+            label="Runner"
+            name="runner"
+            defaultValue="standard"
+            options={RUNNERS}
+            description="What the job is scheduled onto."
+            xstyle={styles.selectField}
+          />
+          <Select label="Region" name="region" defaultValue="eu-west-1" options={REGIONS} xstyle={styles.selectField} />
+        </div>
+        <div {...stylex.props(styles.choiceColumn)}>
+          <Select
+            label="Compact"
+            name="compactEnvironment"
+            defaultValue="staging"
+            options={ENVIRONMENTS}
+            variants={{ size: 'compact' }}
+            xstyle={styles.selectField}
+          />
+          <Select label="Disabled" name="cluster" placeholder="Choose one" options={ENVIRONMENTS} disabled xstyle={styles.selectField} />
+          <Select label="Read only" name="fleet" defaultValue="production" options={ENVIRONMENTS} readOnly xstyle={styles.selectField} />
+        </div>
+        <div {...stylex.props(styles.choiceColumn, styles.selectStatusColumn)}>
+          <Select
+            label="Queue"
+            name="queue"
+            defaultValue="staging"
+            options={ENVIRONMENTS}
+            status="error"
+            message="No queue for that team."
+            xstyle={styles.selectField}
+          />
+          <Select
+            label="Window"
+            name="window"
+            defaultValue="canary"
+            options={ENVIRONMENTS}
+            status="warning"
+            message="Outside the change freeze."
+            xstyle={styles.selectField}
+          />
+          <Select
+            label="Rota"
+            name="selectRota"
+            defaultValue="production"
+            options={ENVIRONMENTS}
+            status="success"
+            message="Rota found."
+            xstyle={styles.selectField}
+          />
+        </div>
+      </section>
     </>
   );
 }
+
+const ENVIRONMENTS: Select.Options = [
+  { value: 'staging', label: 'Staging' },
+  { value: 'canary', label: 'Canary' },
+  { value: 'production', label: 'Production' },
+  { value: 'archive', label: 'Archive', disabled: true },
+];
+
+const RUNNERS: Select.Options = [
+  { value: 'standard', label: 'Standard', description: 'Four cores, shared.', icon: Phosphor.CpuIcon },
+  { value: 'large', label: 'Large', description: 'Sixteen cores, to yourself.', icon: Phosphor.CpuIcon },
+  { value: 'gpu', label: 'GPU', description: 'One A100, queued.', icon: Phosphor.GraphicsCardIcon },
+];
+
+/** Grouped, which the component takes as a list of `{ label, items }` rather than a flat list. */
+const REGIONS: Select.Options = [
+  {
+    label: 'Europe',
+    items: [
+      { value: 'eu-west-1', label: 'Ireland' },
+      { value: 'eu-west-2', label: 'London' },
+      { value: 'eu-north-1', label: 'Stockholm' },
+    ],
+  },
+  {
+    label: 'North America',
+    items: [
+      { value: 'us-east-1', label: 'N. Virginia' },
+      { value: 'us-west-2', label: 'Oregon' },
+    ],
+  },
+];
 
 /** Stands in for what a router would hand over. Plain data, which is the whole point. */
 const SITEMAP_ROUTES: Sitemap.Route[] = [

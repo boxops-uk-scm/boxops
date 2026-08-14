@@ -53,3 +53,4 @@ export { ProfileMenu, UncontrolledProfileMenu } from './ProfileMenu';
 export { TextInput } from './TextInput';
 export { Checkbox } from './Checkbox';
 export { Radio, RadioGroup } from './Radio';
+export { Select } from './Select';
